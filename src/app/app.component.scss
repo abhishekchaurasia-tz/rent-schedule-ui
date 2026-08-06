@@ -1,0 +1,62 @@
+$font-stack:
+  system-ui,
+  -apple-system,
+  Segoe UI,
+  sans-serif;
+
+.app-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+  font-family: $font-stack;
+}
+
+.app-sidebar {
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.5rem 1rem;
+  background: #f7f9fc;
+  border-right: 1px solid #d5dde5;
+
+  // Sidebar stays put while the content area scrolls on its own — see .app-content.
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.app-sidebar-title {
+  font-weight: 700;
+  color: #1a3d66;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  padding: 0 0.75rem;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  color: #1a3d66;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+
+  &:hover {
+    background: #eaf2fb;
+  }
+
+  &.active {
+    background: #1a56db;
+    color: #fff;
+  }
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  height: 100vh;
+}

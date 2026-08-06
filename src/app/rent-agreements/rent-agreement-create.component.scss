@@ -1,0 +1,331 @@
+.preview-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.right-column {
+  position: sticky;
+  top: 1rem;
+
+  @media (max-width: 900px) {
+    position: static;
+  }
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
+.preview-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+// Lays the form panels out two-per-row instead of stacking all four full-width — cuts the form's
+// total height noticeably so saving a lease no longer requires scrolling past every panel to reach
+// "Generate Preview". Lease Dates and Additional Fees opt back out to full width via
+// `.full-width-panel`: both need more horizontal room than half the column gives (date-range fields
+// and the fee-summary table respectively) — squeezing them to half-width previously shrank the date
+// inputs enough that their resting (unfocused) label text overlapped the input's own click area.
+.panels-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.full-width-panel {
+  grid-column: 1 / -1;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.deposit-collected-checkbox {
+  grid-column: 1 / -1;
+}
+
+.date-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  grid-column: 1 / -1;
+
+  label,
+  .date-field {
+    flex: 1;
+    // Wide enough that the mat-form-field's resting (unfocused) label text can never reach past the
+    // input's horizontal center — a narrower value here previously let the label silently swallow
+    // clicks meant for the input once two date fields ended up sharing a row (see the "opens the
+    // calendar" regression this min-width fixes).
+    min-width: 220px;
+  }
+}
+
+.date-field {
+  font-size: 0.95rem;
+
+  &.mat-mdc-form-field {
+    display: block;
+  }
+}
+
+.panel {
+  border: 1px solid #d5dde5;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.panel-header {
+  background: #eaf2fb;
+  color: #1a3d66;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #d5dde5;
+}
+
+.panel-body {
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.due-on-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+
+  select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+}
+
+.due-on-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.due-on-suffix {
+  color: #333;
+}
+
+.first-due-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+  max-width: 320px;
+
+  select,
+  input {
+    font-weight: 400;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95rem;
+  }
+}
+
+.required {
+  color: #c0392b;
+}
+
+.helper-text {
+  font-size: 0.8rem;
+  color: #555;
+  margin: 0;
+  max-width: 480px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+
+  input,
+  select {
+    font-weight: 400;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95rem;
+  }
+}
+
+fieldset {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 1rem;
+
+  legend {
+    font-weight: 600;
+    padding: 0 0.5rem;
+  }
+}
+
+.inline-fields {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.cycle-entry,
+.override-entry {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+button {
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+
+  &:hover {
+    background: #ececec;
+  }
+}
+
+.submit-btn {
+  align-self: flex-start;
+  background: #1a56db;
+  color: white;
+  border: none;
+  padding: 0.65rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &:hover:not(:disabled) {
+    background: #1544ab;
+  }
+}
+
+.banner {
+  margin-top: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+
+  &.error {
+    background: #fde8e8;
+    color: #9b1c1c;
+    border: 1px solid #f8b4b4;
+  }
+
+  &.success {
+    background: #e6f4ea;
+    color: #1e6b3a;
+    border: 1px solid #a6dab0;
+    font-weight: 600;
+  }
+
+  ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+  }
+}
+
+.schedule-table-wrapper {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #eee;
+  }
+
+  th {
+    background: #fafafa;
+    position: sticky;
+    top: 0;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    color: #666;
+  }
+}
+
+.empty-state {
+  color: #888;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.add-fee-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #1a56db;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.charges-table {
+  margin-bottom: 1rem;
+}

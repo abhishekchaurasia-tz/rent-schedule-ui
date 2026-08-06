@@ -1,0 +1,62 @@
+/* You can add global styles to this file, and also import other style files */
+@use '@angular/material' as mat;
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+app-root {
+  display: block;
+  height: 100%;
+}
+
+html {
+  @include mat.theme(
+    (
+      color: (
+        theme-type: light,
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette
+      ),
+      typography: (
+        plain-family: 'system-ui, -apple-system, Segoe UI, sans-serif',
+        brand-family: 'system-ui, -apple-system, Segoe UI, sans-serif'
+      ),
+      density: -3
+    )
+  );
+}
+
+.date-field {
+  width: 100%;
+  font-size: 0.9rem;
+
+  .mat-mdc-text-field-wrapper {
+    background: #fff;
+  }
+
+  .mat-mdc-form-field-infix {
+    min-height: 0;
+    padding-top: 0.4em;
+    padding-bottom: 0.4em;
+  }
+
+  .mat-mdc-icon-button {
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+
+    svg,
+    .mat-icon {
+      width: 18px;
+      height: 18px;
+      font-size: 18px;
+    }
+  }
+}
+
+.mat-datepicker-toggle .mat-mdc-icon-button.mat-mdc-button-base {
+  --mdc-icon-button-state-layer-size: 32px;
+}

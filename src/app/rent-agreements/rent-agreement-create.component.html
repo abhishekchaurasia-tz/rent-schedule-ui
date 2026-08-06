@@ -1,0 +1,392 @@
+<div class="preview-page">
+  <h1>Add Lease</h1>
+  <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>
+
+  <div class="layout">
+  <form [formGroup]="form" class="preview-form left-column">
+    <div class="panels-grid">
+    <section class="panel full-width-panel">
+      <div class="panel-header">Lease Dates</div>
+      <div class="panel-body grid">
+        <label>
+          Lease Term Type
+          <select formControlName="leaseTermType">
+            @for (option of leaseTermTypes; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+
+        <div class="date-row">
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Start Date</mat-label>
+            <input
+              matInput
+              [matDatepicker]="startDatePicker"
+              formControlName="startDate"
+              (click)="startDatePicker.open()"
+            />
+            <mat-datepicker-toggle matIconSuffix [for]="startDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #startDatePicker></mat-datepicker>
+          </mat-form-field>
+
+          @if (leaseTermType === 'fixed') {
+            <mat-form-field appearance="outline" class="date-field">
+              <mat-label>End Date</mat-label>
+              <input
+                matInput
+                [matDatepicker]="endDatePicker"
+                formControlName="endDate"
+                (click)="endDatePicker.open()"
+              />
+              <mat-datepicker-toggle matIconSuffix [for]="endDatePicker"></mat-datepicker-toggle>
+              <mat-datepicker #endDatePicker></mat-datepicker>
+            </mat-form-field>
+          }
+        </div>
+
+        @if (leaseTermType === 'month_to_month') {
+          <label>
+            Number of Payments to Preview
+            <input type="number" formControlName="monthToMonthInvoiceCount" />
+          </label>
+
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Next Lease Start Date (optional)</mat-label>
+            <input
+              matInput
+              [matDatepicker]="nextLeaseStartDatePicker"
+              formControlName="nextLeaseStartDate"
+              (click)="nextLeaseStartDatePicker.open()"
+            />
+            <mat-datepicker-toggle matIconSuffix [for]="nextLeaseStartDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #nextLeaseStartDatePicker></mat-datepicker>
+          </mat-form-field>
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Rent</div>
+      <div class="panel-body">
+        <div class="grid">
+          <label>
+            Payment Frequency
+            <select formControlName="frequency">
+              @for (option of frequencies; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+          </label>
+
+          <label>
+            Rent
+            <input type="number" step="0.01" formControlName="rent" />
+          </label>
+        </div>
+
+        @if (frequency === 'monthly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on the</span>
+            <select formControlName="dueOnDay">
+              @for (day of dayOfMonthOptions; track day.value) {
+                <option [value]="day.value">{{ day.label }}</option>
+              }
+            </select>
+            <span class="due-on-suffix">of every month</span>
+          </div>
+        }
+
+        @if (frequency === 'bi_monthly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on the</span>
+            @for (control of dueOnDays.controls; track $index) {
+              <select [formControl]="$any(control)">
+                @for (day of dayOfMonthOptions; track day.value) {
+                  <option [value]="day.value">{{ day.label }}</option>
+                }
+              </select>
+              @if ($index === 0) {
+                <span class="due-on-suffix">and the</span>
+              }
+            }
+            <span class="due-on-suffix">of every month</span>
+          </div>
+        }
+
+        @if (frequency === 'weekly' || frequency === 'bi_weekly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on</span>
+            <select formControlName="dayOfWeek">
+              @for (day of weekdays; track day.value) {
+                <option [value]="day.value">{{ day.label }}</option>
+              }
+            </select>
+            <span class="due-on-suffix">{{
+              frequency === 'weekly' ? 'of every week' : 'of every other week'
+            }}</span>
+          </div>
+        }
+
+        @if (frequency === 'semesterly') {
+          <fieldset class="frequency-config">
+            <legend>Semi-Annual Cycle Dates</legend>
+            <div class="inline-fields" formArrayName="cycle">
+              @for (group of cycle.controls; track $index) {
+                <div [formGroupName]="$index" class="cycle-entry">
+                  <label>
+                    Month {{ $index + 1 }}
+                    <input type="number" min="1" max="12" formControlName="month" />
+                  </label>
+                  <label>
+                    Day
+                    <input type="number" min="1" max="31" formControlName="day" />
+                  </label>
+                </div>
+              }
+            </div>
+          </fieldset>
+        }
+
+        @if (frequency === 'custom') {
+          <fieldset class="frequency-config">
+            <legend>Custom Due Dates</legend>
+            <div formArrayName="dueDates" class="custom-dates">
+              @for (control of dueDates.controls; track $index) {
+                <div class="inline-fields">
+                  <mat-form-field appearance="outline" class="date-field">
+                    <input
+                      matInput
+                      [matDatepicker]="dueDatePicker"
+                      [formControl]="$any(control)"
+                      (click)="dueDatePicker.open()"
+                    />
+                    <mat-datepicker-toggle matIconSuffix [for]="dueDatePicker"></mat-datepicker-toggle>
+                    <mat-datepicker #dueDatePicker></mat-datepicker>
+                  </mat-form-field>
+                  <button type="button" (click)="removeDueDate($index)">Remove</button>
+                </div>
+              }
+              <button type="button" (click)="addDueDate()">+ Add Date</button>
+            </div>
+          </fieldset>
+        }
+
+        <label class="first-due-label">
+          On which date should the first rental invoice be due?<span class="required">*</span>
+          @if (frequency !== 'custom') {
+            <select
+              formControlName="firstRentalDueDate"
+              [attr.disabled]="candidateDatesLoading() || candidateDates().length === 0 ? true : null"
+            >
+              <option value="" disabled>
+                {{
+                  candidateDatesLoading()
+                    ? 'Loading options…'
+                    : candidateDates().length === 0
+                      ? 'Complete the form above to see options'
+                      : 'Select a date'
+                }}
+              </option>
+              @for (date of candidateDates(); track date) {
+                <option [value]="date">{{ date }}</option>
+              }
+            </select>
+          } @else {
+            <mat-form-field appearance="outline" class="date-field">
+              <input
+                matInput
+                [matDatepicker]="firstRentalDueDatePicker"
+                formControlName="firstRentalDueDate"
+                (click)="firstRentalDueDatePicker.open()"
+              />
+              <mat-datepicker-toggle matIconSuffix [for]="firstRentalDueDatePicker"></mat-datepicker-toggle>
+              <mat-datepicker #firstRentalDueDatePicker></mat-datepicker>
+            </mat-form-field>
+          }
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Deposit (optional)</div>
+      <div class="panel-body grid">
+        <label>
+          Deposit Amount
+          <input type="number" step="0.01" formControlName="deposit" />
+        </label>
+        <mat-form-field appearance="outline" class="date-field">
+          <mat-label>Deposit Due Date</mat-label>
+          <input
+            matInput
+            [matDatepicker]="depositDueDatePicker"
+            formControlName="depositDueDate"
+            (click)="depositDueDatePicker.open()"
+          />
+          <mat-datepicker-toggle matIconSuffix [for]="depositDueDatePicker"></mat-datepicker-toggle>
+          <mat-datepicker #depositDueDatePicker></mat-datepicker>
+        </mat-form-field>
+        <mat-checkbox formControlName="depositCollected" class="deposit-collected-checkbox">
+          I have already collected the deposit, just create a record and mark as paid.
+        </mat-checkbox>
+      </div>
+    </section>
+
+    <section class="panel full-width-panel">
+      <div class="panel-header">Additional Fees</div>
+      <div class="panel-body">
+        @if (additionalCharges().length > 0) {
+          <table class="charges-table">
+            <thead>
+              <tr>
+                <th>Target</th>
+                <th>Items</th>
+                <th>Notes</th>
+                <th>Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (charge of additionalCharges(); track $index) {
+                <tr>
+                  <td>{{ additionalChargeTargets()[$index] }}</td>
+                  <td>{{ charge.items.length }} item(s)</td>
+                  <td>{{ charge.notes || '—' }}</td>
+                  <td>{{ additionalChargeTotal(charge) | currency }}</td>
+                  <td>
+                    <button type="button" (click)="removeAdditionalCharge($index)">Remove</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+
+        <button type="button" class="add-fee-btn" (click)="openAdditionalChargePanel()">
+          + Add Additional Fee (Optional)
+        </button>
+        <button type="button" class="add-fee-btn" (click)="openDepositChargePanel()">
+          + Add Deposit Fee (Optional)
+        </button>
+      </div>
+    </section>
+    </div>
+
+    <button
+      type="button"
+      class="submit-btn"
+      [disabled]="previewLoading()"
+      (click)="generatePreview()"
+    >
+      {{ previewLoading() ? 'Generating…' : 'Generate Preview' }}
+    </button>
+  </form>
+
+  <section class="right-column results-column">
+    <div class="panel">
+      <div class="panel-header">Rent Schedule</div>
+      <div class="panel-body">
+        @if (previewError()) {
+          <div class="banner error">{{ previewError() }}</div>
+        }
+
+        @if (previewResult(); as res) {
+          <div class="banner success">
+            {{ res.totalInvoices }} payments generated — total
+            {{ res.totalAmount | number: '1.2-2' }}
+          </div>
+
+          @if (editRowError()) {
+            <div class="banner error">{{ editRowError() }}</div>
+          }
+
+          <div class="schedule-table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Scheduled Date</th>
+                  <th>Due Date</th>
+                  <th>Rent</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of res.rows; track row.scheduledDate; let i = $index) {
+                  <tr>
+                    <td>{{ row.scheduledDate }}</td>
+                    @if (editingRowIndex() === i) {
+                      <td>
+                        <input
+                          type="date"
+                          [value]="editRowDueDate()"
+                          (input)="editRowDueDate.set($any($event.target).value)"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          step="0.01"
+                          [value]="editRowRent()"
+                          (input)="editRowRent.set($any($event.target).valueAsNumber)"
+                        />
+                      </td>
+                      <td>
+                        <button type="button" (click)="saveEditRow(i)">Save</button>
+                        <button type="button" (click)="cancelEditRow()">Cancel</button>
+                      </td>
+                    } @else {
+                      <td>{{ row.dueDate }}</td>
+                      <td>{{ row.rent | number: '1.2-2' }}</td>
+                      <td>
+                        <button type="button" [disabled]="saving()" (click)="startEditRow(i)">Edit</button>
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <button
+            type="button"
+            class="submit-btn"
+            [disabled]="saving()"
+            (click)="save()"
+          >
+            {{ saving() ? 'Saving…' : 'Save Rent Agreement' }}
+          </button>
+
+          @if (saveError()) {
+            <div class="banner error">{{ saveError() }}</div>
+          }
+
+          @if (saveResult(); as savedRes) {
+            <div class="banner success">
+              Saved as agreement <strong>{{ savedRes.agreementId }}</strong> ({{ savedRes.status }})
+            </div>
+          }
+        } @else {
+          <p class="empty-state">Fill in the form and click "Generate Preview" to see the schedule here.</p>
+        }
+      </div>
+    </div>
+  </section>
+  </div>
+
+  @if (showAdditionalChargePanel()) {
+    <app-additional-charge-panel
+      [propertyOwnerId]="form.get('propertyOwnerId')!.value"
+      (created)="onAdditionalChargeCreated($event)"
+      (closed)="closeAdditionalChargePanel()"
+    />
+  }
+
+  @if (showDepositChargePanel()) {
+    <app-additional-charge-panel
+      [depositOnly]="true"
+      [propertyOwnerId]="form.get('propertyOwnerId')!.value"
+      (created)="onDepositChargeCreated($event)"
+      (closed)="closeDepositChargePanel()"
+    />
+  }
+</div>

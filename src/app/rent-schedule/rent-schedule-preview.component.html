@@ -1,0 +1,241 @@
+<div class="preview-page">
+  <h1>Rent Schedule Preview</h1>
+  <p class="subtitle">Generate a rent payment schedule preview — nothing is saved.</p>
+
+  <div class="layout">
+  <form [formGroup]="form" (ngSubmit)="submit()" class="preview-form left-column">
+    <section class="panel">
+      <div class="panel-header">Lease Dates</div>
+      <div class="panel-body grid">
+        <label>
+          Lease Term Type
+          <select formControlName="leaseTermType">
+            @for (option of leaseTermTypes; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+
+        <div class="date-row">
+          <label>
+            Start Date
+            <input type="date" formControlName="startDate" />
+          </label>
+
+          @if (leaseTermType === 'fixed') {
+            <label>
+              End Date
+              <input type="date" formControlName="endDate" />
+            </label>
+          }
+        </div>
+
+        @if (leaseTermType === 'month_to_month') {
+          <label>
+            Number of Payments to Preview
+            <input type="number" formControlName="monthToMonthInvoiceCount" />
+          </label>
+
+          <label>
+            Next Lease Start Date (optional)
+            <input type="date" formControlName="nextLeaseStartDate" />
+          </label>
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Rent</div>
+      <div class="panel-body">
+        <div class="grid">
+          <label>
+            Payment Frequency
+            <select formControlName="frequency">
+              @for (option of frequencies; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+          </label>
+
+          <label>
+            Rent
+            <input type="number" step="0.01" formControlName="rent" />
+          </label>
+        </div>
+
+        @if (frequency === 'monthly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on the</span>
+            <select formControlName="dueOnDay">
+              @for (day of dayOfMonthOptions; track day.value) {
+                <option [value]="day.value">{{ day.label }}</option>
+              }
+            </select>
+            <span class="due-on-suffix">of every month</span>
+          </div>
+        }
+
+        @if (frequency === 'bi_monthly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on the</span>
+            @for (control of dueOnDays.controls; track $index) {
+              <select [formControl]="$any(control)">
+                @for (day of dayOfMonthOptions; track day.value) {
+                  <option [value]="day.value">{{ day.label }}</option>
+                }
+              </select>
+              @if ($index === 0) {
+                <span class="due-on-suffix">and the</span>
+              }
+            }
+            <span class="due-on-suffix">of every month</span>
+          </div>
+        }
+
+        @if (frequency === 'weekly' || frequency === 'bi_weekly') {
+          <div class="due-on-row">
+            <span class="due-on-label">Due on</span>
+            <select formControlName="dayOfWeek">
+              @for (day of weekdays; track day.value) {
+                <option [value]="day.value">{{ day.label }}</option>
+              }
+            </select>
+            <span class="due-on-suffix">{{
+              frequency === 'weekly' ? 'of every week' : 'of every other week'
+            }}</span>
+          </div>
+        }
+
+        @if (frequency === 'semesterly') {
+          <fieldset class="frequency-config">
+            <legend>Semi-Annual Cycle Dates</legend>
+            <div class="inline-fields" formArrayName="cycle">
+              @for (group of cycle.controls; track $index) {
+                <div [formGroupName]="$index" class="cycle-entry">
+                  <label>
+                    Month {{ $index + 1 }}
+                    <input type="number" min="1" max="12" formControlName="month" />
+                  </label>
+                  <label>
+                    Day
+                    <input type="number" min="1" max="31" formControlName="day" />
+                  </label>
+                </div>
+              }
+            </div>
+          </fieldset>
+        }
+
+        @if (frequency === 'custom') {
+          <fieldset class="frequency-config">
+            <legend>Custom Due Dates</legend>
+            <div formArrayName="dueDates" class="custom-dates">
+              @for (control of dueDates.controls; track $index) {
+                <div class="inline-fields">
+                  <input type="date" [formControl]="$any(control)" />
+                  <button type="button" (click)="removeDueDate($index)">Remove</button>
+                </div>
+              }
+              <button type="button" (click)="addDueDate()">+ Add Date</button>
+            </div>
+          </fieldset>
+        }
+
+        <label class="first-due-label">
+          On which date should the first rental invoice be due?<span class="required">*</span>
+          @if (frequency !== 'custom') {
+            <select
+              formControlName="firstRentalDueDate"
+              [attr.disabled]="candidateDatesLoading() || candidateDates().length === 0 ? true : null"
+            >
+              <option value="" disabled>
+                {{
+                  candidateDatesLoading()
+                    ? 'Loading options…'
+                    : candidateDates().length === 0
+                      ? 'Complete the form above to see options'
+                      : 'Select a date'
+                }}
+              </option>
+              @for (date of candidateDates(); track date) {
+                <option [value]="date">{{ date }}</option>
+              }
+            </select>
+          } @else {
+            <input type="date" formControlName="firstRentalDueDate" />
+          }
+        </label>
+        <p class="helper-text">
+          We'll immediately create an unpaid invoice due on whichever date you select. Invoices
+          will continue to generate due from that date onward.
+        </p>
+      </div>
+    </section>
+
+    <fieldset class="overrides" formArrayName="overrides">
+      <legend>Manually-Adjusted Rows (Overrides) — optional</legend>
+      @for (group of overrides.controls; track $index) {
+        <div [formGroupName]="$index" class="override-entry">
+          <label>
+            Scheduled Date
+            <input type="date" formControlName="scheduledDate" />
+          </label>
+          <label>
+            New Due Date
+            <input type="date" formControlName="dueDate" />
+          </label>
+          <label>
+            New Rent
+            <input type="number" step="0.01" formControlName="rent" />
+          </label>
+          <button type="button" (click)="removeOverride($index)">Remove</button>
+        </div>
+      }
+      <button type="button" (click)="addOverride()">+ Add Override</button>
+    </fieldset>
+
+    <button type="submit" class="submit-btn" [disabled]="loading()">
+      {{ loading() ? 'Generating…' : 'Generate Preview' }}
+    </button>
+  </form>
+
+  <section class="right-column results-column">
+    <div class="panel">
+      <div class="panel-header">Rent Schedule</div>
+      <div class="panel-body">
+        @if (requestError()) {
+          <div class="banner error">{{ requestError() }}</div>
+        }
+
+        @if (result(); as res) {
+          <div class="banner success">
+            {{ res.totalInvoices }} payments generated — total
+            {{ res.totalAmount | number: '1.2-2' }}
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Scheduled Date</th>
+                <th>Due Date</th>
+                <th>Rent</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of res.rows; track row.scheduledDate) {
+                <tr>
+                  <td>{{ row.scheduledDate }}</td>
+                  <td>{{ row.dueDate }}</td>
+                  <td>{{ row.rent | number: '1.2-2' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="empty-state">Fill in the form and click "Generate Preview" to see the schedule here.</p>
+        }
+      </div>
+    </div>
+  </section>
+  </div>
+</div>

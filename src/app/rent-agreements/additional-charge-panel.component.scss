@@ -1,0 +1,397 @@
+:host {
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+.panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, 100vw);
+  background: #fff;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #eee;
+
+  h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #1a3d66;
+  }
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #555;
+  padding: 0;
+
+  &:hover {
+    color: #000;
+  }
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+
+  h3 {
+    margin: 0;
+    color: #1a3d66;
+    font-size: 1rem;
+  }
+}
+
+.items-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.items-header,
+.items-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.6fr 0.7fr 0.7fr 0.7fr auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.items-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #888;
+  font-weight: 600;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.items-row {
+  select,
+  input {
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    width: 100%;
+  }
+
+  .amount-field {
+    background: #f0f0f0;
+    color: #333;
+  }
+}
+
+.remove-item-btn {
+  background: none;
+  border: none;
+  color: #c0392b;
+  font-size: 0.8rem;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.add-item-btn {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #1a56db;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.notes-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #888;
+
+  textarea {
+    min-height: 90px;
+    padding: 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+  }
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  color: #1a3d66;
+  font-weight: 600;
+
+  input {
+    width: 90px;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-align: right;
+  }
+}
+
+.charge-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #333;
+  font-weight: 500;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 0;
+}
+
+.recurring-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.recurring-label {
+  font-weight: 700;
+  color: #1a3d66;
+  font-size: 0.9rem;
+
+  small {
+    display: block;
+    font-weight: 400;
+    color: #888;
+    text-transform: none;
+  }
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  span {
+    color: #999;
+
+    &.active {
+      color: #1a56db;
+      font-weight: 700;
+    }
+  }
+
+  input {
+    accent-color: #1a56db;
+  }
+}
+
+.due-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #333;
+  max-width: 220px;
+
+  input {
+    font-weight: 400;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+
+  .required {
+    color: #c0392b;
+  }
+}
+
+.recurring-fields {
+  &.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+
+  label:not(.checkbox-label) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #333;
+
+    input,
+    select {
+      font-weight: 400;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+  }
+}
+
+.due-on-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+
+  select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+}
+
+.due-on-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.due-on-suffix {
+  color: #333;
+}
+
+fieldset.frequency-config {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 1rem;
+
+  legend {
+    font-weight: 600;
+    padding: 0 0.5rem;
+  }
+}
+
+.inline-fields {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.cycle-entry {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #333;
+
+    input {
+      font-weight: 400;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 5rem;
+    }
+  }
+}
+
+.custom-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panel-footer {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #eee;
+}
+
+.submit-btn {
+  background: #1a56db;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: #1544ab;
+  }
+}
+
+.cancel-btn {
+  background: #fff;
+  color: #1a56db;
+  border: 1px solid #1a56db;
+  padding: 0.6rem 1.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: #f0f5ff;
+  }
+}

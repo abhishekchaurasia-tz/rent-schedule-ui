@@ -1,0 +1,257 @@
+<div class="panel-overlay" (click)="close()"></div>
+
+<div class="side-panel">
+  <div class="panel-title-row">
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">&times;</button>
+    <h2>{{ depositOnly ? 'Add Additional Deposit Fee (Optional) Record' : 'Add Additional Fee (Optional) Record' }}</h2>
+  </div>
+
+  <form [formGroup]="form" class="panel-body">
+    <h3>Invoice Item Details</h3>
+
+    @if (lineItems().length === 0) {
+      <div class="banner error">
+        No catalog items are available to pick from yet.
+      </div>
+    }
+
+    <div class="items-table" formArrayName="items">
+      <div class="items-header">
+        <span>Item</span>
+        <span>Description</span>
+        <span>Quantity</span>
+        <span>Rate</span>
+        <span>Amount</span>
+        <span></span>
+      </div>
+
+      @for (group of items.controls; track $index) {
+        <div [formGroupName]="$index" class="items-row">
+          <select formControlName="lineItemId">
+            <option value="" disabled>Select Item</option>
+            @for (lineItem of lineItems(); track lineItem.id) {
+              <option [value]="lineItem.id">{{ lineItem.name }}</option>
+            }
+          </select>
+          <input type="text" formControlName="description" placeholder="Description" />
+          <input
+            type="number"
+            step="0.01"
+            formControlName="quantity"
+            (input)="recalculateAmount($index)"
+          />
+          <input type="number" step="0.01" formControlName="rate" (input)="recalculateAmount($index)" />
+          <input type="number" formControlName="amount" class="amount-field" readonly />
+          @if (items.length > 1) {
+            <button type="button" class="remove-item-btn" (click)="removeItem($index)">Remove</button>
+          }
+        </div>
+      }
+    </div>
+
+    <button type="button" class="add-item-btn" (click)="addItem()">+ Add Item</button>
+
+    <div class="notes-summary-row">
+      <label class="notes-label">
+        Notes
+        <textarea formControlName="notes" placeholder="You can add additional notes here"></textarea>
+      </label>
+
+      <div class="summary">
+        <div class="summary-row">
+          <span>Sub Amount:</span>
+          <strong>{{ subAmount | currency }}</strong>
+        </div>
+        <div class="summary-row">
+          <span>Already Paid:</span>
+          <input type="number" step="0.01" formControlName="alreadyPaid" />
+        </div>
+        <div class="summary-row">
+          <span>Balance Due:</span>
+          <strong>{{ balanceDue | currency }}</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="charge-options-row">
+      <label class="checkbox-label">
+        <input type="checkbox" formControlName="isGrouped" />
+        Group with other fees
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" formControlName="isSharedByAll" />
+        Split evenly among all tenants
+      </label>
+    </div>
+
+    <hr />
+
+    <div class="recurring-row">
+      <span class="recurring-label">Is this a Recurring Invoice?</span>
+      <label class="toggle">
+        <span [class.active]="!isRecurring">No</span>
+        <input type="checkbox" formControlName="isRecurring" />
+        <span [class.active]="isRecurring">Yes</span>
+      </label>
+    </div>
+
+    @if (!depositOnly) {
+      <div class="recurring-row">
+        <span class="recurring-label">Make this a line item on the rental invoice?</span>
+        <label class="toggle">
+          <span [class.active]="!form.get('attachedWithRentalInvoice')!.value">No</span>
+          <input type="checkbox" formControlName="attachedWithRentalInvoice" />
+          <span [class.active]="form.get('attachedWithRentalInvoice')!.value">Yes</span>
+        </label>
+      </div>
+    }
+
+    @if (!isRecurring) {
+      <mat-form-field appearance="outline" class="date-field">
+        <mat-label>Due Date</mat-label>
+        <input
+          matInput
+          [matDatepicker]="dueDatePicker"
+          formControlName="dueDate"
+          (click)="dueDatePicker.open()"
+        />
+        <mat-datepicker-toggle matIconSuffix [for]="dueDatePicker"></mat-datepicker-toggle>
+        <mat-datepicker #dueDatePicker></mat-datepicker>
+      </mat-form-field>
+    } @else {
+      <div class="recurring-fields grid">
+        <label>
+          Frequency <span class="required">*</span>
+          <select formControlName="frequency">
+            @for (option of frequencies; track option.value) {
+              <option [value]="option.value">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+      </div>
+
+      @if (frequency === 'monthly') {
+        <div class="due-on-row">
+          <span class="due-on-label">Due on the</span>
+          <select formControlName="dueOnDay">
+            @for (day of dayOfMonthOptions; track day.value) {
+              <option [value]="day.value">{{ day.label }}</option>
+            }
+          </select>
+          <span class="due-on-suffix">of every month</span>
+        </div>
+      }
+
+      @if (frequency === 'bi_monthly') {
+        <div class="due-on-row">
+          <span class="due-on-label">Due on the</span>
+          @for (control of dueOnDays.controls; track $index) {
+            <select [formControl]="$any(control)">
+              @for (day of dayOfMonthOptions; track day.value) {
+                <option [value]="day.value">{{ day.label }}</option>
+              }
+            </select>
+            @if ($index === 0) {
+              <span class="due-on-suffix">and the</span>
+            }
+          }
+          <span class="due-on-suffix">of every month</span>
+        </div>
+      }
+
+      @if (frequency === 'weekly' || frequency === 'bi_weekly') {
+        <div class="due-on-row">
+          <span class="due-on-label">Due on</span>
+          <select formControlName="dayOfWeek">
+            @for (day of weekdays; track day.value) {
+              <option [value]="day.value">{{ day.label }}</option>
+            }
+          </select>
+          <span class="due-on-suffix">{{
+            frequency === 'weekly' ? 'of every week' : 'of every other week'
+          }}</span>
+        </div>
+      }
+
+      @if (frequency === 'semesterly') {
+        <fieldset class="frequency-config">
+          <legend>Semi-Annual Cycle Dates</legend>
+          <div class="inline-fields" formArrayName="cycle">
+            @for (group of cycle.controls; track $index) {
+              <div [formGroupName]="$index" class="cycle-entry">
+                <label>
+                  Month {{ $index + 1 }}
+                  <input type="number" min="1" max="12" formControlName="month" />
+                </label>
+                <label>
+                  Day
+                  <input type="number" min="1" max="31" formControlName="day" />
+                </label>
+              </div>
+            }
+          </div>
+        </fieldset>
+      }
+
+      @if (frequency === 'custom') {
+        <fieldset class="frequency-config">
+          <legend>Custom Due Dates</legend>
+          <div formArrayName="dueDates" class="custom-dates">
+            @for (control of dueDates.controls; track $index) {
+              <div class="inline-fields">
+                <mat-form-field appearance="outline" class="date-field">
+                  <input
+                    matInput
+                    [matDatepicker]="chargeDueDatePicker"
+                    [formControl]="$any(control)"
+                    (click)="chargeDueDatePicker.open()"
+                  />
+                  <mat-datepicker-toggle matIconSuffix [for]="chargeDueDatePicker"></mat-datepicker-toggle>
+                  <mat-datepicker #chargeDueDatePicker></mat-datepicker>
+                </mat-form-field>
+                <button type="button" (click)="removeDueDate($index)">Remove</button>
+              </div>
+            }
+            <button type="button" (click)="addDueDate()">+ Add Date</button>
+          </div>
+        </fieldset>
+      }
+
+      <div class="recurring-fields grid">
+        <mat-form-field appearance="outline" class="date-field">
+          <mat-label>Start Date</mat-label>
+          <input
+            matInput
+            [matDatepicker]="recurringStartDatePicker"
+            formControlName="startDate"
+            (click)="recurringStartDatePicker.open()"
+          />
+          <mat-datepicker-toggle matIconSuffix [for]="recurringStartDatePicker"></mat-datepicker-toggle>
+          <mat-datepicker #recurringStartDatePicker></mat-datepicker>
+        </mat-form-field>
+        @if (!form.get('hasNoEndDate')!.value) {
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>End Date</mat-label>
+            <input
+              matInput
+              [matDatepicker]="recurringEndDatePicker"
+              formControlName="endDate"
+              (click)="recurringEndDatePicker.open()"
+            />
+            <mat-datepicker-toggle matIconSuffix [for]="recurringEndDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #recurringEndDatePicker></mat-datepicker>
+          </mat-form-field>
+        }
+        <label class="checkbox-label">
+          <input type="checkbox" formControlName="hasNoEndDate" />
+          No End Date
+        </label>
+      </div>
+    }
+  </form>
+
+  <div class="panel-footer">
+    <button type="button" class="submit-btn" (click)="create()">Create</button>
+    <button type="button" class="cancel-btn" (click)="close()">Cancel</button>
+  </div>
+</div>
