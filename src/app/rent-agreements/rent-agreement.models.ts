@@ -40,18 +40,6 @@ export interface AdditionalChargeCreationRequest {
 }
 
 /**
- * One charge emitted by `AdditionalChargePanelComponent`, tagged with which item group it was built
- * from. The panel keeps Rent-flavored and Deposit-flavored catalog items in separate lists (the
- * backend rejects a single charge whose items resolve to mixed categories,
- * `MixedAdditionalChargeItemType`), so a single "Add Additional Fee" submission can produce up to
- * two of these — one per non-empty group — rather than ever building a mixed-category charge.
- */
-export interface CreatedAdditionalCharge {
-  charge: AdditionalChargeCreationRequest;
-  target: 'Rent' | 'Deposit';
-}
-
-/**
  * Bound directly to `POST /rent-agreements`. Unlike {@link import('../rent-schedule/rent-schedule.models').PreviewRentScheduleRequest},
  * there is no `leaseTermType` field — the backend derives it from whether `endDate` is present.
  */

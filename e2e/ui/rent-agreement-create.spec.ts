@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * Drives the "Add Tenant(s)" flow end to end through the UI. The backend is mocked via
- * `page.route` so this suite is deterministic and doesn't require the .NET API to be running —
- * see `e2e/api/rent-schedule.api.spec.ts` for the real-backend contract checks.
+ * Drives the "Add Lease" flow end to end through the UI. The backend is mocked via `page.route` so
+ * this suite is deterministic and doesn't require the .NET API to be running — see
+ * `e2e/api/rent-schedule.api.spec.ts` for the real-backend contract checks. There is no "Generate
+ * Preview" button — the schedule auto-populates ~300ms after the last edit once the required
+ * fields are filled, so tests just wait on the resulting banner/table rather than clicking one.
  */
-test.describe('Add Tenant(s) — rent agreement create', () => {
+test.describe('Add Lease — rent agreement create', () => {
   test.beforeEach(async ({ page }) => {
     await page.route('**/api/v1/rent-schedule/first-rental-due-date-options', async (route) => {
       await route.fulfill({
@@ -57,8 +59,6 @@ test.describe('Add Tenant(s) — rent agreement create', () => {
       .getByLabel('On which date should the first rental invoice be due?')
       .selectOption('2026-09-01');
 
-    await page.getByRole('button', { name: 'Generate Preview' }).click();
-
     await expect(page.getByText('2 payments generated — total 200.00')).toBeVisible();
     await expect(page.getByRole('cell', { name: '2026-09-01' }).first()).toBeVisible();
 
@@ -87,8 +87,6 @@ test.describe('Add Tenant(s) — rent agreement create', () => {
     await page
       .getByLabel('On which date should the first rental invoice be due?')
       .selectOption('2026-09-01');
-
-    await page.getByRole('button', { name: 'Generate Preview' }).click();
 
     await expect(page.getByText('Start date must be in the future.')).toBeVisible();
   });

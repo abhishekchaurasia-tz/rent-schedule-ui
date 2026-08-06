@@ -101,8 +101,13 @@ export class RentAgreementCreatePage {
     await this.page.getByText('I have already collected the deposit').click();
   }
 
+  /**
+   * There is no "Generate Preview" button — the schedule auto-populates ~300ms after the last form
+   * edit once the required fields are filled. This just waits out that debounce (plus a margin for
+   * the mocked round trip) rather than clicking anything.
+   */
   async generatePreview(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Generate Preview' }).click();
+    await this.page.waitForTimeout(400);
   }
 
   async save(): Promise<void> {

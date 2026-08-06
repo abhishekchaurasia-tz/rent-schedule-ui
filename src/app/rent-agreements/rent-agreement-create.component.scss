@@ -104,11 +104,13 @@ h1 {
 .panel {
   border: 1px solid #d5dde5;
   border-radius: 8px;
-  overflow: hidden;
   background: #fff;
 }
 
 .panel-header {
+  // Rounds the header's top corners directly instead of relying on `.panel { overflow: hidden }` —
+  // that clipping cut off the row-menu dropdown (`.row-menu`), which needs to overflow the panel.
+  border-radius: 8px 8px 0 0;
   background: #eaf2fb;
   color: #1a3d66;
   font-weight: 700;
@@ -284,6 +286,15 @@ button {
   overflow-y: auto;
 }
 
+.row-edit-date-field {
+  // Shrinks the usual full-panel-width .date-field down to fit inside a table cell.
+  width: 140px;
+
+  &.mat-mdc-form-field {
+    font-size: 0.85rem;
+  }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -302,6 +313,86 @@ table {
     font-size: 0.85rem;
     text-transform: uppercase;
     color: #666;
+  }
+
+  tr.row-deleted {
+    td {
+      color: #aaa;
+      text-decoration: line-through;
+    }
+  }
+}
+
+.row-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: transparent;
+}
+
+.row-menu-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: #555;
+
+  &:hover {
+    color: #000;
+  }
+}
+
+.row-menu {
+  // Rendered as a sibling of .schedule-table-wrapper, positioned from the clicked button's
+  // getBoundingClientRect() (see rowMenuPosition()) — an ancestor's overflow clips any descendant's
+  // paint regardless of position:fixed, so nesting this inside that scrollable wrapper would cut it
+  // off for rows near its bottom edge.
+  position: fixed;
+  z-index: 11;
+  background: #fff;
+  border: 1px solid #d5dde5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  min-width: 110px;
+  overflow: hidden;
+
+  button {
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: #1a3d66;
+    font-weight: 600;
+
+    &:hover {
+      background: #eaf2fb;
+    }
+
+    &.danger {
+      color: #c0392b;
+
+      &:hover {
+        background: #fde8e8;
+      }
+    }
+  }
+}
+
+.restore-btn {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #1a56db;
+
+  &:hover {
+    color: #1544ab;
   }
 }
 

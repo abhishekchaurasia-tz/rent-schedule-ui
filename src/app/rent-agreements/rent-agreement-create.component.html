@@ -229,6 +229,9 @@
         <mat-checkbox formControlName="depositCollected" class="deposit-collected-checkbox">
           I have already collected the deposit, just create a record and mark as paid.
         </mat-checkbox>
+        <button type="button" class="add-fee-btn" (click)="openDepositChargePanel()">
+          + Add Deposit Fee (Optional)
+        </button>
       </div>
     </section>
 
@@ -265,21 +268,9 @@
         <button type="button" class="add-fee-btn" (click)="openAdditionalChargePanel()">
           + Add Additional Fee (Optional)
         </button>
-        <button type="button" class="add-fee-btn" (click)="openDepositChargePanel()">
-          + Add Deposit Fee (Optional)
-        </button>
       </div>
     </section>
     </div>
-
-    <button
-      type="button"
-      class="submit-btn"
-      [disabled]="previewLoading()"
-      (click)="generatePreview()"
-    >
-      {{ previewLoading() ? 'Generating…' : 'Generate Preview' }}
-    </button>
   </form>
 
   <section class="right-column results-column">
@@ -290,6 +281,10 @@
           <div class="banner error">{{ previewError() }}</div>
         }
 
+        @if (previewLoading()) {
+          <p class="empty-state">Generating preview…</p>
+        }
+
         @if (previewResult(); as res) {
           <div class="banner success">
             {{ res.totalInvoices }} payments generated — total
@@ -298,6 +293,10 @@
 
           @if (editRowError()) {
             <div class="banner error">{{ editRowError() }}</div>
+          }
+
+          @if (openRowMenuIndex() !== null) {
+            <div class="row-menu-overlay" (click)="closeRowMenu()"></div>
           }
 
           <div class="schedule-table-wrapper">
@@ -312,15 +311,36 @@
               </thead>
               <tbody>
                 @for (row of res.rows; track row.scheduledDate; let i = $index) {
-                  <tr>
+                  <tr [class.row-deleted]="deletedRowDates().has(row.scheduledDate)">
                     <td>{{ row.scheduledDate }}</td>
-                    @if (editingRowIndex() === i) {
+                    @if (deletedRowDates().has(row.scheduledDate)) {
+                      <td>{{ row.dueDate }}</td>
+                      <td>{{ row.rent | number: '1.2-2' }}</td>
                       <td>
-                        <input
-                          type="date"
-                          [value]="editRowDueDate()"
-                          (input)="editRowDueDate.set($any($event.target).value)"
-                        />
+                        <button
+                          type="button"
+                          class="restore-btn"
+                          [disabled]="saving()"
+                          (click)="restoreRow(row.scheduledDate)"
+                          aria-label="Restore"
+                          title="Restore"
+                        >
+                          ↺
+                        </button>
+                      </td>
+                    } @else if (editingRowIndex() === i) {
+                      <td>
+                        <mat-form-field appearance="outline" class="date-field row-edit-date-field">
+                          <input
+                            matInput
+                            [matDatepicker]="editRowDuePicker"
+                            [value]="editRowDueDateAsDate()"
+                            (dateChange)="onEditRowDueDateChange($event.value)"
+                            (click)="editRowDuePicker.open()"
+                          />
+                          <mat-datepicker-toggle matIconSuffix [for]="editRowDuePicker"></mat-datepicker-toggle>
+                          <mat-datepicker #editRowDuePicker></mat-datepicker>
+                        </mat-form-field>
                       </td>
                       <td>
                         <input
@@ -338,7 +358,15 @@
                       <td>{{ row.dueDate }}</td>
                       <td>{{ row.rent | number: '1.2-2' }}</td>
                       <td>
-                        <button type="button" [disabled]="saving()" (click)="startEditRow(i)">Edit</button>
+                        <button
+                          type="button"
+                          class="row-menu-btn"
+                          [disabled]="saving()"
+                          (click)="toggleRowMenu(i, $event)"
+                          aria-label="Row actions"
+                        >
+                          ⋮
+                        </button>
                       </td>
                     }
                   </tr>
@@ -346,6 +374,15 @@
               </tbody>
             </table>
           </div>
+
+          @if (openRowMenuIndex() !== null && rowMenuPosition(); as pos) {
+            <div class="row-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
+              <button type="button" (click)="startEditRow(openRowMenuIndex()!)">Edit</button>
+              <button type="button" class="danger" (click)="deleteRow(res.rows[openRowMenuIndex()!].scheduledDate)">
+                Delete
+              </button>
+            </div>
+          }
 
           <button
             type="button"
@@ -365,8 +402,8 @@
               Saved as agreement <strong>{{ savedRes.agreementId }}</strong> ({{ savedRes.status }})
             </div>
           }
-        } @else {
-          <p class="empty-state">Fill in the form and click "Generate Preview" to see the schedule here.</p>
+        } @else if (!previewLoading()) {
+          <p class="empty-state">Fill in the lease details above — the schedule will appear here automatically.</p>
         }
       </div>
     </div>

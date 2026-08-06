@@ -137,6 +137,13 @@
   }
 }
 
+.notes-summary-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
 .notes-label {
   display: flex;
   flex-direction: column;
@@ -212,13 +219,6 @@ hr {
   font-weight: 700;
   color: #1a3d66;
   font-size: 0.9rem;
-
-  small {
-    display: block;
-    font-weight: 400;
-    color: #888;
-    text-transform: none;
-  }
 }
 
 .toggle {

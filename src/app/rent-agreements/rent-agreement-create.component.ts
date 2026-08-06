@@ -22,7 +22,6 @@ import { toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
   AdditionalChargeCreationRequest,
-  CreatedAdditionalCharge,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse
 } from './rent-agreement.models';
@@ -115,6 +114,27 @@ export class RentAgreementCreateComponent {
   readonly editRowRent = signal<number | null>(null);
   readonly editRowError = signal<string | null>(null);
 
+  /** Index of the row whose kebab (⋮) menu is currently open, or `null` if none. */
+  readonly openRowMenuIndex = signal<number | null>(null);
+
+  /**
+   * Viewport coordinates for the open row menu, computed from the clicked kebab button's
+   * `getBoundingClientRect()`. The menu itself renders as a `position: fixed` sibling of the
+   * (`max-height` + `overflow-y: auto`) schedule table wrapper rather than a child of any row —
+   * an ancestor's `overflow` clips *any* descendant's paint, `position: fixed` included, so a menu
+   * nested inside that scrolling wrapper would get cut off for rows near its bottom edge.
+   */
+  readonly rowMenuPosition = signal<{ top: number; left: number } | null>(null);
+
+  /**
+   * `scheduledDate`s of rows the user has removed from the schedule via the kebab menu's Delete,
+   * client-side only — the backend has no delete/restore API for schedule rows at all (there isn't
+   * even a way to fetch a saved agreement's rows back yet, only create + stateless preview). A
+   * deleted row stays visible (greyed out, with a Restore affordance) until Save; only the
+   * non-deleted rows are actually sent in `scheduleRows`.
+   */
+  readonly deletedRowDates = signal<Set<string>>(new Set());
+
   /**
    * A snapshot of the schedule-affecting fields as of the last successful preview. Used to tell a
    * change to a schedule-irrelevant field (deposit, property ids) apart from one that actually
@@ -171,13 +191,14 @@ export class RentAgreementCreateComponent {
       });
 
     this.form.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe(() => {
-      if (this.previewResult() && this.scheduleSignature() !== this.lastPreviewSignature) {
-        this.previewResult.set(null);
+      if (this.scheduleSignature() !== this.lastPreviewSignature) {
         this.saveResult.set(null);
       }
       this.refreshCandidateDates();
+      this.maybeAutoGeneratePreview();
     });
     this.refreshCandidateDates();
+    this.maybeAutoGeneratePreview();
   }
 
   get frequency(): RentFrequency {
@@ -224,22 +245,13 @@ export class RentAgreementCreateComponent {
     this.showDepositChargePanel.set(false);
   }
 
-  /**
-   * The panel keeps Rent-flavored and Deposit-flavored items in separate groups (a single charge
-   * can never mix categories — backend `MixedAdditionalChargeItemType`), so one "Add Additional
-   * Fee" submission can emit up to two charges here, one per non-empty group.
-   */
-  onAdditionalChargeCreated(charges: CreatedAdditionalCharge[]): void {
-    for (const { charge, target } of charges) {
-      this.appendAdditionalCharge(charge, target);
-    }
+  onAdditionalChargeCreated(charge: AdditionalChargeCreationRequest): void {
+    this.appendAdditionalCharge(charge, 'Rent');
     this.showAdditionalChargePanel.set(false);
   }
 
-  onDepositChargeCreated(charges: CreatedAdditionalCharge[]): void {
-    for (const { charge, target } of charges) {
-      this.appendAdditionalCharge(charge, target);
-    }
+  onDepositChargeCreated(charge: AdditionalChargeCreationRequest): void {
+    this.appendAdditionalCharge(charge, 'Deposit');
     this.showDepositChargePanel.set(false);
   }
 
@@ -257,9 +269,64 @@ export class RentAgreementCreateComponent {
     return charge.items.reduce((sum, item) => sum + item.amount, 0);
   }
 
+  /**
+   * Auto-triggers a preview once every field the request needs is filled in — there is no manual
+   * "Generate Preview" button; the schedule simply appears as soon as it can be computed. Guarded
+   * against re-firing for a combination already previewed (`lastPreviewSignature`) and against
+   * overlapping calls while one is still in flight.
+   */
+  private maybeAutoGeneratePreview(): void {
+    if (this.previewLoading()) {
+      return;
+    }
+    if (this.scheduleSignature() === this.lastPreviewSignature) {
+      return;
+    }
+    if (!this.canGeneratePreview()) {
+      return;
+    }
+    this.generatePreview();
+  }
+
+  /**
+   * Whether every field `preview()`'s request needs is actually filled in. Deliberately stricter
+   * than `this.form.invalid` — `endDate`, `monthToMonthInvoiceCount`, and the per-frequency
+   * `frequencyConfig` fields (`dueOnDay`, `dueOnDays`, `dayOfWeek`, `cycle`, `dueDates`) carry no
+   * `Validators.required` of their own (their relevance depends on `leaseTermType`/`frequency`), so
+   * the form can be Angular-"valid" while still missing what the API actually requires.
+   */
+  private canGeneratePreview(): boolean {
+    const value = this.form.value;
+
+    if (!value.startDate || !value.firstRentalDueDate || !(Number(value.rent) > 0)) {
+      return false;
+    }
+    if (value.leaseTermType === 'fixed' && !value.endDate) {
+      return false;
+    }
+    if (value.leaseTermType === 'month_to_month' && !value.monthToMonthInvoiceCount) {
+      return false;
+    }
+
+    switch (value.frequency as RentFrequency) {
+      case 'monthly':
+        return !!value.dueOnDay;
+      case 'bi_monthly':
+        return (value.dueOnDays as unknown[]).every((day) => !!day);
+      case 'weekly':
+      case 'bi_weekly':
+        return value.dayOfWeek !== null && value.dayOfWeek !== undefined && value.dayOfWeek !== '';
+      case 'semesterly':
+        return (value.cycle as { month: unknown; day: unknown }[]).every((entry) => !!entry.month && !!entry.day);
+      case 'custom':
+        return (value.dueDates as unknown[]).some((date) => !!date);
+      default:
+        return false;
+    }
+  }
+
   generatePreview(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
+    if (!this.canGeneratePreview()) {
       return;
     }
 
@@ -289,12 +356,32 @@ export class RentAgreementCreateComponent {
           this.previewResult.set(response);
           this.lastPreviewSignature = this.scheduleSignature();
           this.previewLoading.set(false);
+          // A fresh preview means entirely new row identities — any prior deletions no longer
+          // correspond to anything meaningful.
+          this.deletedRowDates.set(new Set());
+          this.closeRowMenu();
         },
         error: (err: HttpErrorResponse) => {
           this.previewError.set(RentAgreementCreateComponent.describeError(err));
           this.previewLoading.set(false);
         }
       });
+  }
+
+  toggleRowMenu(index: number, event: MouseEvent): void {
+    if (this.openRowMenuIndex() === index) {
+      this.closeRowMenu();
+      return;
+    }
+
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.rowMenuPosition.set({ top: rect.bottom, left: rect.right - 110 });
+    this.openRowMenuIndex.set(index);
+  }
+
+  closeRowMenu(): void {
+    this.openRowMenuIndex.set(null);
+    this.rowMenuPosition.set(null);
   }
 
   /**
@@ -313,11 +400,49 @@ export class RentAgreementCreateComponent {
     this.editRowDueDate.set(row.dueDate);
     this.editRowRent.set(row.rent);
     this.editRowError.set(null);
+    this.closeRowMenu();
   }
 
   cancelEditRow(): void {
     this.editingRowIndex.set(null);
     this.editRowError.set(null);
+  }
+
+  /**
+   * `editRowDueDate` is stored as an ISO "YYYY-MM-DD" string (matching `ScheduleRow.dueDate`), but
+   * `mat-datepicker` (with `provideNativeDateAdapter()`, same as every other date field on this
+   * form) works in terms of native `Date` objects — this is the one place that ISO string needs to
+   * become a `Date` for display, parsed in local time to match `toIsoDate`'s own local-time
+   * formatting (avoids the UTC-shift-by-a-day bug plain `new Date(iso)` has).
+   */
+  editRowDueDateAsDate(): Date | null {
+    const iso = this.editRowDueDate();
+    if (!iso) {
+      return null;
+    }
+    return new Date(`${iso}T00:00:00`);
+  }
+
+  onEditRowDueDateChange(date: Date | null): void {
+    this.editRowDueDate.set(toIsoDate(date) ?? '');
+  }
+
+  /** Soft-deletes a row client-side (kebab menu → Delete) — excluded from `save()`'s scheduleRows
+   * but still shown, greyed out, with a Restore affordance until the user undoes it or re-previews. */
+  deleteRow(scheduledDate: string): void {
+    this.deletedRowDates.update((dates) => new Set(dates).add(scheduledDate));
+    this.closeRowMenu();
+    if (this.editingRowIndex() !== null) {
+      this.cancelEditRow();
+    }
+  }
+
+  restoreRow(scheduledDate: string): void {
+    this.deletedRowDates.update((dates) => {
+      const next = new Set(dates);
+      next.delete(scheduledDate);
+      return next;
+    });
   }
 
   /**
@@ -390,11 +515,16 @@ export class RentAgreementCreateComponent {
       deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
       depositDueDate: toIsoDate(value.depositDueDate),
       depositCollected: Boolean(value.depositCollected),
-      scheduleRows: preview.rows.map((row) => ({
-        scheduledDate: row.scheduledDate,
-        dueDate: row.dueDate,
-        rent: row.rent
-      })),
+      // Rows the user removed via the kebab menu's Delete are excluded here — there's no backend
+      // concept of a deleted row to reconcile against; from the API's point of view they simply
+      // never existed.
+      scheduleRows: preview.rows
+        .filter((row) => !this.deletedRowDates().has(row.scheduledDate))
+        .map((row) => ({
+          scheduledDate: row.scheduledDate,
+          dueDate: row.dueDate,
+          rent: row.rent
+        })),
       additionalCharges: this.additionalCharges()
     };
 

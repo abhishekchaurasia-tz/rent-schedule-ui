@@ -47,22 +47,17 @@ describe('RentAgreementCreateComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('does not generate a preview and marks all fields touched when the form is invalid', () => {
+  it('does not auto-generate a preview while required fields are incomplete', () => {
     fixture.detectChanges();
 
-    component.generatePreview();
-
-    httpMock.expectNone(previewUrl);
-    expect(component.form.get('startDate')!.touched).toBeTrue();
+    expect(() => httpMock.expectNone(previewUrl)).not.toThrow();
   });
 
-  it('generates a preview and does not attempt to save until the user clicks Save', fakeAsync(() => {
+  it('automatically generates a preview once the required fields are filled, without a button', fakeAsync(() => {
     fixture.detectChanges();
     fillValidForm();
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
-
-    component.generatePreview();
 
     const response: PreviewRentScheduleResponse = {
       rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
@@ -81,7 +76,6 @@ describe('RentAgreementCreateComponent', () => {
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
 
-    component.generatePreview();
     const previewResponse: PreviewRentScheduleResponse = {
       rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
       totalInvoices: 1,
@@ -126,7 +120,6 @@ describe('RentAgreementCreateComponent', () => {
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
 
-    component.generatePreview();
     httpMock.expectOne(previewUrl).flush({
       rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
       totalInvoices: 1,
@@ -135,6 +128,7 @@ describe('RentAgreementCreateComponent', () => {
 
     component.form.patchValue({ deposit: 500 });
     tick(300);
+    // Deposit isn't part of the schedule signature, so this re-fires candidateDates but not preview.
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
 
     component.save();
@@ -149,7 +143,6 @@ describe('RentAgreementCreateComponent', () => {
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
 
-    component.generatePreview();
     httpMock.expectOne(previewUrl).flush({
       rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
       totalInvoices: 1,
@@ -192,7 +185,7 @@ describe('RentAgreementCreateComponent', () => {
       items: [{ itemType: 'Pet Fee', description: 'One-time pet fee', quantity: 1, rate: 50, amount: 50 }]
     };
 
-    component.onAdditionalChargeCreated([{ charge, target: 'Rent' }]);
+    component.onAdditionalChargeCreated(charge);
 
     expect(component.showAdditionalChargePanel()).toBeFalse();
     expect(component.additionalCharges()).toEqual([charge]);
@@ -212,7 +205,7 @@ describe('RentAgreementCreateComponent', () => {
       isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
-    component.onAdditionalChargeCreated([{ charge, target: 'Rent' }]);
+    component.onAdditionalChargeCreated(charge);
 
     component.removeAdditionalCharge(0);
 
@@ -224,6 +217,11 @@ describe('RentAgreementCreateComponent', () => {
     fillValidForm();
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
+      totalInvoices: 1,
+      totalAmount: 100
+    } as PreviewRentScheduleResponse);
 
     const charge: AdditionalChargeCreationRequest = {
       alreadyPaid: 0,
@@ -235,14 +233,7 @@ describe('RentAgreementCreateComponent', () => {
       isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
-    component.onAdditionalChargeCreated([{ charge, target: 'Rent' }]);
-
-    component.generatePreview();
-    httpMock.expectOne(previewUrl).flush({
-      rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
-      totalInvoices: 1,
-      totalAmount: 100
-    } as PreviewRentScheduleResponse);
+    component.onAdditionalChargeCreated(charge);
 
     component.save();
 
