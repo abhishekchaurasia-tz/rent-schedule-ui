@@ -99,9 +99,9 @@ describe('RentAgreementCreateComponent', () => {
     const req = httpMock.expectOne(createUrl);
     expect(req.request.method).toBe('POST');
     expect(req.request.body.propertyUnitId).toBe('11111111-1111-1111-1111-111111111111');
-    // Unedited rows go up with isManualChanged: false — the field is always sent, never omitted.
+    // Unedited rows go up with isManualChanged/isCancelled: false — always sent, never omitted.
     expect(req.request.body.scheduleRows).toEqual(
-      previewResponse.rows.map((row) => ({ ...row, isManualChanged: false }))
+      previewResponse.rows.map((row) => ({ ...row, isManualChanged: false, isCancelled: false }))
     );
 
     const createResponse: CreateRentAgreementResponse = {
@@ -136,6 +136,29 @@ describe('RentAgreementCreateComponent', () => {
     return previewResponse;
   };
 
+  it('sends a pre-save deleted row with isCancelled: true, still present in scheduleRows (spec v39)', fakeAsync(() => {
+    previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    component.save();
+
+    const req = httpMock.expectOne(createUrl);
+    // The deleted row is still submitted — never omitted — but flagged isCancelled so the backend
+    // persists it directly with a Cancelled status instead of Planned.
+    expect(req.request.body.scheduleRows).toEqual([
+      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100, isManualChanged: false, isCancelled: false },
+      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, isManualChanged: false, isCancelled: true }
+    ]);
+
+    req.flush({
+      agreementId: '44444444-4444-4444-4444-444444444444',
+      status: 'draft',
+      depositCollected: false,
+      scheduleRows: [],
+      additionalCharges: []
+    } as CreateRentAgreementResponse);
+  }));
+
   it('flags a row whose rent was hand-edited and sends isManualChanged: true for it only', fakeAsync(() => {
     previewTwoRows();
 
@@ -150,8 +173,8 @@ describe('RentAgreementCreateComponent', () => {
 
     const req = httpMock.expectOne(createUrl);
     expect(req.request.body.scheduleRows).toEqual([
-      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 80, isManualChanged: true },
-      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, isManualChanged: false }
+      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 80, isManualChanged: true, isCancelled: false },
+      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, isManualChanged: false, isCancelled: false }
     ]);
 
     req.flush({
@@ -181,7 +204,8 @@ describe('RentAgreementCreateComponent', () => {
       scheduledDate: '2026-08-01',
       dueDate: '2026-08-05',
       rent: 100,
-      isManualChanged: false
+      isManualChanged: false,
+      isCancelled: false
     });
 
     req.flush({
@@ -212,6 +236,33 @@ describe('RentAgreementCreateComponent', () => {
     } as PreviewRentScheduleResponse);
 
     expect(component.isRowManuallyChanged('2026-08-01')).toBeFalse();
+  }));
+
+  it('keeps a deleted row deleted when a same-anchor re-preview fires (e.g. rent-only change)', fakeAsync(() => {
+    const previewResponse = previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    expect(component.deletedRowDates().has('2026-09-01')).toBeTrue();
+
+    // Only the rent changed — the recurrence-generated dates are identical, so the deletion must
+    // survive the debounced auto-preview this triggers.
+    component.form.patchValue({ rent: 250 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    httpMock.expectOne(previewUrl).flush({
+      rows: previewResponse.rows.map((row) => ({ ...row, rent: 250 })),
+      totalInvoices: 2,
+      totalAmount: 500
+    } as PreviewRentScheduleResponse);
+
+    expect(component.deletedRowDates().has('2026-09-01')).toBeTrue();
+
+    component.save();
+    const req = httpMock.expectOne(createUrl);
+    expect(req.request.body.scheduleRows).toEqual([
+      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 250, isManualChanged: false, isCancelled: false },
+      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 250, isManualChanged: false, isCancelled: true }
+    ]);
   }));
 
   it('does not save without a generated preview first', () => {

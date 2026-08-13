@@ -26,6 +26,7 @@ import {
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   RentAgreementDetailResponse,
+  ScheduleRowStatus,
   UpdateRentAgreementTermsRequest,
   toChargeCreationRequest
 } from './rent-agreement.models';
@@ -311,9 +312,9 @@ export class RentAgreementCreateComponent {
             dueDate: row.dueDate,
             rent: row.rent
           })),
-          totalInvoices: agreement.scheduleRows.filter((r) => r.status !== 'cancelled').length,
+          totalInvoices: agreement.scheduleRows.filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status)).length,
           totalAmount: agreement.scheduleRows
-            .filter((r) => r.status !== 'cancelled')
+            .filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status))
             .reduce((sum, row) => sum + row.rent, 0)
         });
 
@@ -324,7 +325,11 @@ export class RentAgreementCreateComponent {
           new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
         );
         this.cancelledRowDates.set(
-          new Set(agreement.scheduleRows.filter((r) => r.status === 'cancelled').map((r) => r.scheduledDate))
+          new Set(
+            agreement.scheduleRows
+              .filter((r) => RentAgreementCreateComponent.isCancelledStatus(r.status))
+              .map((r) => r.scheduledDate)
+          )
         );
         this.deletedRowDates.set(new Set());
 
@@ -534,6 +539,9 @@ export class RentAgreementCreateComponent {
       return;
     }
 
+    // Captured before the reset below clears `previewResult` — see its use in the success handler.
+    const previousDates = new Set(this.previewResult()?.rows.map((row) => row.scheduledDate) ?? []);
+
     this.previewLoading.set(true);
     this.previewError.set(null);
     this.previewResult.set(null);
@@ -566,7 +574,6 @@ export class RentAgreementCreateComponent {
           // amount). Unconditionally clearing `deletedRowDates` here used to silently resurrect a row
           // the user had explicitly removed, moments before Save — the anchors are unchanged, so the
           // deletion is still valid and must survive.
-          const previousDates = new Set(this.previewResult()?.rows.map((row) => row.scheduledDate) ?? []);
           const sameAnchors =
             response.rows.length === previousDates.size &&
             response.rows.every((row) => previousDates.has(row.scheduledDate));
@@ -757,17 +764,16 @@ export class RentAgreementCreateComponent {
       deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
       depositDueDate: toIsoDate(value.depositDueDate),
       depositCollected: Boolean(value.depositCollected),
-      // Rows the user removed via the kebab menu's Delete are excluded here — there's no backend
-      // concept of a deleted row to reconcile against; from the API's point of view they simply
-      // never existed.
-      scheduleRows: preview.rows
-        .filter((row) => !this.deletedRowDates().has(row.scheduledDate))
-        .map((row) => ({
-          scheduledDate: row.scheduledDate,
-          dueDate: row.dueDate,
-          rent: row.rent,
-          isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate)
-        })),
+      // Every previewed row is sent — a row the user removed via the kebab menu's Delete is still
+      // submitted, flagged isCancelled, so the backend persists it directly with a Cancelled status
+      // (spec v39) instead of it never existing.
+      scheduleRows: preview.rows.map((row) => ({
+        scheduledDate: row.scheduledDate,
+        dueDate: row.dueDate,
+        rent: row.rent,
+        isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate),
+        isCancelled: this.deletedRowDates().has(row.scheduledDate)
+      })),
       additionalCharges: this.additionalCharges()
     };
 
@@ -826,9 +832,9 @@ export class RentAgreementCreateComponent {
             dueDate: row.dueDate,
             rent: row.rent
           })),
-          totalInvoices: agreement.scheduleRows.filter((r) => r.status !== 'cancelled').length,
+          totalInvoices: agreement.scheduleRows.filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status)).length,
           totalAmount: agreement.scheduleRows
-            .filter((r) => r.status !== 'cancelled')
+            .filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status))
             .reduce((sum, row) => sum + row.rent, 0)
         });
         this.manuallyChangedRowDates.set(
@@ -838,7 +844,11 @@ export class RentAgreementCreateComponent {
           new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
         );
         this.cancelledRowDates.set(
-          new Set(agreement.scheduleRows.filter((r) => r.status === 'cancelled').map((r) => r.scheduledDate))
+          new Set(
+            agreement.scheduleRows
+              .filter((r) => RentAgreementCreateComponent.isCancelledStatus(r.status))
+              .map((r) => r.scheduledDate)
+          )
         );
         this.deletedRowDates.set(new Set());
         this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
@@ -933,6 +943,16 @@ export class RentAgreementCreateComponent {
         this.candidateDatesLoading.set(false);
       }
     });
+  }
+
+  /**
+   * Whether a row's `status` is "cancelled" — comparing case-insensitively because `ScheduleStatus`
+   * is a backend smart enum, not a plain C# `enum`, so it is deliberately **not** passed through the
+   * API's snake_case/lowercase enum-value convention and arrives PascalCase (`"Cancelled"`), unlike
+   * every other status-shaped field on the wire (`leaseTermType`, `frequency`, etc).
+   */
+  private static isCancelledStatus(status: ScheduleRowStatus | undefined): boolean {
+    return status?.toLowerCase() === 'cancelled';
   }
 
   /**

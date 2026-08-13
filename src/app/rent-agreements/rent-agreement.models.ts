@@ -13,6 +13,13 @@ export interface ScheduleRowCreationRequest {
    * manual date edit by comparing `dueDate` against the immutable `scheduledDate` anchor.
    */
   isManualChanged?: boolean;
+  /**
+   * Whether the user deleted this row (kebab menu → Delete) before ever saving (spec v39). The row
+   * is still submitted — never simply omitted — so the backend persists it directly with a
+   * `Cancelled` status instead of `Planned`. Optional; the backend defaults an omitted flag to
+   * `false`.
+   */
+  isCancelled?: boolean;
 }
 
 export interface AdditionalChargeItemCreationRequest {
@@ -92,8 +99,9 @@ export interface RentAgreementScheduleRowResponse {
   /** Echoes the persisted {@link ScheduleRowCreationRequest.isManualChanged} (backend spec v20). */
   isManualChanged: boolean;
   /**
-   * Present on `GET /rent-agreements/{id}`; absent on the create response, where every row is
-   * `planned` by definition. An `invoiced` row may be frozen — see {@link isFrozen}.
+   * Present on both the create response and `GET /rent-agreements/{id}` — `'planned'` unless the
+   * client marked the submitted row `isCancelled` (spec v39), in which case it is `'cancelled'` from
+   * the moment it is created. An `'invoiced'` row may be frozen — see {@link isFrozen}.
    */
   status?: ScheduleRowStatus;
   /**
