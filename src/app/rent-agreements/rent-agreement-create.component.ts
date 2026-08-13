@@ -178,6 +178,17 @@ export class RentAgreementCreateComponent {
   /** `scheduledDate`s of loaded rows the server marked frozen — locked, and not removable. */
   readonly frozenRowDates = signal<Set<string>>(new Set());
 
+  /**
+   * `scheduledDate`s of loaded rows the server reports as already cancelled (spec v38). Display-only —
+   * shown greyed out with a badge, offers no row-menu, and is excluded from `save()`'s `scheduleRows`:
+   * resubmitting a cancelled row's anchor does not restore it server-side (`ActiveRowsByAnchor` no
+   * longer treats it as stored), it would just create a brand-new row on that anchor.
+   */
+  readonly cancelledRowDates = signal<Set<string>>(new Set());
+
+  /** `id`s of loaded additional charges the server marked applied (already invoiced) — locked, and not editable/removable. */
+  readonly appliedChargeIds = signal<Set<string>>(new Set());
+
   get isEditMode(): boolean {
     return this.agreementId() !== null;
   }
@@ -282,7 +293,7 @@ export class RentAgreementCreateComponent {
             propertyOwnerId: agreement.propertyOwnerId,
             startDate: parseIsoDate(agreement.startDate),
             endDate: parseIsoDate(agreement.endDate),
-            leaseTermType: agreement.endDate ? 'fixed' : 'month_to_month',
+            leaseTermType: agreement.leaseTermType,
             rent: agreement.fullRent,
             frequency: agreement.frequency,
             firstRentalDueDate: agreement.firstRentalDueDate,
@@ -300,8 +311,10 @@ export class RentAgreementCreateComponent {
             dueDate: row.dueDate,
             rent: row.rent
           })),
-          totalInvoices: agreement.scheduleRows.length,
-          totalAmount: agreement.scheduleRows.reduce((sum, row) => sum + row.rent, 0)
+          totalInvoices: agreement.scheduleRows.filter((r) => r.status !== 'cancelled').length,
+          totalAmount: agreement.scheduleRows
+            .filter((r) => r.status !== 'cancelled')
+            .reduce((sum, row) => sum + row.rent, 0)
         });
 
         this.manuallyChangedRowDates.set(
@@ -310,10 +323,16 @@ export class RentAgreementCreateComponent {
         this.frozenRowDates.set(
           new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
         );
+        this.cancelledRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.status === 'cancelled').map((r) => r.scheduledDate))
+        );
         this.deletedRowDates.set(new Set());
 
         this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
         this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
+        this.appliedChargeIds.set(
+          new Set(agreement.additionalCharges.filter((c) => c.isApplied).map((c) => c.id))
+        );
 
         // Treat the loaded terms as already previewed — see the doc comment above.
         this.lastPreviewSignature = this.scheduleSignature();
@@ -334,6 +353,17 @@ export class RentAgreementCreateComponent {
   /** Whether a loaded row is frozen by the server — its rent and dates cannot be changed. */
   isRowFrozen(scheduledDate: string): boolean {
     return this.frozenRowDates().has(scheduledDate);
+  }
+
+  /** Whether a loaded row is already cancelled by the server — display-only, no row-menu. */
+  isRowCancelled(scheduledDate: string): boolean {
+    return this.cancelledRowDates().has(scheduledDate);
+  }
+
+  /** Whether a loaded additional charge is already applied (invoiced) — cannot be edited or removed. */
+  isChargeApplied(index: number): boolean {
+    const id = this.additionalCharges()[index]?.id;
+    return !!id && this.appliedChargeIds().has(id);
   }
 
   get frequency(): RentFrequency {
@@ -527,12 +557,29 @@ export class RentAgreementCreateComponent {
       })
       .subscribe({
         next: (response) => {
+          // The preview is stateless — it never receives back the rows the user deleted or
+          // hand-edited — so its `rows` are entirely fresh every call. Whether a prior deletion is
+          // still meaningful depends on whether the row it names still exists in this fresh set: the
+          // debounced auto-preview re-fires on ANY schedule-signature change, including one that
+          // cannot move a single date (e.g. only the rent amount changed — `RentSchedulePlan` derives
+          // `scheduledDate`/`dueDate` purely from the recurrence rule and window, never from the
+          // amount). Unconditionally clearing `deletedRowDates` here used to silently resurrect a row
+          // the user had explicitly removed, moments before Save — the anchors are unchanged, so the
+          // deletion is still valid and must survive.
+          const previousDates = new Set(this.previewResult()?.rows.map((row) => row.scheduledDate) ?? []);
+          const sameAnchors =
+            response.rows.length === previousDates.size &&
+            response.rows.every((row) => previousDates.has(row.scheduledDate));
+
           this.previewResult.set(response);
           this.lastPreviewSignature = this.scheduleSignature();
           this.previewLoading.set(false);
-          // A fresh preview means entirely new row identities — any prior deletions, and any prior
-          // hand-edited amounts, no longer correspond to anything meaningful.
-          this.deletedRowDates.set(new Set());
+          if (!sameAnchors) {
+            this.deletedRowDates.set(new Set());
+          }
+          // A hand-edited amount, unlike a deletion, is always superseded here regardless of anchor
+          // overlap — the preview recomputes every row's rent from scratch and never receives the
+          // prior manual edit back, so the edited value is gone either way.
           this.manuallyChangedRowDates.set(new Set());
           this.closeRowMenu();
         },
@@ -754,8 +801,11 @@ export class RentAgreementCreateComponent {
       frequency: value.frequency,
       frequencyConfig: buildFrequencyConfig(value),
       firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
+      // Cancelled rows are excluded here alongside client-deleted ones — resubmitting a cancelled
+      // row's anchor would not restore it server-side, it would create a brand-new row on that anchor
+      // (spec v38, `RentAgreement.ActiveRowsByAnchor` no longer treats a cancelled row as stored).
       scheduleRows: preview.rows
-        .filter((row) => !this.deletedRowDates().has(row.scheduledDate))
+        .filter((row) => !this.deletedRowDates().has(row.scheduledDate) && !this.cancelledRowDates().has(row.scheduledDate))
         .map((row) => ({
           scheduledDate: row.scheduledDate,
           dueDate: row.dueDate,
@@ -776,8 +826,10 @@ export class RentAgreementCreateComponent {
             dueDate: row.dueDate,
             rent: row.rent
           })),
-          totalInvoices: agreement.scheduleRows.length,
-          totalAmount: agreement.scheduleRows.reduce((sum, row) => sum + row.rent, 0)
+          totalInvoices: agreement.scheduleRows.filter((r) => r.status !== 'cancelled').length,
+          totalAmount: agreement.scheduleRows
+            .filter((r) => r.status !== 'cancelled')
+            .reduce((sum, row) => sum + row.rent, 0)
         });
         this.manuallyChangedRowDates.set(
           new Set(agreement.scheduleRows.filter((r) => r.isManualChanged).map((r) => r.scheduledDate))
@@ -785,9 +837,15 @@ export class RentAgreementCreateComponent {
         this.frozenRowDates.set(
           new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
         );
+        this.cancelledRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.status === 'cancelled').map((r) => r.scheduledDate))
+        );
         this.deletedRowDates.set(new Set());
         this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
         this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
+        this.appliedChargeIds.set(
+          new Set(agreement.additionalCharges.filter((c) => c.isApplied).map((c) => c.id))
+        );
 
         this.lastPreviewSignature = this.scheduleSignature();
         this.saveResult.set({

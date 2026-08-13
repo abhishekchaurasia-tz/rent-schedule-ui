@@ -1,4 +1,4 @@
-import { FrequencyConfig, RentFrequency } from '../rent-schedule/rent-schedule.models';
+import { FrequencyConfig, LeaseTermType, RentFrequency } from '../rent-schedule/rent-schedule.models';
 
 export interface ScheduleRowCreationRequest {
   scheduledDate: string;
@@ -129,6 +129,11 @@ export interface RentAgreementAdditionalChargeResponse {
   isGrouped: boolean;
   isSharedByAll: boolean;
   items: RentAgreementAdditionalChargeItemResponse[];
+  /**
+   * Server-computed: this charge has already been attached to an invoice, so it may no longer be
+   * edited or removed — same rationale as {@link RentAgreementScheduleRowResponse.isFrozen}.
+   */
+  isApplied: boolean;
 }
 
 export interface CreateRentAgreementResponse {
@@ -142,15 +147,13 @@ export interface CreateRentAgreementResponse {
 /**
  * `GET /rent-agreements/{id}` — the saved agreement with its schedule rows and additional charges
  * embedded (decision D1: there is no separate `/rent-schedule` resource).
- *
- * NOTE: this endpoint is **not implemented on the backend yet**. The shape below follows the agreed
- * contract in `docs/rent-schedule-requirements/rent-schedule-edit-api-scenarios.md` §6.
  */
 export interface RentAgreementDetailResponse {
   agreementId: string;
   propertyUnitId: string;
   propertyId: string;
   propertyOwnerId: string;
+  leaseTermType: LeaseTermType;
   startDate: string;
   endDate?: string | null;
   fullRent: number;
@@ -162,6 +165,8 @@ export interface RentAgreementDetailResponse {
   depositCollected: boolean;
   /** `draft` before activation, then the lease's rental status. */
   status: string;
+  /** The server's current UTC date — used to derive "overdue" without trusting the client's clock. */
+  todayUtc: string;
   scheduleRows: RentAgreementScheduleRowResponse[];
   additionalCharges: RentAgreementAdditionalChargeResponse[];
 }
@@ -173,8 +178,6 @@ export interface RentAgreementDetailResponse {
  * charges that did not change are still sent, and anything the user removed is simply **absent**,
  * which is how a deletion is expressed. Only the schedule-affecting terms may be changed (D3) —
  * `startDate`, the property/owner ids and the deposit fields are not part of this contract.
- *
- * NOTE: **not implemented on the backend yet.**
  */
 /**
  * Turns a loaded charge back into the shape the save sends, **preserving the ids** so the server

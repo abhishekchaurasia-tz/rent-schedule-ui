@@ -7,10 +7,6 @@ import { RentAgreementDetailResponse } from './rent-agreement.models';
 
 /**
  * Edit mode: the same component reached through `rent-agreements/:id/edit`.
- *
- * These endpoints are not implemented on the backend yet — the tests pin the agreed contract from
- * `docs/rent-schedule-requirements/rent-schedule-edit-api-scenarios.md` §6 so the UI is ready and
- * any drift shows up here first.
  */
 describe('RentAgreementCreateComponent (edit mode)', () => {
   let fixture: ComponentFixture<RentAgreementCreateComponent>;
@@ -28,6 +24,7 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     propertyUnitId: '11111111-1111-1111-1111-111111111111',
     propertyId: '22222222-2222-2222-2222-222222222222',
     propertyOwnerId: '33333333-3333-3333-3333-333333333333',
+    leaseTermType: 'fixed',
     startDate: '2026-01-01',
     endDate: '2026-12-31',
     fullRent: 1000,
@@ -38,6 +35,7 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     depositDueDate: '2026-01-01',
     depositCollected: false,
     status: 'draft',
+    todayUtc: '2026-01-15',
     scheduleRows: [
       { id: 'r1', scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 800, isManualChanged: true, status: 'invoiced', isFrozen: true },
       { id: 'r2', scheduledDate: '2026-02-01', dueDate: '2026-02-05', rent: 1000, isManualChanged: false, status: 'planned' }
@@ -54,7 +52,8 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
         hasNoEndDate: false,
         isGrouped: false,
         isSharedByAll: true,
-        items: [{ id: 'i1', itemType: 'Parking', description: 'Parking', quantity: 1, rate: 50, amount: 50 }]
+        items: [{ id: 'i1', itemType: 'Parking', description: 'Parking', quantity: 1, rate: 50, amount: 50 }],
+        isApplied: false
       }
     ]
   });
@@ -166,6 +165,38 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     const req = httpMock.expectOne(termsUrl);
     expect(req.request.body.scheduleRows.length).toBe(1);
     expect(req.request.body.scheduleRows[0].scheduledDate).toBe('2026-01-01');
+
+    req.flush(detail());
+  });
+
+  it('renders a cancelled row from the server as display-only and omits it from the save (spec v38)', () => {
+    fixture.detectChanges();
+
+    const withCancelledRow: RentAgreementDetailResponse = {
+      ...detail(),
+      scheduleRows: [
+        ...detail().scheduleRows,
+        { id: 'r3', scheduledDate: '2026-03-01', dueDate: '2026-03-01', rent: 1000, isManualChanged: false, status: 'cancelled' }
+      ]
+    };
+    httpMock.expectOne(detailUrl).flush(withCancelledRow);
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    // Still rendered — GET no longer omits a cancelled row (v38) — but flagged so the UI can badge it.
+    expect(component.previewResult()!.rows.length).toBe(3);
+    expect(component.isRowCancelled('2026-03-01')).toBeTrue();
+    // The cancelled row's amount does not inflate the schedule summary.
+    expect(component.previewResult()!.totalInvoices).toBe(2);
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    // Resubmitting a cancelled row's anchor would create a brand-new row server-side rather than
+    // restore it (ActiveRowsByAnchor no longer treats it as stored) — so it must never be resent.
+    expect(req.request.body.scheduleRows.length).toBe(2);
+    expect(
+      (req.request.body.scheduleRows as { scheduledDate: string }[]).some((r) => r.scheduledDate === '2026-03-01')
+    ).toBeFalse();
 
     req.flush(detail());
   });

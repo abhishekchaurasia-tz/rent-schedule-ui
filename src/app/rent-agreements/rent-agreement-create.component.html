@@ -274,10 +274,22 @@
                   <td>{{ additionalChargeTargets()[$index] }}</td>
                   <td>{{ charge.items.length }} item(s)</td>
                   <td>{{ charge.notes || '—' }}</td>
-                  <td>{{ additionalChargeTotal(charge) | currency }}</td>
                   <td>
-                    <button type="button" (click)="editAdditionalCharge($index)">Edit</button>
-                    <button type="button" (click)="removeAdditionalCharge($index)">Remove</button>
+                    {{ additionalChargeTotal(charge) | currency }}
+                    @if (isChargeApplied($index)) {
+                      <span
+                        class="frozen-badge"
+                        title="This fee has already been attached to an invoice — it cannot be changed or removed"
+                        aria-label="Locked — already invoiced"
+                        >locked</span
+                      >
+                    }
+                  </td>
+                  <td>
+                    @if (!isChargeApplied($index)) {
+                      <button type="button" (click)="editAdditionalCharge($index)">Edit</button>
+                      <button type="button" (click)="removeAdditionalCharge($index)">Remove</button>
+                    }
                   </td>
                 </tr>
               }
@@ -331,9 +343,24 @@
               </thead>
               <tbody>
                 @for (row of res.rows; track row.scheduledDate; let i = $index) {
-                  <tr [class.row-deleted]="deletedRowDates().has(row.scheduledDate)">
+                  <tr
+                    [class.row-deleted]="deletedRowDates().has(row.scheduledDate)"
+                    [class.row-cancelled]="isRowCancelled(row.scheduledDate)"
+                  >
                     <td>{{ row.scheduledDate }}</td>
-                    @if (deletedRowDates().has(row.scheduledDate)) {
+                    @if (isRowCancelled(row.scheduledDate)) {
+                      <td>{{ row.dueDate }}</td>
+                      <td>
+                        {{ row.rent | number: '1.2-2' }}
+                        <span
+                          class="frozen-badge"
+                          title="This payment was cancelled"
+                          aria-label="Cancelled"
+                          >cancelled</span
+                        >
+                      </td>
+                      <td></td>
+                    } @else if (deletedRowDates().has(row.scheduledDate)) {
                       <td>{{ row.dueDate }}</td>
                       <td>{{ row.rent | number: '1.2-2' }}</td>
                       <td>

@@ -321,6 +321,12 @@ table {
       text-decoration: line-through;
     }
   }
+
+  tr.row-cancelled {
+    td {
+      color: #aaa;
+    }
+  }
 }
 
 .row-menu-overlay {
