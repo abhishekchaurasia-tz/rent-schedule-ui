@@ -4,9 +4,23 @@ export interface ScheduleRowCreationRequest {
   scheduledDate: string;
   dueDate: string;
   rent: number;
+  /**
+   * Whether the user hand-edited this row's `rent` before saving (backend spec v20 / part1 schema
+   * §10.1). Optional on the wire — the backend defaults it to `false` — and persisted verbatim so a
+   * later terms regeneration leaves the edited amount alone.
+   *
+   * Tracks the **amount only**. A row whose due date was moved is not flagged: the backend proves a
+   * manual date edit by comparing `dueDate` against the immutable `scheduledDate` anchor.
+   */
+  isManualChanged?: boolean;
 }
 
 export interface AdditionalChargeItemCreationRequest {
+  /**
+   * Identity of an existing line, on an edit save only. Present ⇒ update that line, absent ⇒ insert
+   * a new one, stored-but-not-sent ⇒ delete (decision E2). Always omitted when creating.
+   */
+  id?: string | null;
   /**
    * The catalog entry (`LineItem`) this line was picked from. `newItemCategory` no longer exists on
    * the backend (removed 2026-08-05, spec 02-invoicing.md v6 / 01-rent-agreement.md v19) — a brand
@@ -23,6 +37,13 @@ export interface AdditionalChargeItemCreationRequest {
 }
 
 export interface AdditionalChargeCreationRequest {
+  /**
+   * Identity of an existing fee, on an edit save only. Present ⇒ update that fee, absent ⇒ insert a
+   * new one, stored-but-not-sent ⇒ delete (decision E2). Charges have no natural key — unlike
+   * schedule rows, which match on their immutable `scheduledDate` — so without this an edit cannot
+   * tell "changed" from "removed and re-added". Always omitted when creating.
+   */
+  id?: string | null;
   notes?: string | null;
   alreadyPaid: number;
   attachedWithRentalInvoice: boolean;
@@ -60,11 +81,27 @@ export interface CreateRentAgreementRequest {
   additionalCharges?: AdditionalChargeCreationRequest[];
 }
 
+/** A schedule row's lifecycle status. Only `planned` rows are freely editable. */
+export type ScheduleRowStatus = 'planned' | 'invoiced' | 'skipped' | 'cancelled';
+
 export interface RentAgreementScheduleRowResponse {
   id: string;
   scheduledDate: string;
   dueDate: string;
   rent: number;
+  /** Echoes the persisted {@link ScheduleRowCreationRequest.isManualChanged} (backend spec v20). */
+  isManualChanged: boolean;
+  /**
+   * Present on `GET /rent-agreements/{id}`; absent on the create response, where every row is
+   * `planned` by definition. An `invoiced` row may be frozen — see {@link isFrozen}.
+   */
+  status?: ScheduleRowStatus;
+  /**
+   * Server-computed: the row's invoice is paid, partially paid, voided **or overdue**, so neither
+   * the row nor its invoice may be changed and the row cannot be removed. Derived rather than
+   * stored — the UI must not try to recompute it, since "overdue" depends on the server's clock.
+   */
+  isFrozen?: boolean;
 }
 
 export interface RentAgreementAdditionalChargeItemResponse {
@@ -100,4 +137,85 @@ export interface CreateRentAgreementResponse {
   depositCollected: boolean;
   scheduleRows: RentAgreementScheduleRowResponse[];
   additionalCharges: RentAgreementAdditionalChargeResponse[];
+}
+
+/**
+ * `GET /rent-agreements/{id}` — the saved agreement with its schedule rows and additional charges
+ * embedded (decision D1: there is no separate `/rent-schedule` resource).
+ *
+ * NOTE: this endpoint is **not implemented on the backend yet**. The shape below follows the agreed
+ * contract in `docs/rent-schedule-requirements/rent-schedule-edit-api-scenarios.md` §6.
+ */
+export interface RentAgreementDetailResponse {
+  agreementId: string;
+  propertyUnitId: string;
+  propertyId: string;
+  propertyOwnerId: string;
+  startDate: string;
+  endDate?: string | null;
+  fullRent: number;
+  frequency: RentFrequency;
+  frequencyConfig: FrequencyConfig;
+  firstRentalDueDate: string;
+  deposit?: number | null;
+  depositDueDate?: string | null;
+  depositCollected: boolean;
+  /** `draft` before activation, then the lease's rental status. */
+  status: string;
+  scheduleRows: RentAgreementScheduleRowResponse[];
+  additionalCharges: RentAgreementAdditionalChargeResponse[];
+}
+
+/**
+ * `PUT /rent-agreements/{id}/terms` — the edit save.
+ *
+ * Carries the **complete** set of both collections, not a patch (decisions D8 / E1): rows and
+ * charges that did not change are still sent, and anything the user removed is simply **absent**,
+ * which is how a deletion is expressed. Only the schedule-affecting terms may be changed (D3) —
+ * `startDate`, the property/owner ids and the deposit fields are not part of this contract.
+ *
+ * NOTE: **not implemented on the backend yet.**
+ */
+/**
+ * Turns a loaded charge back into the shape the save sends, **preserving the ids** so the server
+ * updates the existing fee and its lines rather than replacing them (decision E2).
+ *
+ * `category` is dropped deliberately: it is server-derived from the items, so echoing it back would
+ * assert something the client is not entitled to decide.
+ */
+export function toChargeCreationRequest(
+  charge: RentAgreementAdditionalChargeResponse
+): AdditionalChargeCreationRequest {
+  return {
+    id: charge.id,
+    notes: charge.notes,
+    alreadyPaid: charge.alreadyPaid,
+    attachedWithRentalInvoice: charge.attachedWithRentalInvoice,
+    isRecurring: charge.isRecurring,
+    dueDate: charge.dueDate,
+    frequency: charge.frequency,
+    startDate: charge.startDate,
+    endDate: charge.endDate,
+    hasNoEndDate: charge.hasNoEndDate,
+    isGrouped: charge.isGrouped,
+    isSharedByAll: charge.isSharedByAll,
+    items: charge.items.map((item) => ({
+      id: item.id,
+      itemType: item.itemType,
+      description: item.description,
+      quantity: item.quantity,
+      rate: item.rate,
+      amount: item.amount
+    }))
+  };
+}
+
+export interface UpdateRentAgreementTermsRequest {
+  endDate?: string | null;
+  fullRent: number;
+  frequency: RentFrequency;
+  frequencyConfig: FrequencyConfig;
+  firstRentalDueDate: string;
+  scheduleRows: ScheduleRowCreationRequest[];
+  additionalCharges: AdditionalChargeCreationRequest[];
 }

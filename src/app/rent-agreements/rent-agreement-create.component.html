@@ -1,6 +1,25 @@
 <div class="preview-page">
-  <h1>Add Lease</h1>
-  <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>
+  @if (isEditMode) {
+    <h1>Edit Lease</h1>
+    <p class="subtitle">
+      Change the lease terms or the rent schedule, then save. Nothing is written until you press Save.
+      <span class="agreement-id-chip">{{ agreementId() }}</span>
+    </p>
+  } @else {
+    <h1>Add Lease</h1>
+    <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>
+  }
+
+  @if (loadingAgreement()) {
+    <p class="load-status">Loading lease…</p>
+  }
+
+  @if (loadError(); as message) {
+    <div class="load-error">
+      <strong>Could not load this lease.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
 
   <div class="layout">
   <form [formGroup]="form" class="preview-form left-column">
@@ -257,6 +276,7 @@
                   <td>{{ charge.notes || '—' }}</td>
                   <td>{{ additionalChargeTotal(charge) | currency }}</td>
                   <td>
+                    <button type="button" (click)="editAdditionalCharge($index)">Edit</button>
                     <button type="button" (click)="removeAdditionalCharge($index)">Remove</button>
                   </td>
                 </tr>
@@ -356,7 +376,25 @@
                       </td>
                     } @else {
                       <td>{{ row.dueDate }}</td>
-                      <td>{{ row.rent | number: '1.2-2' }}</td>
+                      <td>
+                        {{ row.rent | number: '1.2-2' }}
+                        @if (isRowManuallyChanged(row.scheduledDate)) {
+                          <span
+                            class="manual-edit-badge"
+                            title="Rent manually edited — this amount is preserved if the lease terms are regenerated"
+                            aria-label="Rent manually edited"
+                            >edited</span
+                          >
+                        }
+                        @if (isRowFrozen(row.scheduledDate)) {
+                          <span
+                            class="frozen-badge"
+                            title="This row's invoice is paid, partially paid, voided or overdue — it cannot be changed or removed"
+                            aria-label="Locked — already billed"
+                            >locked</span
+                          >
+                        }
+                      </td>
                       <td>
                         <button
                           type="button"
@@ -390,7 +428,7 @@
             [disabled]="saving()"
             (click)="save()"
           >
-            {{ saving() ? 'Saving…' : 'Save Rent Agreement' }}
+            {{ saving() ? 'Saving…' : isEditMode ? 'Save Changes' : 'Save Rent Agreement' }}
           </button>
 
           @if (saveError()) {
@@ -413,6 +451,10 @@
   @if (showAdditionalChargePanel()) {
     <app-additional-charge-panel
       [propertyOwnerId]="form.get('propertyOwnerId')!.value"
+      [leaseStartDate]="formStartDateIso"
+      [leaseEndDate]="formEndDateIso"
+      [leaseMonthToMonthInvoiceCount]="formMonthToMonthInvoiceCount"
+      [initialCharge]="editingCharge"
       (created)="onAdditionalChargeCreated($event)"
       (closed)="closeAdditionalChargePanel()"
     />
@@ -422,6 +464,10 @@
     <app-additional-charge-panel
       [depositOnly]="true"
       [propertyOwnerId]="form.get('propertyOwnerId')!.value"
+      [leaseStartDate]="formStartDateIso"
+      [leaseEndDate]="formEndDateIso"
+      [leaseMonthToMonthInvoiceCount]="formMonthToMonthInvoiceCount"
+      [initialCharge]="editingCharge"
       (created)="onDepositChargeCreated($event)"
       (closed)="closeDepositChargePanel()"
     />

@@ -9,7 +9,7 @@ describe('RentAgreementsService', () => {
   let service: RentAgreementsService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/api/v1/rent-agreements`;
+  const baseUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements`;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -28,7 +28,7 @@ describe('RentAgreementsService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('create() posts to /api/v1/rent-agreements with the given request body', () => {
+  it('create() posts to /api/v1/rent/agreements with the given request body', () => {
     const request: CreateRentAgreementRequest = {
       propertyUnitId: '11111111-1111-1111-1111-111111111111',
       propertyId: '22222222-2222-2222-2222-222222222222',
@@ -53,7 +53,8 @@ describe('RentAgreementsService', () => {
           id: '55555555-5555-5555-5555-555555555555',
           scheduledDate: '2026-08-01',
           dueDate: '2026-08-01',
-          rent: 100
+          rent: 100,
+          isManualChanged: false
         }
       ],
       additionalCharges: []

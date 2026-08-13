@@ -14,7 +14,7 @@ describe('RentScheduleService', () => {
   let service: RentScheduleService;
   let httpMock: HttpTestingController;
 
-  const baseUrl = `${environment.apiBaseUrl}/api/v1/rent-schedule`;
+  const baseUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule`;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -33,7 +33,7 @@ describe('RentScheduleService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('preview() posts to /api/v1/rent-schedule/preview with the given request body', () => {
+  it('preview() posts to /api/v1/rent/schedule/preview with the given request body', () => {
     const request: PreviewRentScheduleRequest = {
       startDate: '2026-08-01',
       endDate: '2027-08-01',
@@ -91,7 +91,7 @@ describe('RentScheduleService', () => {
     expect(error).toBeTruthy();
   });
 
-  it('firstRentalDueDateOptions() posts to /api/v1/rent-schedule/first-rental-due-date-options with the given request body', () => {
+  it('firstRentalDueDateOptions() posts to /api/v1/rent/schedule/first-rental-due-date-options with the given request body', () => {
     const request: CandidateDateRequest = {
       startDate: '2026-08-01',
       endDate: '2027-08-01',

@@ -15,13 +15,13 @@ test.describe('rent-schedule create — frequency config wiring', () => {
   test.beforeEach(async ({ page }) => {
     previewRequestBody = null;
 
-    await page.route('**/api/v1/rent-schedule/first-rental-due-date-options', async (route) => {
+    await page.route('**/api/v1/rent/schedule/first-rental-due-date-options', async (route) => {
       await route.fulfill({
         json: { dates: ['2026-09-01', '2026-10-01', '2026-11-01'] }
       });
     });
 
-    await page.route('**/api/v1/rent-schedule/preview', async (route) => {
+    await page.route('**/api/v1/rent/schedule/preview', async (route) => {
       previewRequestBody = route.request().postDataJSON();
       await route.fulfill({
         json: { rows: [{ scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100 }], totalInvoices: 1, totalAmount: 100 }
@@ -125,7 +125,7 @@ test.describe('rent-schedule create — frequency config wiring', () => {
 
 test.describe('rent-schedule create — lease term type field visibility', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/rent-schedule/first-rental-due-date-options', async (route) => {
+    await page.route('**/api/v1/rent/schedule/first-rental-due-date-options', async (route) => {
       await route.fulfill({ json: { dates: [] } });
     });
     await page.goto('/rent-agreements/create');
@@ -152,10 +152,10 @@ test.describe('rent-schedule create — lease term type field visibility', () =>
 
 test.describe('rent-schedule create — deposit client-side guard', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/rent-schedule/first-rental-due-date-options', async (route) => {
+    await page.route('**/api/v1/rent/schedule/first-rental-due-date-options', async (route) => {
       await route.fulfill({ json: { dates: ['2026-09-01'] } });
     });
-    await page.route('**/api/v1/rent-schedule/preview', async (route) => {
+    await page.route('**/api/v1/rent/schedule/preview', async (route) => {
       await route.fulfill({
         json: { rows: [{ scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100 }], totalInvoices: 1, totalAmount: 100 }
       });
@@ -177,7 +177,7 @@ test.describe('rent-schedule create — deposit client-side guard', () => {
 
   test('scenario 75 — deposit amount without a due date blocks save client-side, no API call', async ({ page }) => {
     let createCalled = false;
-    await page.route('**/api/v1/rent-agreements', async (route) => {
+    await page.route('**/api/v1/rent/agreements', async (route) => {
       createCalled = true;
       await route.fulfill({ status: 201, json: {} });
     });

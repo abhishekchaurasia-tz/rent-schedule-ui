@@ -17,7 +17,7 @@ let backendReachable = true;
 
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   try {
-    await request.post('/api/v1/rent-schedule/preview', {
+    await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest(),
       failOnStatusCode: false,
       timeout: 3000
@@ -34,7 +34,7 @@ test.beforeEach(() => {
 const validRow = { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 1000 };
 
 async function createAgreement(request: APIRequestContext, overrides: Record<string, unknown>) {
-  return request.post('/api/v1/rent-agreements', {
+  return request.post('/api/v1/rent/agreements', {
     data: { ...minimalCreateAgreementRequest([validRow]), ...overrides }
   });
 }
@@ -83,8 +83,31 @@ test.describe('rent-agreement create — core fields', () => {
     request
   }) => {
     const { startDate: _omit, ...withoutStartDate } = minimalCreateAgreementRequest([validRow]);
-    const response = await request.post('/api/v1/rent-agreements', { data: withoutStartDate });
+    const response = await request.post('/api/v1/rent/agreements', { data: withoutStartDate });
     expect(response.status()).toBe(400);
+  });
+
+  test('spec v20 — isManualChanged is persisted per row and echoed back', async ({ request }) => {
+    const response = await createAgreement(request, {
+      scheduleRows: [
+        { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 800, isManualChanged: true },
+        { scheduledDate: '2026-10-01', dueDate: '2026-10-05', rent: 1000, isManualChanged: false }
+      ]
+    });
+
+    expect(response.status()).toBe(201);
+    const body = await response.json();
+    expect(body.scheduleRows[0].isManualChanged).toBe(true);
+    // Row 2 moved only its due date — the flag tracks the amount, so it stays false.
+    expect(body.scheduleRows[1].isManualChanged).toBe(false);
+  });
+
+  test('spec v20 — isManualChanged is optional and defaults to false when omitted', async ({ request }) => {
+    // validRow carries no isManualChanged at all — pre-v20 payloads must keep working.
+    const response = await createAgreement(request, {});
+    expect(response.status()).toBe(201);
+    const body = await response.json();
+    expect(body.scheduleRows[0].isManualChanged).toBe(false);
   });
 
   test('scenarios 97-99 — response echoes server-generated ids distinct from the request and 1:1 row count', async ({
@@ -139,7 +162,7 @@ test.describe('rent-agreement create — deposit rules', () => {
 
   test('scenario 78 — omitting depositCollected entirely defaults to false', async ({ request }) => {
     const { depositCollected: _omit, ...rest } = minimalCreateAgreementRequest([validRow]) as any;
-    const response = await request.post('/api/v1/rent-agreements', { data: rest });
+    const response = await request.post('/api/v1/rent/agreements', { data: rest });
     expect(response.status()).toBe(201);
     const body = await response.json();
     expect(body.depositCollected).toBe(false);

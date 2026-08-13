@@ -19,18 +19,23 @@ export class AdditionalChargePanel {
     return this.root.locator('.items-row').nth(index);
   }
 
-  async setItemCategory(value: 'rent' | 'deposit', index = 0): Promise<void> {
-    await this.row(index).locator('select').first().selectOption(value);
+  /**
+   * Opens row `index`'s "Select Type" dropdown and picks an existing catalog entry by its visible
+   * name. The dropdown itself (`.item-picker-menu`) renders as a fixed-position sibling of the form
+   * rather than nested in the row — an ancestor's `overflow` would otherwise clip it — but it's
+   * still a descendant of `.side-panel`, so `this.root` finds it fine.
+   */
+  async selectExistingItem(name: string, index = 0): Promise<void> {
+    await this.row(index).locator('.item-picker-btn').click();
+    await this.root.locator('.item-picker-option', { hasText: name }).click();
   }
 
-  async setItemType(value: string, index = 0): Promise<void> {
-    // When depositOnly, the category <select> isn't rendered, so itemType is the first <select>.
-    // Note itemType's option list (itemTypes vs depositItemTypes) is keyed off the panel's
-    // `depositOnly` input, not the per-item category — a non-deposit-only panel only ever offers
-    // itemTypes, even for an item whose category is set to 'deposit'.
-    const selects = this.row(index).locator('select');
-    const count = await selects.count();
-    await selects.nth(count - 1).selectOption(value);
+  /** Opens row `index`'s picker and types a brand-new item type instead of picking from the catalog. */
+  async createNewItemType(name: string, index = 0): Promise<void> {
+    await this.row(index).locator('.item-picker-btn').click();
+    await this.root.getByRole('button', { name: '+ Add Item Type' }).click();
+    await this.root.getByPlaceholder('New item type name').fill(name);
+    await this.root.getByRole('button', { name: 'Add', exact: true }).click();
   }
 
   async setDescription(value: string, index = 0): Promise<void> {
@@ -127,9 +132,5 @@ export class AdditionalChargePanel {
 
   async close(): Promise<void> {
     await this.root.getByRole('button', { name: 'Cancel' }).click();
-  }
-
-  mixedCategoryErrorVisible() {
-    return this.root.getByText('All items in one additional fee must target the same category');
   }
 }

@@ -3,6 +3,7 @@ import { Component, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,13 +18,16 @@ import {
   PreviewRentScheduleResponse,
   RentFrequency
 } from '../rent-schedule/rent-schedule.models';
-import { buildFrequencyConfig, ordinal } from '../rent-schedule/frequency-config.util';
-import { toIsoDate } from '../shared/date.util';
+import { buildFrequencyConfig, frequencyConfigToFormValue, ordinal } from '../rent-schedule/frequency-config.util';
+import { parseIsoDate, toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
   AdditionalChargeCreationRequest,
   CreateRentAgreementRequest,
-  CreateRentAgreementResponse
+  CreateRentAgreementResponse,
+  RentAgreementDetailResponse,
+  UpdateRentAgreementTermsRequest,
+  toChargeCreationRequest
 } from './rent-agreement.models';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
 
@@ -108,6 +112,15 @@ export class RentAgreementCreateComponent {
   readonly showAdditionalChargePanel = signal(false);
   readonly showDepositChargePanel = signal(false);
 
+  /** Index into `additionalCharges()` currently open for editing, or `null` when adding a new one. */
+  readonly editingChargeIndex = signal<number | null>(null);
+
+  /** The charge passed as `[initialCharge]` to whichever panel is open, or `null` for a fresh add. */
+  get editingCharge(): AdditionalChargeCreationRequest | null {
+    const index = this.editingChargeIndex();
+    return index !== null ? this.additionalCharges()[index] : null;
+  }
+
   /** Index into `previewResult().rows` currently open for inline editing, or `null` if none. */
   readonly editingRowIndex = signal<number | null>(null);
   readonly editRowDueDate = signal('');
@@ -136,6 +149,40 @@ export class RentAgreementCreateComponent {
   readonly deletedRowDates = signal<Set<string>>(new Set());
 
   /**
+   * `scheduledDate`s of rows whose **rent** the user has hand-edited, sent to the backend as each
+   * row's `isManualChanged` so a later terms regeneration preserves the edited amount (backend spec
+   * v20 / part1 schema §10.1). Keyed by `scheduledDate` for the same reason `deletedRowDates` is:
+   * it is the row's immutable identity, unaffected by editing the due date.
+   *
+   * Deliberately **not** set by a due-date-only edit. The backend needs no flag for that case — it
+   * compares `dueDate` against the `scheduledDate` anchor — so flagging it here would wrongly freeze
+   * the row's amount against regeneration.
+   */
+  readonly manuallyChangedRowDates = signal<Set<string>>(new Set());
+
+  /**
+   * The agreement being edited, taken from the `:id` route parameter, or `null` when creating.
+   * Everything that differs between the two modes keys off this.
+   */
+  readonly agreementId = signal<string | null>(null);
+
+  readonly loadingAgreement = signal(false);
+  readonly loadError = signal<string | null>(null);
+
+  /**
+   * The saved agreement as last loaded from the server. Kept so the save can send back rows and
+   * charges with their real ids (decision E2) rather than re-creating them.
+   */
+  readonly loadedAgreement = signal<RentAgreementDetailResponse | null>(null);
+
+  /** `scheduledDate`s of loaded rows the server marked frozen — locked, and not removable. */
+  readonly frozenRowDates = signal<Set<string>>(new Set());
+
+  get isEditMode(): boolean {
+    return this.agreementId() !== null;
+  }
+
+  /**
    * A snapshot of the schedule-affecting fields as of the last successful preview. Used to tell a
    * change to a schedule-irrelevant field (deposit, property ids) apart from one that actually
    * invalidates the previewed rows.
@@ -145,7 +192,8 @@ export class RentAgreementCreateComponent {
   constructor(
     private readonly fb: FormBuilder,
     private readonly rentScheduleService: RentScheduleService,
-    private readonly rentAgreementsService: RentAgreementsService
+    private readonly rentAgreementsService: RentAgreementsService,
+    private readonly route: ActivatedRoute
   ) {
     this.form = this.fb.group({
       propertyUnitId: [crypto.randomUUID(), Validators.required],
@@ -197,8 +245,95 @@ export class RentAgreementCreateComponent {
       this.refreshCandidateDates();
       this.maybeAutoGeneratePreview();
     });
+
+    const routeAgreementId = this.route.snapshot.paramMap.get('id');
+    if (routeAgreementId) {
+      this.agreementId.set(routeAgreementId);
+      this.loadAgreement(routeAgreementId);
+      return;
+    }
+
     this.refreshCandidateDates();
     this.maybeAutoGeneratePreview();
+  }
+
+  /**
+   * Loads a saved agreement into the form for editing.
+   *
+   * The delicate part is the schedule table: the loaded rows are the *persisted* ones, carrying real
+   * ids, hand-edited amounts and frozen flags. Patching the form fires `valueChanges`, which would
+   * normally auto-preview and replace them with freshly generated rows — silently discarding all of
+   * that. Stamping `lastPreviewSignature` with the loaded terms makes `maybeAutoGeneratePreview`
+   * treat them as already previewed, so a regeneration only happens once the user actually changes
+   * a schedule-affecting field.
+   */
+  private loadAgreement(agreementId: string): void {
+    this.loadingAgreement.set(true);
+    this.loadError.set(null);
+
+    this.rentAgreementsService.getById(agreementId).subscribe({
+      next: (agreement) => {
+        this.loadedAgreement.set(agreement);
+
+        this.form.patchValue(
+          {
+            propertyUnitId: agreement.propertyUnitId,
+            propertyId: agreement.propertyId,
+            propertyOwnerId: agreement.propertyOwnerId,
+            startDate: parseIsoDate(agreement.startDate),
+            endDate: parseIsoDate(agreement.endDate),
+            leaseTermType: agreement.endDate ? 'fixed' : 'month_to_month',
+            rent: agreement.fullRent,
+            frequency: agreement.frequency,
+            firstRentalDueDate: agreement.firstRentalDueDate,
+            deposit: agreement.deposit ?? null,
+            depositDueDate: parseIsoDate(agreement.depositDueDate),
+            depositCollected: agreement.depositCollected,
+            ...frequencyConfigToFormValue(agreement.frequencyConfig)
+          },
+          { emitEvent: false }
+        );
+
+        this.previewResult.set({
+          rows: agreement.scheduleRows.map((row) => ({
+            scheduledDate: row.scheduledDate,
+            dueDate: row.dueDate,
+            rent: row.rent
+          })),
+          totalInvoices: agreement.scheduleRows.length,
+          totalAmount: agreement.scheduleRows.reduce((sum, row) => sum + row.rent, 0)
+        });
+
+        this.manuallyChangedRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.isManualChanged).map((r) => r.scheduledDate))
+        );
+        this.frozenRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
+        );
+        this.deletedRowDates.set(new Set());
+
+        this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
+        this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
+
+        // Treat the loaded terms as already previewed — see the doc comment above.
+        this.lastPreviewSignature = this.scheduleSignature();
+        this.loadingAgreement.set(false);
+        this.refreshCandidateDates();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.loadError.set(
+          err.status === 404
+            ? `No rent agreement found with id ${agreementId}.`
+            : RentAgreementCreateComponent.describeError(err)
+        );
+        this.loadingAgreement.set(false);
+      }
+    });
+  }
+
+  /** Whether a loaded row is frozen by the server — its rent and dates cannot be changed. */
+  isRowFrozen(scheduledDate: string): boolean {
+    return this.frozenRowDates().has(scheduledDate);
   }
 
   get frequency(): RentFrequency {
@@ -207,6 +342,26 @@ export class RentAgreementCreateComponent {
 
   get leaseTermType(): LeaseTermType {
     return this.form.get('leaseTermType')!.value;
+  }
+
+  /**
+   * The lease's own start/end date and (when month-to-month) invoice count, passed down to
+   * `AdditionalChargePanelComponent` so its recurring Start Date/End Date can be presented as a
+   * candidate-date `<select>` rather than a free-form calendar — see that component's
+   * `leaseStartDate` doc comment for why.
+   */
+  get formStartDateIso(): string | null {
+    return toIsoDate(this.form.get('startDate')!.value);
+  }
+
+  get formEndDateIso(): string | null {
+    return this.leaseTermType === 'fixed' ? toIsoDate(this.form.get('endDate')!.value) : null;
+  }
+
+  get formMonthToMonthInvoiceCount(): number | null {
+    return this.leaseTermType === 'month_to_month'
+      ? Number(this.form.get('monthToMonthInvoiceCount')!.value)
+      : null;
   }
 
   get dueOnDays(): FormArray {
@@ -235,6 +390,7 @@ export class RentAgreementCreateComponent {
 
   closeAdditionalChargePanel(): void {
     this.showAdditionalChargePanel.set(false);
+    this.editingChargeIndex.set(null);
   }
 
   openDepositChargePanel(): void {
@@ -243,21 +399,39 @@ export class RentAgreementCreateComponent {
 
   closeDepositChargePanel(): void {
     this.showDepositChargePanel.set(false);
+    this.editingChargeIndex.set(null);
+  }
+
+  /** Reopens row `index` of the running additional-charges list for editing, in whichever panel matches its target. */
+  editAdditionalCharge(index: number): void {
+    this.editingChargeIndex.set(index);
+    if (this.additionalChargeTargets()[index] === 'Deposit') {
+      this.showDepositChargePanel.set(true);
+    } else {
+      this.showAdditionalChargePanel.set(true);
+    }
   }
 
   onAdditionalChargeCreated(charge: AdditionalChargeCreationRequest): void {
-    this.appendAdditionalCharge(charge, 'Rent');
+    this.upsertAdditionalCharge(charge, 'Rent');
     this.showAdditionalChargePanel.set(false);
   }
 
   onDepositChargeCreated(charge: AdditionalChargeCreationRequest): void {
-    this.appendAdditionalCharge(charge, 'Deposit');
+    this.upsertAdditionalCharge(charge, 'Deposit');
     this.showDepositChargePanel.set(false);
   }
 
-  private appendAdditionalCharge(charge: AdditionalChargeCreationRequest, target: 'Rent' | 'Deposit'): void {
-    this.additionalCharges.update((charges) => [...charges, charge]);
-    this.additionalChargeTargets.update((targets) => [...targets, target]);
+  private upsertAdditionalCharge(charge: AdditionalChargeCreationRequest, target: 'Rent' | 'Deposit'): void {
+    const editIndex = this.editingChargeIndex();
+    if (editIndex !== null) {
+      this.additionalCharges.update((charges) => charges.map((c, i) => (i === editIndex ? charge : c)));
+      this.additionalChargeTargets.update((targets) => targets.map((t, i) => (i === editIndex ? target : t)));
+      this.editingChargeIndex.set(null);
+    } else {
+      this.additionalCharges.update((charges) => [...charges, charge]);
+      this.additionalChargeTargets.update((targets) => [...targets, target]);
+    }
   }
 
   removeAdditionalCharge(index: number): void {
@@ -356,9 +530,10 @@ export class RentAgreementCreateComponent {
           this.previewResult.set(response);
           this.lastPreviewSignature = this.scheduleSignature();
           this.previewLoading.set(false);
-          // A fresh preview means entirely new row identities — any prior deletions no longer
-          // correspond to anything meaningful.
+          // A fresh preview means entirely new row identities — any prior deletions, and any prior
+          // hand-edited amounts, no longer correspond to anything meaningful.
           this.deletedRowDates.set(new Set());
+          this.manuallyChangedRowDates.set(new Set());
           this.closeRowMenu();
         },
         error: (err: HttpErrorResponse) => {
@@ -468,7 +643,16 @@ export class RentAgreementCreateComponent {
       return;
     }
 
-    const rows = preview.rows.map((row, i) => (i === index ? { ...row, dueDate, rent: Number(rent) } : row));
+    const target = preview.rows[index];
+    const newRent = Number(rent);
+
+    // Only an actual change to the AMOUNT flags the row. Moving the due date, or re-saving the
+    // dialog without touching the rent, must leave the flag alone — see `manuallyChangedRowDates`.
+    if (target && newRent !== target.rent) {
+      this.manuallyChangedRowDates.update((dates) => new Set(dates).add(target.scheduledDate));
+    }
+
+    const rows = preview.rows.map((row, i) => (i === index ? { ...row, dueDate, rent: newRent } : row));
 
     this.previewResult.set({
       ...preview,
@@ -478,6 +662,11 @@ export class RentAgreementCreateComponent {
 
     this.editingRowIndex.set(null);
     this.editRowError.set(null);
+  }
+
+  /** Whether a row's rent was hand-edited — drives both the table's badge and the save payload. */
+  isRowManuallyChanged(scheduledDate: string): boolean {
+    return this.manuallyChangedRowDates().has(scheduledDate);
   }
 
   save(): void {
@@ -502,6 +691,12 @@ export class RentAgreementCreateComponent {
     this.saveError.set(null);
     this.saveResult.set(null);
 
+    const editingId = this.agreementId();
+    if (editingId) {
+      this.saveEdit(editingId, value, preview);
+      return;
+    }
+
     const request: CreateRentAgreementRequest = {
       propertyUnitId: value.propertyUnitId,
       propertyId: value.propertyId,
@@ -523,7 +718,8 @@ export class RentAgreementCreateComponent {
         .map((row) => ({
           scheduledDate: row.scheduledDate,
           dueDate: row.dueDate,
-          rent: row.rent
+          rent: row.rent,
+          isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate)
         })),
       additionalCharges: this.additionalCharges()
     };
@@ -531,6 +727,76 @@ export class RentAgreementCreateComponent {
     this.rentAgreementsService.create(request).subscribe({
       next: (response) => {
         this.saveResult.set(response);
+        this.saving.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.saveError.set(RentAgreementCreateComponent.describeError(err));
+        this.saving.set(false);
+      }
+    });
+  }
+
+  /**
+   * Saves an edit through `PUT /rent-agreements/{id}/terms`.
+   *
+   * Both collections are sent **complete** — every row and every charge, changed or not (decisions
+   * D8 / E1). A row or charge the user removed is simply absent, which is how the server is told to
+   * delete it, so these lists must never be filtered down to "just what changed".
+   *
+   * Only the schedule-affecting terms are included (decision D3): `startDate`, the property/owner
+   * ids and the deposit fields are not editable here, so they are deliberately not sent even though
+   * the form still holds them.
+   */
+  private saveEdit(agreementId: string, value: any, preview: PreviewRentScheduleResponse): void {
+    const request: UpdateRentAgreementTermsRequest = {
+      endDate: value.leaseTermType === 'fixed' ? toIsoDate(value.endDate) : null,
+      fullRent: Number(value.rent),
+      frequency: value.frequency,
+      frequencyConfig: buildFrequencyConfig(value),
+      firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
+      scheduleRows: preview.rows
+        .filter((row) => !this.deletedRowDates().has(row.scheduledDate))
+        .map((row) => ({
+          scheduledDate: row.scheduledDate,
+          dueDate: row.dueDate,
+          rent: row.rent,
+          isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate)
+        })),
+      additionalCharges: this.additionalCharges()
+    };
+
+    this.rentAgreementsService.updateTerms(agreementId, request).subscribe({
+      next: (agreement) => {
+        // Re-seed from the server's response: rows and charges come back with their real ids and
+        // refreshed frozen flags, and rows the reconcile removed are simply gone.
+        this.loadedAgreement.set(agreement);
+        this.previewResult.set({
+          rows: agreement.scheduleRows.map((row) => ({
+            scheduledDate: row.scheduledDate,
+            dueDate: row.dueDate,
+            rent: row.rent
+          })),
+          totalInvoices: agreement.scheduleRows.length,
+          totalAmount: agreement.scheduleRows.reduce((sum, row) => sum + row.rent, 0)
+        });
+        this.manuallyChangedRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.isManualChanged).map((r) => r.scheduledDate))
+        );
+        this.frozenRowDates.set(
+          new Set(agreement.scheduleRows.filter((r) => r.isFrozen).map((r) => r.scheduledDate))
+        );
+        this.deletedRowDates.set(new Set());
+        this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
+        this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
+
+        this.lastPreviewSignature = this.scheduleSignature();
+        this.saveResult.set({
+          agreementId: agreement.agreementId,
+          status: agreement.status,
+          depositCollected: agreement.depositCollected,
+          scheduleRows: agreement.scheduleRows,
+          additionalCharges: agreement.additionalCharges
+        });
         this.saving.set(false);
       },
       error: (err: HttpErrorResponse) => {

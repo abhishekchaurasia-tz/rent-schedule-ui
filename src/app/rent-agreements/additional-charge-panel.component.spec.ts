@@ -2,6 +2,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { environment } from '../../environments/environment';
+import { toIsoDate } from '../shared/date.util';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
 import { AdditionalChargeCreationRequest } from './rent-agreement.models';
 import { LineItemResponse } from './line-item.models';
@@ -275,6 +276,247 @@ describe('AdditionalChargePanelComponent', () => {
 
     expect(emitted?.attachedWithRentalInvoice).toBeFalse();
     expect(emitted?.items[0].itemType).toBe('PetDeposit');
+  });
+
+  it('never enters "add new item type" mode when depositOnly, even if called directly', () => {
+    component.depositOnly = true;
+    fixture.detectChanges();
+    flushLineItems([petDepositItem]);
+
+    component.startAddingNewItemType();
+
+    expect(component.addingNewItemType()).toBeFalse();
+  });
+
+  it('is invalid until a row either picks an existing item or types a new item type', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    const group = component.items.at(0);
+    expect(group.hasError('itemRequired')).toBeTrue();
+
+    group.patchValue({ newItemType: 'Snow Removal' });
+    expect(group.hasError('itemRequired')).toBeFalse();
+
+    group.patchValue({ newItemType: '', lineItemId: parkingItem.id });
+    expect(group.hasError('itemRequired')).toBeFalse();
+
+    group.patchValue({ lineItemId: '' });
+    expect(group.hasError('itemRequired')).toBeTrue();
+  });
+
+  it('itemDisplayLabel reflects the placeholder, an existing pick, or a typed new type', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.itemDisplayLabel(0)).toBe('Select Type');
+
+    component.items.at(0).patchValue({ lineItemId: parkingItem.id });
+    expect(component.itemDisplayLabel(0)).toBe('Parking');
+
+    component.items.at(0).patchValue({ lineItemId: '', newItemType: 'Snow Removal' });
+    expect(component.itemDisplayLabel(0)).toBe('Snow Removal');
+  });
+
+  it('confirmNewItemType sets the row to a brand-new item type and closes the picker', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.toggleItemPicker(0, { currentTarget: document.createElement('button') } as unknown as MouseEvent);
+    component.startAddingNewItemType();
+    component.newItemTypeDraft.set('Snow Removal');
+    component.confirmNewItemType(0);
+
+    expect(component.items.at(0).get('lineItemId')!.value).toBe('');
+    expect(component.items.at(0).get('newItemType')!.value).toBe('Snow Removal');
+    expect(component.openItemPickerIndex()).toBeNull();
+  });
+
+  it('selectExistingItem sets the row to a catalog pick and clears any typed new item type', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.items.at(0).patchValue({ newItemType: 'Snow Removal' });
+    component.selectExistingItem(0, parkingItem.id);
+
+    expect(component.items.at(0).get('lineItemId')!.value).toBe(parkingItem.id);
+    expect(component.items.at(0).get('newItemType')!.value).toBe('');
+  });
+
+  it('emits a charge with lineItemId omitted and itemType set to the typed name for a new item type', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    const item = component.items.at(0);
+    item.patchValue({ newItemType: 'Snow Removal', description: 'Winter snow removal', quantity: 1, rate: 75 });
+    component.recalculateAmount(0);
+    component.form.patchValue({ dueDate: '2026-08-15' });
+
+    let emitted: AdditionalChargeCreationRequest | undefined;
+    component.created.subscribe((c) => (emitted = c));
+
+    component.create();
+
+    expect(emitted?.items[0]).toEqual({
+      lineItemId: null,
+      itemType: 'Snow Removal',
+      description: 'Winter snow removal',
+      quantity: 1,
+      rate: 75,
+      amount: 75
+    });
+  });
+
+  it('prefills a one-time charge from initialCharge (Edit)', () => {
+    const existing: AdditionalChargeCreationRequest = {
+      notes: 'Existing note',
+      alreadyPaid: 15,
+      attachedWithRentalInvoice: true,
+      isRecurring: false,
+      dueDate: '2026-08-20',
+      frequency: null,
+      frequencyConfig: null,
+      startDate: null,
+      endDate: null,
+      hasNoEndDate: false,
+      isGrouped: true,
+      isSharedByAll: false,
+      items: [
+        {
+          lineItemId: parkingItem.id,
+          itemType: 'Parking',
+          description: 'Parking space',
+          quantity: 2,
+          rate: 40,
+          amount: 80
+        }
+      ]
+    };
+    component.initialCharge = existing;
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.form.get('notes')!.value).toBe('Existing note');
+    expect(component.form.get('alreadyPaid')!.value).toBe(15);
+    expect(component.form.get('attachedWithRentalInvoice')!.value).toBeTrue();
+    expect(component.form.get('isRecurring')!.value).toBeFalse();
+    expect(component.form.get('isGrouped')!.value).toBeTrue();
+    expect(component.form.get('isSharedByAll')!.value).toBeFalse();
+    expect(component.items.length).toBe(1);
+    expect(component.items.at(0).get('lineItemId')!.value).toBe(parkingItem.id);
+    expect(component.items.at(0).get('description')!.value).toBe('Parking space');
+    expect(component.items.at(0).get('quantity')!.value).toBe(2);
+    expect(component.items.at(0).get('rate')!.value).toBe(40);
+    expect(component.itemDisplayLabel(0)).toBe('Parking');
+  });
+
+  it('prefills a recurring monthly charge from initialCharge, including a brand-new item type', () => {
+    const existing: AdditionalChargeCreationRequest = {
+      notes: null,
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: true,
+      dueDate: null,
+      frequency: 'monthly',
+      frequencyConfig: { dueOnDay: 12 },
+      startDate: '2026-09-01',
+      endDate: null,
+      hasNoEndDate: true,
+      isGrouped: false,
+      isSharedByAll: true,
+      items: [
+        { lineItemId: null, itemType: 'Snow Removal', description: 'Winter snow removal', quantity: 1, rate: 60, amount: 60 }
+      ]
+    };
+    component.initialCharge = existing;
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.form.get('isRecurring')!.value).toBeTrue();
+    expect(component.form.get('frequency')!.value).toBe('monthly');
+    expect(component.form.get('dueOnDay')!.value).toBe(12);
+    expect(component.form.get('startDate')!.value).toBe('2026-09-01');
+    expect(component.form.get('hasNoEndDate')!.value).toBeTrue();
+    expect(component.items.at(0).get('lineItemId')!.value).toBe('');
+    expect(component.items.at(0).get('newItemType')!.value).toBe('Snow Removal');
+    expect(component.itemDisplayLabel(0)).toBe('Snow Removal');
+  });
+
+  it('prefills a recurring bi-monthly charge, resizing dueOnDays to match', () => {
+    const existing: AdditionalChargeCreationRequest = {
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: true,
+      frequency: 'bi_monthly',
+      frequencyConfig: { dueOnDays: [3, 22] },
+      startDate: '2026-09-01',
+      hasNoEndDate: true,
+      isGrouped: false,
+      isSharedByAll: true,
+      items: [{ lineItemId: parkingItem.id, itemType: 'Parking', description: 'x', quantity: 1, rate: 10, amount: 10 }]
+    };
+    component.initialCharge = existing;
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.dueOnDays.length).toBe(2);
+    expect(component.dueOnDays.value).toEqual([3, 22]);
+  });
+
+  it('prefills a recurring custom charge, rebuilding the dueDates FormArray to match', () => {
+    const existing: AdditionalChargeCreationRequest = {
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: true,
+      frequency: 'custom',
+      frequencyConfig: { dueDates: ['2026-09-01', '2026-10-15', '2026-11-30'] },
+      startDate: '2026-09-01',
+      hasNoEndDate: true,
+      isGrouped: false,
+      isSharedByAll: true,
+      items: [{ lineItemId: parkingItem.id, itemType: 'Parking', description: 'x', quantity: 1, rate: 10, amount: 10 }]
+    };
+    component.initialCharge = existing;
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.dueDates.length).toBe(3);
+    expect(component.dueDates.value.map((d: Date) => toIsoDate(d))).toEqual(['2026-09-01', '2026-10-15', '2026-11-30']);
+    // Custom's own Start Date stays a free-form Date, not the candidate <select>'s ISO string.
+    expect(component.form.get('startDate')!.value instanceof Date).toBeTrue();
+  });
+
+  it('re-editing and re-creating rebuilds items to exactly match the edited charge (no leftover rows)', () => {
+    const existing: AdditionalChargeCreationRequest = {
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: false,
+      dueDate: '2026-08-20',
+      hasNoEndDate: false,
+      isGrouped: false,
+      isSharedByAll: true,
+      items: [
+        { lineItemId: parkingItem.id, itemType: 'Parking', description: 'a', quantity: 1, rate: 10, amount: 10 },
+        { lineItemId: petFeeItem.id, itemType: 'PetFee', description: 'b', quantity: 1, rate: 20, amount: 20 }
+      ]
+    };
+    component.initialCharge = existing;
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem, petFeeItem]);
+
+    expect(component.items.length).toBe(2);
+
+    let emitted: AdditionalChargeCreationRequest | undefined;
+    component.created.subscribe((c) => (emitted = c));
+    component.create();
+
+    expect(emitted?.items.length).toBe(2);
+    expect(emitted?.items.map((i) => i.description)).toEqual(['a', 'b']);
   });
 
   it('emits closed when close() is called', () => {

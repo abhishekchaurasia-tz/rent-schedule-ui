@@ -11,7 +11,7 @@ let backendReachable = true;
 
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   try {
-    await request.post('/api/v1/rent-schedule/preview', {
+    await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest(),
       failOnStatusCode: false,
       timeout: 3000
@@ -26,7 +26,7 @@ test.beforeEach(() => {
 });
 
 async function preview(request: APIRequestContext, overrides: Record<string, unknown>) {
-  return request.post('/api/v1/rent-schedule/preview', {
+  return request.post('/api/v1/rent/schedule/preview', {
     data: { ...minimalPreviewRequest(), ...overrides }
   });
 }

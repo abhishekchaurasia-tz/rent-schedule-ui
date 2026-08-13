@@ -12,7 +12,7 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class RentScheduleService {
-  private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/rent-schedule`;
+  private readonly baseUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule`;
 
   constructor(private readonly http: HttpClient) {}
 

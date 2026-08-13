@@ -9,8 +9,8 @@ describe('RentSchedulePreviewComponent', () => {
   let component: RentSchedulePreviewComponent;
   let httpMock: HttpTestingController;
 
-  const previewUrl = 'http://localhost:5169/api/v1/rent-schedule/preview';
-  const optionsUrl = 'http://localhost:5169/api/v1/rent-schedule/first-rental-due-date-options';
+  const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
+  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
 
   beforeEach(() => {
     TestBed.configureTestingModule({

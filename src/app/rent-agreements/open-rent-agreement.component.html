@@ -1,0 +1,28 @@
+<div class="open-page">
+  <h1>Open Lease</h1>
+  <p class="subtitle">Enter a saved rent agreement id to view and edit its lease terms and rent schedule.</p>
+
+  <section class="open-box">
+    <label for="agreementId">Rent Agreement ID</label>
+    <div class="open-row">
+      <input
+        id="agreementId"
+        type="text"
+        [formControl]="agreementId"
+        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+        autocomplete="off"
+        spellcheck="false"
+        (keyup.enter)="open()"
+      />
+      <button type="button" class="open-btn" (click)="open()">Open</button>
+    </div>
+
+    @if (error(); as message) {
+      <p class="open-error">{{ message }}</p>
+    }
+
+    <p class="open-hint">
+      The id is returned as <code>agreementId</code> when a lease is saved on the Add Lease screen.
+    </p>
+  </section>
+</div>

@@ -11,7 +11,7 @@ let backendReachable = true;
 
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   try {
-    await request.post('/api/v1/rent-schedule/preview', {
+    await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest(),
       failOnStatusCode: false,
       timeout: 3000
@@ -26,7 +26,7 @@ test.beforeEach(() => {
 });
 
 async function options(request: APIRequestContext, overrides: Record<string, unknown>) {
-  return request.post('/api/v1/rent-schedule/first-rental-due-date-options', {
+  return request.post('/api/v1/rent/schedule/first-rental-due-date-options', {
     data: { ...minimalOptionsRequest(), ...overrides }
   });
 }
@@ -101,7 +101,7 @@ test.describe('first-rental-due-date-options — validation', () => {
     expect(dates.length).toBeGreaterThan(0);
 
     for (const candidate of dates.slice(0, 3)) {
-      const previewResponse = await request.post('/api/v1/rent-schedule/preview', {
+      const previewResponse = await request.post('/api/v1/rent/schedule/preview', {
         data: { ...minimalPreviewRequest(), firstRentalDueDate: candidate }
       });
       expect(previewResponse.ok(), `candidate ${candidate} should be accepted by /preview`).toBeTruthy();

@@ -1,12 +1,23 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
-import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  AbstractControl,
+  FormArray,
+  FormBuilder,
+  FormGroup,
+  ReactiveFormsModule,
+  ValidationErrors,
+  Validators
+} from '@angular/forms';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { provideNativeDateAdapter } from '@angular/material/core';
+import { debounceTime } from 'rxjs';
 
-import { RentFrequency } from '../rent-schedule/rent-schedule.models';
+import { RentScheduleService } from '../rent-schedule/rent-schedule.service';
+import { CandidateDateRequest, FrequencyConfig, LeaseTermType, RentFrequency } from '../rent-schedule/rent-schedule.models';
 import { buildFrequencyConfig, ordinal } from '../rent-schedule/frequency-config.util';
 import { toIsoDate } from '../shared/date.util';
 import { AdditionalChargeCreationRequest } from './rent-agreement.models';
@@ -46,6 +57,27 @@ export class AdditionalChargePanelComponent implements OnInit {
    */
   @Input() propertyOwnerId: string | null = null;
 
+  /**
+   * The lease's own start/end date and (when month-to-month) invoice count — passed down so this
+   * panel's recurring Start Date/End Date can be presented as a candidate-date `<select>` (fed by
+   * `POST /rent-schedule/first-rental-due-date-options`, the same API the lease-terms form uses for
+   * its own "first rental due date" dropdown) rather than a free-form calendar, mirroring the
+   * legacy `in-property-owner-app` `AdditionalFeeComponent`'s `dueDatesForStartDate`/
+   * `dueDatesForEndDate` — those were themselves computed per-frequency from the lease's window
+   * (`changeRentDueOn()`), not picked freely either. `leaseEndDate` null means month-to-month.
+   */
+  @Input() leaseStartDate: string | null = null;
+  @Input() leaseEndDate: string | null = null;
+  @Input() leaseMonthToMonthInvoiceCount: number | null = null;
+
+  /**
+   * When set, the panel opens pre-filled with this already-created charge instead of a blank form
+   * — the host's "Edit" action on a row in its running additional-charges list. `create()` still
+   * just emits the built request; the host (not this component) decides whether that's a new
+   * append or a replace of the charge being edited.
+   */
+  @Input() initialCharge: AdditionalChargeCreationRequest | null = null;
+
   @Output() readonly created = new EventEmitter<AdditionalChargeCreationRequest>();
   @Output() readonly closed = new EventEmitter<void>();
 
@@ -56,6 +88,31 @@ export class AdditionalChargePanelComponent implements OnInit {
    * rent/deposit target to pick or a "mixed category" case to guard against.
    */
   readonly lineItems = signal<LineItemResponse[]>([]);
+
+  /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
+  readonly openItemPickerIndex = signal<number | null>(null);
+
+  /**
+   * Viewport coordinates for the open item picker, computed from the clicked button's
+   * `getBoundingClientRect()`. Rendered as a `position: fixed` sibling of `.panel-body` rather than
+   * a child of the item row — `.panel-body` scrolls (`overflow-y: auto`), and an ancestor's
+   * `overflow` clips any descendant's paint (fixed position included), so a dropdown nested inside
+   * it would get cut off once the panel is scrolled.
+   */
+  readonly itemPickerPosition = signal<{ top: number; left: number } | null>(null);
+
+  /** Whether the open item picker is showing the "type a new item type" input instead of the catalog list. */
+  readonly addingNewItemType = signal(false);
+  readonly newItemTypeDraft = signal('');
+
+  /**
+   * Candidate due dates for the recurring Start Date `<select>`, fetched whenever frequency (or its
+   * config) changes — see the `leaseStartDate` doc comment above. Only meaningful for
+   * `frequency !== 'custom'`; the backend's candidate endpoint rejects Custom outright (it has no
+   * computed-candidate concept), so Custom keeps the free-form date pickers instead.
+   */
+  readonly recurringDueDateCandidates = signal<string[]>([]);
+  readonly recurringDueDateCandidatesLoading = signal(false);
 
   readonly frequencies: { value: RentFrequency; label: string }[] = [
     { value: 'monthly', label: 'Monthly' },
@@ -83,7 +140,11 @@ export class AdditionalChargePanelComponent implements OnInit {
 
   readonly form: FormGroup;
 
-  constructor(private readonly fb: FormBuilder, private readonly lineItemsService: LineItemsService) {
+  constructor(
+    private readonly fb: FormBuilder,
+    private readonly lineItemsService: LineItemsService,
+    private readonly rentScheduleService: RentScheduleService
+  ) {
     this.form = this.fb.group({
       items: this.fb.array([this.buildItemGroup()]),
       notes: [''],
@@ -100,8 +161,10 @@ export class AdditionalChargePanelComponent implements OnInit {
         this.fb.group({ month: [7], day: [1] })
       ]),
       dueDates: this.fb.array([this.fb.control(null as Date | null)]),
-      startDate: [null as Date | null],
-      endDate: [null as Date | null],
+      // A plain ISO "YYYY-MM-DD" string once picked from the candidate <select> (frequency !==
+      // 'custom'), or a native Date from the free-form picker when frequency === 'custom'.
+      startDate: [null as Date | string | null],
+      endDate: [null as Date | string | null],
       hasNoEndDate: [false],
       isGrouped: [false],
       isSharedByAll: [true]
@@ -125,6 +188,24 @@ export class AdditionalChargePanelComponent implements OnInit {
       dueDate.updateValueAndValidity();
       startDate.updateValueAndValidity();
     });
+
+    // Clears a stale End Date pick once it's no longer after the (possibly newly re-picked) Start
+    // Date — mirrors the reference component's dueDatesForEndDate always being re-filtered to
+    // "after the selected start date" whenever the start date selection changes.
+    this.form.get('startDate')!.valueChanges.subscribe((startDate: Date | string | null) => {
+      if (this.frequency === 'custom' || !startDate) {
+        return;
+      }
+      const endDateControl = this.form.get('endDate')!;
+      const endDate = endDateControl.value;
+      if (endDate && !(endDate > startDate)) {
+        endDateControl.setValue(null, { emitEvent: false });
+      }
+    });
+
+    this.form.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe(() => {
+      this.refreshRecurringDueDateCandidates();
+    });
   }
 
   ngOnInit(): void {
@@ -132,7 +213,109 @@ export class AdditionalChargePanelComponent implements OnInit {
       this.form.get('attachedWithRentalInvoice')!.setValue(false);
       this.form.get('attachedWithRentalInvoice')!.disable();
     }
+    if (this.initialCharge) {
+      this.applyInitialCharge(this.initialCharge);
+    }
     this.loadLineItems();
+    this.refreshRecurringDueDateCandidates();
+  }
+
+  /**
+   * Prefills the form from an already-created charge (the host's "Edit" action). Converts each ISO
+   * date string back to whatever shape the relevant field currently expects — a native `Date` for
+   * the one-time `dueDate` and for Custom's own `startDate`/`endDate`/`dueDates` (those fields still
+   * use the free-form `mat-datepicker`), a plain ISO string for `startDate`/`endDate` on every other
+   * frequency (those are the candidate-date `<select>`s).
+   */
+  private applyInitialCharge(charge: AdditionalChargeCreationRequest): void {
+    const frequency = charge.frequency ?? 'monthly';
+    const parseDate = (iso: string | null | undefined): Date | null => (iso ? new Date(`${iso}T00:00:00`) : null);
+
+    this.form.patchValue({
+      notes: charge.notes ?? '',
+      alreadyPaid: charge.alreadyPaid,
+      attachedWithRentalInvoice: charge.attachedWithRentalInvoice,
+      isRecurring: charge.isRecurring,
+      dueDate: parseDate(charge.dueDate),
+      frequency,
+      startDate: charge.isRecurring ? (frequency === 'custom' ? parseDate(charge.startDate) : charge.startDate) : null,
+      endDate:
+        charge.isRecurring && !charge.hasNoEndDate
+          ? frequency === 'custom'
+            ? parseDate(charge.endDate)
+            : charge.endDate
+          : null,
+      hasNoEndDate: charge.hasNoEndDate,
+      isGrouped: charge.isGrouped,
+      isSharedByAll: charge.isSharedByAll
+    });
+
+    if (charge.isRecurring) {
+      this.applyFrequencyConfig(frequency, charge.frequencyConfig);
+    }
+
+    this.items.clear();
+    charge.items.forEach((item) => {
+      const group = this.buildItemGroup();
+      group.patchValue({
+        lineItemId: item.lineItemId ?? '',
+        newItemType: item.lineItemId ? '' : item.itemType,
+        description: item.description,
+        quantity: item.quantity,
+        rate: item.rate,
+        amount: item.amount
+      });
+      this.items.push(group);
+    });
+  }
+
+  /** Reverses {@link buildFrequencyConfig}, resizing the relevant `FormArray` to fit. */
+  private applyFrequencyConfig(frequency: RentFrequency, config: FrequencyConfig | null | undefined): void {
+    if (!config) {
+      return;
+    }
+
+    const resize = (array: FormArray, length: number, buildControl: () => AbstractControl) => {
+      while (array.length < length) {
+        array.push(buildControl());
+      }
+      while (array.length > length) {
+        array.removeAt(array.length - 1);
+      }
+    };
+
+    switch (frequency) {
+      case 'monthly':
+        this.form.get('dueOnDay')!.setValue(config.dueOnDay ?? 1);
+        break;
+      case 'bi_monthly': {
+        const days = config.dueOnDays ?? [1, 15];
+        resize(this.dueOnDays, days.length, () => this.fb.control(1));
+        this.dueOnDays.setValue(days);
+        break;
+      }
+      case 'weekly':
+      case 'bi_weekly':
+        this.form.get('dayOfWeek')!.setValue(config.dayOfWeek ?? 1);
+        break;
+      case 'semesterly': {
+        const cycle = config.cycle ?? [
+          { month: 1, day: 1 },
+          { month: 7, day: 1 }
+        ];
+        resize(this.cycle, cycle.length, () => this.fb.group({ month: [1], day: [1] }));
+        this.cycle.setValue(cycle);
+        break;
+      }
+      case 'custom': {
+        const dueDates = (config.dueDates ?? []).map((iso) => new Date(`${iso}T00:00:00`));
+        resize(this.dueDates, Math.max(dueDates.length, 1), () => this.fb.control(null as Date | null));
+        dueDates.forEach((date, index) => this.dueDates.at(index)?.setValue(date));
+        break;
+      }
+      default:
+        break;
+    }
   }
 
   private loadLineItems(): void {
@@ -143,6 +326,57 @@ export class AdditionalChargePanelComponent implements OnInit {
     const scope: LineItemScope = this.depositOnly ? 'DepositOnly' : 'AllExcludingCredit';
 
     this.lineItemsService.list(this.propertyOwnerId, scope).subscribe((items) => this.lineItems.set(items));
+  }
+
+  /**
+   * The End Date `<select>`'s option list — {@link recurringDueDateCandidates} filtered to dates
+   * strictly after whichever Start Date is currently picked (mirrors the reference component always
+   * recomputing `dueDatesForEndDate` relative to the chosen start).
+   */
+  endDateCandidates(): string[] {
+    const startDate = this.form.get('startDate')!.value;
+    return this.recurringDueDateCandidates().filter((date) => !startDate || date > startDate);
+  }
+
+  private refreshRecurringDueDateCandidates(): void {
+    const value = this.form.value;
+    const canRequest = !!value.isRecurring && value.frequency !== 'custom' && !!this.leaseStartDate;
+
+    if (!canRequest) {
+      this.recurringDueDateCandidates.set([]);
+      this.recurringDueDateCandidatesLoading.set(false);
+      return;
+    }
+
+    const leaseTermType: LeaseTermType = this.leaseEndDate ? 'fixed' : 'month_to_month';
+
+    const request: CandidateDateRequest = {
+      startDate: this.leaseStartDate!,
+      endDate: leaseTermType === 'fixed' ? this.leaseEndDate : null,
+      leaseTermType,
+      frequency: value.frequency,
+      frequencyConfig: buildFrequencyConfig(value),
+      monthToMonthInvoiceCount: leaseTermType === 'month_to_month' ? this.leaseMonthToMonthInvoiceCount : null,
+      nextLeaseStartDate: null
+    };
+
+    this.recurringDueDateCandidatesLoading.set(true);
+
+    this.rentScheduleService.firstRentalDueDateOptions(request).subscribe({
+      next: (response) => {
+        this.recurringDueDateCandidates.set(response.dates);
+        this.recurringDueDateCandidatesLoading.set(false);
+
+        const currentStart = this.form.get('startDate')!.value;
+        if (response.dates.length > 0 && currentStart && !response.dates.includes(currentStart)) {
+          this.form.get('startDate')!.setValue(null, { emitEvent: false });
+        }
+      },
+      error: () => {
+        this.recurringDueDateCandidates.set([]);
+        this.recurringDueDateCandidatesLoading.set(false);
+      }
+    });
   }
 
   /**
@@ -194,6 +428,68 @@ export class AdditionalChargePanelComponent implements OnInit {
     }
   }
 
+  /** The current selection's display text for row `index`'s "Select Type" button. */
+  itemDisplayLabel(index: number): string {
+    const group = this.items.at(index);
+    const lineItemId = group.get('lineItemId')!.value;
+    const newItemType = group.get('newItemType')!.value;
+
+    if (lineItemId) {
+      return this.findLineItem(lineItemId)?.name ?? 'Select Type';
+    }
+    if (newItemType) {
+      return newItemType;
+    }
+    return 'Select Type';
+  }
+
+  toggleItemPicker(index: number, event: MouseEvent): void {
+    if (this.openItemPickerIndex() === index) {
+      this.closeItemPicker();
+      return;
+    }
+
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.itemPickerPosition.set({ top: rect.bottom, left: rect.left });
+    this.openItemPickerIndex.set(index);
+    this.addingNewItemType.set(false);
+    this.newItemTypeDraft.set('');
+  }
+
+  closeItemPicker(): void {
+    this.openItemPickerIndex.set(null);
+    this.itemPickerPosition.set(null);
+    this.addingNewItemType.set(false);
+    this.newItemTypeDraft.set('');
+  }
+
+  /**
+   * Not reachable from the deposit-only panel's template (its trigger button is hidden there), but
+   * guarded here too — a non-system property owner can never create a new deposit-category catalog
+   * entry (backend `DepositItemMustBeSystemDefined`), so this panel only ever offers picking from
+   * the already-fetched (system-defined) deposit catalog.
+   */
+  startAddingNewItemType(): void {
+    if (this.depositOnly) {
+      return;
+    }
+    this.addingNewItemType.set(true);
+  }
+
+  confirmNewItemType(index: number): void {
+    const name = this.newItemTypeDraft().trim();
+    if (!name) {
+      return;
+    }
+    this.items.at(index).patchValue({ lineItemId: '', newItemType: name });
+    this.closeItemPicker();
+  }
+
+  selectExistingItem(index: number, lineItemId: string): void {
+    this.items.at(index).patchValue({ lineItemId, newItemType: '' });
+    this.closeItemPicker();
+  }
+
   recalculateAmount(index: number): void {
     const group = this.items.at(index);
     const quantity = Number(group.get('quantity')!.value || 0);
@@ -235,26 +531,47 @@ export class AdditionalChargePanelComponent implements OnInit {
       hasNoEndDate: isRecurring ? !!value.hasNoEndDate : false,
       isGrouped: !!value.isGrouped,
       isSharedByAll: !!value.isSharedByAll,
-      items: value.items.map((item: any) => ({
-        lineItemId: item.lineItemId,
-        itemType: this.findLineItem(item.lineItemId)?.itemType ?? '',
-        description: item.description,
-        quantity: Number(item.quantity),
-        rate: Number(item.rate),
-        amount: Number(item.quantity) * Number(item.rate)
-      }))
+      items: value.items.map((item: any) => {
+        // A row is either an existing catalog pick (lineItemId set) or a brand-new item type typed
+        // inline (lineItemId omitted) — the backend get-or-creates a catalog entry server-side from
+        // `itemType`/`description` whenever `lineItemId` is null (spec 02-invoicing.md v6).
+        const lineItemId = item.lineItemId || null;
+        const itemType = lineItemId
+          ? this.findLineItem(lineItemId)?.itemType ?? ''
+          : String(item.newItemType || '').trim();
+
+        return {
+          lineItemId,
+          itemType,
+          description: item.description,
+          quantity: Number(item.quantity),
+          rate: Number(item.rate),
+          amount: Number(item.quantity) * Number(item.rate)
+        };
+      })
     };
 
     this.created.emit(request);
   }
 
   private buildItemGroup(): FormGroup {
-    return this.fb.group({
-      lineItemId: ['', Validators.required],
-      description: ['', Validators.required],
-      quantity: [1, [Validators.required, Validators.min(0.01)]],
-      rate: [0, [Validators.required, Validators.min(0.01)]],
-      amount: [{ value: 0, disabled: true }]
-    });
+    return this.fb.group(
+      {
+        lineItemId: [''],
+        newItemType: [''],
+        description: ['', Validators.required],
+        quantity: [1, [Validators.required, Validators.min(0.01)]],
+        rate: [0, [Validators.required, Validators.min(0.01)]],
+        amount: [{ value: 0, disabled: true }]
+      },
+      { validators: AdditionalChargePanelComponent.requireItemSelection }
+    );
+  }
+
+  /** A row must either pick an existing catalog item or have a new item type name typed in. */
+  private static requireItemSelection(group: AbstractControl): ValidationErrors | null {
+    const lineItemId = group.get('lineItemId')?.value;
+    const newItemType = String(group.get('newItemType')?.value ?? '').trim();
+    return lineItemId || newItemType ? null : { itemRequired: true };
   }
 }

@@ -10,7 +10,7 @@ let backendReachable = true;
 
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   try {
-    await request.post('/api/v1/rent-schedule/preview', {
+    await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest(),
       failOnStatusCode: false,
       timeout: 3000
@@ -38,7 +38,7 @@ function minimalPreviewRequest() {
 
 test.describe('rent-schedule API', () => {
   test('POST /preview returns a schedule for a monthly lease', async ({ request }) => {
-    const response = await request.post('/api/v1/rent-schedule/preview', {
+    const response = await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest()
     });
 
@@ -50,7 +50,7 @@ test.describe('rent-schedule API', () => {
   });
 
   test('POST /preview rejects an end date before the start date', async ({ request }) => {
-    const response = await request.post('/api/v1/rent-schedule/preview', {
+    const response = await request.post('/api/v1/rent/schedule/preview', {
       data: { ...minimalPreviewRequest(), endDate: '2026-08-01' }
     });
 
@@ -61,7 +61,7 @@ test.describe('rent-schedule API', () => {
 
   test('POST /first-rental-due-date-options returns candidate dates', async ({ request }) => {
     const { firstRentalDueDate, ...rest } = minimalPreviewRequest();
-    const response = await request.post('/api/v1/rent-schedule/first-rental-due-date-options', {
+    const response = await request.post('/api/v1/rent/schedule/first-rental-due-date-options', {
       data: rest
     });
 
@@ -74,13 +74,13 @@ test.describe('rent-schedule API', () => {
 
 test.describe('rent-agreements API', () => {
   test('POST /rent-agreements creates a draft agreement from a previewed schedule', async ({ request }) => {
-    const previewResponse = await request.post('/api/v1/rent-schedule/preview', {
+    const previewResponse = await request.post('/api/v1/rent/schedule/preview', {
       data: minimalPreviewRequest()
     });
     expect(previewResponse.ok()).toBeTruthy();
     const preview = await previewResponse.json();
 
-    const createResponse = await request.post('/api/v1/rent-agreements', {
+    const createResponse = await request.post('/api/v1/rent/agreements', {
       data: {
         propertyUnitId: crypto.randomUUID(),
         propertyId: crypto.randomUUID(),

@@ -27,12 +27,14 @@
 
       @for (group of items.controls; track $index) {
         <div [formGroupName]="$index" class="items-row">
-          <select formControlName="lineItemId">
-            <option value="" disabled>Select Item</option>
-            @for (lineItem of lineItems(); track lineItem.id) {
-              <option [value]="lineItem.id">{{ lineItem.name }}</option>
-            }
-          </select>
+          <button
+            type="button"
+            class="item-picker-btn"
+            [class.placeholder]="!group.get('lineItemId')!.value && !group.get('newItemType')!.value"
+            (click)="toggleItemPicker($index, $event)"
+          >
+            {{ itemDisplayLabel($index) }}
+          </button>
           <input type="text" formControlName="description" placeholder="Description" />
           <input
             type="number"
@@ -218,29 +220,68 @@
       }
 
       <div class="recurring-fields grid">
-        <mat-form-field appearance="outline" class="date-field">
-          <mat-label>Start Date</mat-label>
-          <input
-            matInput
-            [matDatepicker]="recurringStartDatePicker"
-            formControlName="startDate"
-            (click)="recurringStartDatePicker.open()"
-          />
-          <mat-datepicker-toggle matIconSuffix [for]="recurringStartDatePicker"></mat-datepicker-toggle>
-          <mat-datepicker #recurringStartDatePicker></mat-datepicker>
-        </mat-form-field>
-        @if (!form.get('hasNoEndDate')!.value) {
+        @if (frequency === 'custom') {
+          <!-- The candidate-date API rejects Custom outright (no computed-candidate concept for
+               it), so Custom keeps the original free-form date pickers. -->
           <mat-form-field appearance="outline" class="date-field">
-            <mat-label>End Date</mat-label>
+            <mat-label>Start Date</mat-label>
             <input
               matInput
-              [matDatepicker]="recurringEndDatePicker"
-              formControlName="endDate"
-              (click)="recurringEndDatePicker.open()"
+              [matDatepicker]="recurringStartDatePicker"
+              formControlName="startDate"
+              (click)="recurringStartDatePicker.open()"
             />
-            <mat-datepicker-toggle matIconSuffix [for]="recurringEndDatePicker"></mat-datepicker-toggle>
-            <mat-datepicker #recurringEndDatePicker></mat-datepicker>
+            <mat-datepicker-toggle matIconSuffix [for]="recurringStartDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #recurringStartDatePicker></mat-datepicker>
           </mat-form-field>
+          @if (!form.get('hasNoEndDate')!.value) {
+            <mat-form-field appearance="outline" class="date-field">
+              <mat-label>End Date</mat-label>
+              <input
+                matInput
+                [matDatepicker]="recurringEndDatePicker"
+                formControlName="endDate"
+                (click)="recurringEndDatePicker.open()"
+              />
+              <mat-datepicker-toggle matIconSuffix [for]="recurringEndDatePicker"></mat-datepicker-toggle>
+              <mat-datepicker #recurringEndDatePicker></mat-datepicker>
+            </mat-form-field>
+          }
+        } @else {
+          <label class="recurring-date-select-label">
+            Start Date <span class="required">*</span>
+            <select
+              formControlName="startDate"
+              [attr.disabled]="
+                recurringDueDateCandidatesLoading() || recurringDueDateCandidates().length === 0 ? true : null
+              "
+            >
+              <option value="" disabled>
+                {{
+                  recurringDueDateCandidatesLoading()
+                    ? 'Loading options…'
+                    : recurringDueDateCandidates().length === 0
+                      ? 'Complete the lease details above to see options'
+                      : 'Select a date'
+                }}
+              </option>
+              @for (date of recurringDueDateCandidates(); track date) {
+                <option [value]="date">{{ date }}</option>
+              }
+            </select>
+          </label>
+
+          @if (!form.get('hasNoEndDate')!.value) {
+            <label class="recurring-date-select-label">
+              End Date <span class="required">*</span>
+              <select formControlName="endDate">
+                <option value="" disabled>Select a date</option>
+                @for (date of endDateCandidates(); track date) {
+                  <option [value]="date">{{ date }}</option>
+                }
+              </select>
+            </label>
+          }
         }
         <label class="checkbox-label">
           <input type="checkbox" formControlName="hasNoEndDate" />
@@ -249,6 +290,48 @@
       </div>
     }
   </form>
+
+  @if (openItemPickerIndex() !== null && itemPickerPosition(); as pos) {
+    <div class="item-picker-overlay" (click)="closeItemPicker()"></div>
+    <div class="item-picker-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
+      @if (addingNewItemType()) {
+        <div class="item-picker-new-row">
+          <input
+            type="text"
+            placeholder="New item type name"
+            [value]="newItemTypeDraft()"
+            (input)="newItemTypeDraft.set($any($event.target).value)"
+            (keydown.enter)="confirmNewItemType(openItemPickerIndex()!)"
+          />
+          <button type="button" (click)="confirmNewItemType(openItemPickerIndex()!)">Add</button>
+        </div>
+      } @else {
+        @if (!depositOnly) {
+          <button type="button" class="item-picker-add-btn" (click)="startAddingNewItemType()">
+            + Add Item Type
+          </button>
+        }
+        <div class="item-picker-list">
+          @for (lineItem of lineItems(); track lineItem.id) {
+            <button
+              type="button"
+              class="item-picker-option"
+              (click)="selectExistingItem(openItemPickerIndex()!, lineItem.id)"
+            >
+              <span
+                class="item-picker-checkbox"
+                [class.checked]="items.at(openItemPickerIndex()!).get('lineItemId')!.value === lineItem.id"
+              ></span>
+              {{ lineItem.name }}
+            </button>
+          }
+          @if (lineItems().length === 0) {
+            <p class="item-picker-empty">No catalog items available.</p>
+          }
+        </div>
+      }
+    </div>
+  }
 
   <div class="panel-footer">
     <button type="button" class="submit-btn" (click)="create()">Create</button>

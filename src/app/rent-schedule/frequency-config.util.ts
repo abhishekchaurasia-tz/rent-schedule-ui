@@ -26,6 +26,39 @@ export function buildFrequencyConfig(value: any): FrequencyConfig {
 }
 
 /**
+ * Maps a persisted `frequencyConfig` back onto the form's per-frequency controls — the inverse of
+ * {@link buildFrequencyConfig}, used when loading a saved agreement for editing.
+ *
+ * Only the keys the config actually carries are returned, so `patchValue` leaves the controls for
+ * other frequencies at their defaults rather than blanking them.
+ */
+export function frequencyConfigToFormValue(config: FrequencyConfig | null | undefined): Record<string, unknown> {
+  if (!config) {
+    return {};
+  }
+
+  const value: Record<string, unknown> = {};
+
+  if (config.dueOnDay !== undefined) {
+    value['dueOnDay'] = config.dueOnDay;
+  }
+  if (config.dueOnDays?.length) {
+    value['dueOnDays'] = config.dueOnDays;
+  }
+  if (config.dayOfWeek !== undefined) {
+    value['dayOfWeek'] = config.dayOfWeek;
+  }
+  if (config.cycle?.length) {
+    value['cycle'] = config.cycle.map((entry) => ({ month: entry.month, day: entry.day }));
+  }
+  if (config.dueDates?.length) {
+    value['dueDates'] = config.dueDates;
+  }
+
+  return value;
+}
+
+/**
  * Formats a day-of-month as an ordinal string, e.g. 1 -> "1st", 22 -> "22nd".
  */
 export function ordinal(day: number): string {

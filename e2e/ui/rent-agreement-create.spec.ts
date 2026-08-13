@@ -9,7 +9,7 @@ import { expect, test } from '@playwright/test';
  */
 test.describe('Add Lease — rent agreement create', () => {
   test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/rent-schedule/first-rental-due-date-options', async (route) => {
+    await page.route('**/api/v1/rent/schedule/first-rental-due-date-options', async (route) => {
       await route.fulfill({
         json: { dates: ['2026-09-01', '2026-10-01', '2026-11-01'] }
       });
@@ -19,7 +19,7 @@ test.describe('Add Lease — rent agreement create', () => {
   });
 
   test('fills the lease form, generates a preview, and saves the agreement', async ({ page }) => {
-    await page.route('**/api/v1/rent-schedule/preview', async (route) => {
+    await page.route('**/api/v1/rent/schedule/preview', async (route) => {
       await route.fulfill({
         json: {
           rows: [
@@ -32,7 +32,7 @@ test.describe('Add Lease — rent agreement create', () => {
       });
     });
 
-    await page.route('**/api/v1/rent-agreements', async (route) => {
+    await page.route('**/api/v1/rent/agreements', async (route) => {
       const body = route.request().postDataJSON();
       expect(body.startDate).toBe('2026-08-01');
       expect(body.fullRent).toBe(100);
@@ -74,7 +74,7 @@ test.describe('Add Lease — rent agreement create', () => {
   });
 
   test('surfaces a preview error from the API', async ({ page }) => {
-    await page.route('**/api/v1/rent-schedule/preview', async (route) => {
+    await page.route('**/api/v1/rent/schedule/preview', async (route) => {
       await route.fulfill({
         status: 400,
         json: { title: 'Bad Request', status: 400, detail: 'Start date must be in the future.' }

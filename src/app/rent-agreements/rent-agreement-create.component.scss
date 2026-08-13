@@ -396,6 +396,77 @@ table {
   }
 }
 
+// Marks a row whose rent the user hand-edited, sent as scheduleRows[].isManualChanged on save.
+.manual-edit-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid #f0c36d;
+  border-radius: 0.65rem;
+  background: #fdf6e3;
+  color: #8a6100;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+// Marks a row the server has locked: its invoice is paid, partially paid, voided or overdue, so
+// neither the row nor its invoice may change and the row cannot be removed.
+.frozen-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid #c9ced6;
+  border-radius: 0.65rem;
+  background: #eef1f4;
+  color: #4a5560;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+.agreement-id-chip {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 3px;
+  background: #f2f4f6;
+  color: #444;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.load-status {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.load-error {
+  border: 1px solid #f3c2be;
+  border-left: 3px solid #b3261e;
+  border-radius: 3px;
+  background: #fdf3f2;
+  padding: 0.85rem 1rem;
+  margin: 0 0 1.25rem;
+
+  strong {
+    color: #b3261e;
+  }
+
+  p {
+    margin: 0.3rem 0 0;
+    color: #6b3b37;
+    font-size: 0.9rem;
+  }
+}
+
 .empty-state {
   color: #888;
   font-size: 0.9rem;
