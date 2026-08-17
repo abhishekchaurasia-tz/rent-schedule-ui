@@ -171,6 +171,13 @@ export interface RentAgreementDetailResponse {
   deposit?: number | null;
   depositDueDate?: string | null;
   depositCollected: boolean;
+  /**
+   * Server-computed: whether `PUT …/terms` would currently accept a deposit change — true only while the
+   * lease is an unactivated draft (backend spec v48). Lets the UI disable the fields instead of letting
+   * the user edit them and discover the 409 on save. Same convention as the per-row `isFrozen` and
+   * per-charge `isApplied` capability flags.
+   */
+  isDepositEditable: boolean;
   /** `draft` before activation, then the lease's rental status. */
   status: string;
   /** The server's current UTC date — used to derive "overdue" without trusting the client's clock. */
@@ -227,6 +234,14 @@ export interface UpdateRentAgreementTermsRequest {
   frequency: RentFrequency;
   frequencyConfig: FrequencyConfig;
   firstRentalDueDate: string;
+  /**
+   * Deposit fields — send **only** when the agreement's `isDepositEditable` is true (backend spec v48).
+   * Supplying any of them once the deposit is locked is a `409 rent_agreement.deposit_not_editable` that
+   * fails the entire edit; omitting them leaves the stored deposit untouched.
+   */
+  deposit?: number | null;
+  depositDueDate?: string | null;
+  depositCollected?: boolean;
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges: AdditionalChargeCreationRequest[];
 }

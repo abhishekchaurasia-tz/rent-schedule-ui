@@ -228,26 +228,39 @@
     </section>
 
     <section class="panel">
-      <div class="panel-header">Deposit (optional)</div>
+      <div class="panel-header">Deposit {{ isEditMode ? '' : '(optional)' }}</div>
       <div class="panel-body grid">
-        <label>
-          Deposit Amount
-          <input type="number" step="0.01" formControlName="deposit" />
-        </label>
-        <mat-form-field appearance="outline" class="date-field">
-          <mat-label>Deposit Due Date</mat-label>
-          <input
-            matInput
-            [matDatepicker]="depositDueDatePicker"
-            formControlName="depositDueDate"
-            (click)="depositDueDatePicker.open()"
-          />
-          <mat-datepicker-toggle matIconSuffix [for]="depositDueDatePicker"></mat-datepicker-toggle>
-          <mat-datepicker #depositDueDatePicker></mat-datepicker>
-        </mat-form-field>
-        <mat-checkbox formControlName="depositCollected" class="deposit-collected-checkbox">
-          I have already collected the deposit, just create a record and mark as paid.
-        </mat-checkbox>
+        @if (isEditMode && !isDepositEditable) {
+          <p class="deposit-readonly-note">
+            The deposit can no longer be changed — this lease is active and its invoices have been
+            generated. You can still add a deposit fee below.
+          </p>
+        }
+
+        <!-- Locked, with no stored deposit: empty disabled boxes read as broken rather than as "there is
+             no deposit", so the whole trio is replaced by a plain statement. -->
+        @if (isEditMode && !isDepositEditable && !hasStoredDeposit) {
+          <p class="deposit-empty-note">No deposit was set when this lease was created.</p>
+        } @else {
+          <label>
+            Deposit Amount
+            <input type="number" step="0.01" formControlName="deposit" />
+          </label>
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Deposit Due Date</mat-label>
+            <input
+              matInput
+              [matDatepicker]="depositDueDatePicker"
+              formControlName="depositDueDate"
+              (click)="depositDueDatePicker.open()"
+            />
+            <mat-datepicker-toggle matIconSuffix [for]="depositDueDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #depositDueDatePicker></mat-datepicker>
+          </mat-form-field>
+          <mat-checkbox formControlName="depositCollected" class="deposit-collected-checkbox">
+            I have already collected the deposit, just create a record and mark as paid.
+          </mat-checkbox>
+        }
         <button type="button" class="add-fee-btn" (click)="openDepositChargePanel()">
           + Add Deposit Fee (Optional)
         </button>

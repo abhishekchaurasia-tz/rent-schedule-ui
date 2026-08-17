@@ -191,6 +191,25 @@ export class RentAgreementCreateComponent {
   }
 
   /**
+   * Whether the loaded agreement actually has a deposit. Read from the loaded agreement rather than the
+   * form, because the deposit controls may be disabled and a disabled control is omitted from
+   * `form.value` — so the form cannot answer this question then.
+   */
+  get hasStoredDeposit(): boolean {
+    const deposit = this.loadedAgreement()?.deposit;
+    return deposit !== null && deposit !== undefined;
+  }
+
+  /**
+   * Whether the deposit may still be changed. Create mode: always. Edit mode: whatever the server says
+   * (`isDepositEditable`, backend spec v48) — never decided client-side, so the UI and the endpoint's
+   * 409 can never disagree. Defaults to locked until the load answers.
+   */
+  get isDepositEditable(): boolean {
+    return this.isEditMode ? this.loadedAgreement()?.isDepositEditable === true : true;
+  }
+
+  /**
    * A snapshot of the schedule-affecting fields as of the last successful preview. Used to tell a
    * change to a schedule-irrelevant field (deposit, property ids) apart from one that actually
    * invalidates the previewed rows.
@@ -259,6 +278,12 @@ export class RentAgreementCreateComponent {
     const routeAgreementId = this.route.snapshot.paramMap.get('id');
     if (routeAgreementId) {
       this.agreementId.set(routeAgreementId);
+      // Disabled up front, then re-enabled by loadAgreement() if the server reports the deposit as still
+      // editable (backend spec v48 — editable only while the lease is an unactivated draft). Starting
+      // disabled means the fields are never briefly editable before the load answers, and they stay
+      // disabled if the load fails. `emitEvent: false` keeps this out of the debounced valueChanges
+      // pipeline during construction.
+      this.setDepositFieldsEnabled(false);
       this.loadAgreement(routeAgreementId);
       return;
     }
@@ -284,6 +309,12 @@ export class RentAgreementCreateComponent {
     this.rentAgreementsService.getById(agreementId).subscribe({
       next: (agreement) => {
         this.loadedAgreement.set(agreement);
+
+        // The server decides whether the deposit is still editable (backend spec v48); the client only
+        // reflects that answer. Applied before patchValue so the controls are in their final enabled state
+        // when the loaded values land — patching a disabled control still stores the value, but enabling
+        // afterwards would briefly show an editable-but-empty field.
+        this.setDepositFieldsEnabled(agreement.isDepositEditable);
 
         this.form.patchValue(
           {
@@ -349,6 +380,22 @@ export class RentAgreementCreateComponent {
         this.loadingAgreement.set(false);
       }
     });
+  }
+
+  /**
+   * Enables or disables the three deposit controls together, without emitting `valueChanges` — they are
+   * one unit (the pairing rule means a half-editable trio would be meaningless), and the debounced
+   * auto-preview must not fire just because their enabled state changed.
+   */
+  private setDepositFieldsEnabled(enabled: boolean): void {
+    for (const name of ['deposit', 'depositDueDate', 'depositCollected']) {
+      const control = this.form.get(name)!;
+      if (enabled) {
+        control.enable({ emitEvent: false });
+      } else {
+        control.disable({ emitEvent: false });
+      }
+    }
   }
 
   /** Whether a loaded row is frozen by the server — its rent and dates cannot be changed. */
@@ -766,14 +813,21 @@ export class RentAgreementCreateComponent {
 
     const value = this.form.value;
 
-    if ((value.deposit === null || value.deposit === '') !== !value.depositDueDate) {
-      this.saveError.set('Deposit and deposit due date must both be provided, or both left blank.');
-      return;
-    }
+    // These two rules mirror the ones the backend enforces on both the create and edit paths (spec v48
+    // re-applies them to edit). They are skipped when the deposit is not editable, and that skip is
+    // load-bearing rather than an optimisation: the controls are disabled then, and Angular omits disabled
+    // controls from `form.value`, so `value.deposit`/`value.depositDueDate` would both read `undefined`
+    // and the pairing rule below would misfire and block every save.
+    if (this.isDepositEditable) {
+      if ((value.deposit === null || value.deposit === '') !== !value.depositDueDate) {
+        this.saveError.set('Deposit and deposit due date must both be provided, or both left blank.');
+        return;
+      }
 
-    if (value.depositCollected && !(Number(value.deposit) > 0 && value.depositDueDate)) {
-      this.saveError.set('Deposit collected can only be checked when a positive deposit and due date are set.');
-      return;
+      if (value.depositCollected && !(Number(value.deposit) > 0 && value.depositDueDate)) {
+        this.saveError.set('Deposit collected can only be checked when a positive deposit and due date are set.');
+        return;
+      }
     }
 
     this.saving.set(true);
@@ -831,9 +885,10 @@ export class RentAgreementCreateComponent {
    * D8 / E1). A row or charge the user removed is simply absent, which is how the server is told to
    * delete it, so these lists must never be filtered down to "just what changed".
    *
-   * Only the schedule-affecting terms are included (decision D3): `startDate`, the property/owner
-   * ids and the deposit fields are not editable here, so they are deliberately not sent even though
-   * the form still holds them.
+   * `startDate` and the property/owner ids stay unsent — still immutable (decision D3). The deposit is
+   * sent **only when the server reported it editable** (backend spec v48): supplying it otherwise is a
+   * `409 rent_agreement.deposit_not_editable` that fails the whole edit, and omitting it leaves the stored
+   * deposit untouched, which is exactly the desired behaviour once it is locked.
    */
   private saveEdit(agreementId: string, value: any, preview: PreviewRentScheduleResponse): void {
     const request: UpdateRentAgreementTermsRequest = {
@@ -842,6 +897,13 @@ export class RentAgreementCreateComponent {
       frequency: value.frequency,
       frequencyConfig: buildFrequencyConfig(value),
       firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
+      ...(this.isDepositEditable
+        ? {
+            deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
+            depositDueDate: toIsoDate(value.depositDueDate),
+            depositCollected: Boolean(value.depositCollected)
+          }
+        : {}),
       // EVERY row is sent, cancelled or not — no filtering. A cancelled row goes up flagged
       // `isCancelled: true`, which the backend treats as decisive whatever the row's stored status
       // (spec v47): an already-cancelled row stays cancelled, and a freshly-cancelled one is cancelled
@@ -863,6 +925,10 @@ export class RentAgreementCreateComponent {
         // Re-seed from the server's response: rows and charges come back with their real ids and
         // refreshed frozen flags, and rows the reconcile removed are simply gone.
         this.loadedAgreement.set(agreement);
+
+        // Re-sync the deposit lock too — the PUT response carries a freshly computed isDepositEditable,
+        // so if the lease was activated between load and save the fields lock without needing a reload.
+        this.setDepositFieldsEnabled(agreement.isDepositEditable);
         this.previewResult.set({
           rows: agreement.scheduleRows.map((row) => ({
             scheduledDate: row.scheduledDate,

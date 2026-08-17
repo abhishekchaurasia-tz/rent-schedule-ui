@@ -34,6 +34,9 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     deposit: 500,
     depositDueDate: '2026-01-01',
     depositCollected: false,
+    // Locked by default in this fixture, so the existing tests keep exercising the read-only path; the
+    // editable-deposit tests below override it.
+    isDepositEditable: false,
     status: 'draft',
     todayUtc: '2026-01-15',
     scheduleRows: [
@@ -172,6 +175,67 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(deletedRow?.isCancelled).toBeTrue();
 
     req.flush(detail());
+  });
+
+  it('locks the deposit when the server reports isDepositEditable: false, and still saves (spec v12)', () => {
+    load();
+
+    // The server said the deposit is locked (activated lease), so the fields are disabled rather than
+    // hidden — the saved values stay visible but cannot be silently discarded.
+    expect(component.isDepositEditable).toBeFalse();
+    expect(component.form.get('deposit')!.disabled).toBeTrue();
+    expect(component.form.get('depositDueDate')!.disabled).toBeTrue();
+    expect(component.form.get('depositCollected')!.disabled).toBeTrue();
+
+    // The loaded values are still readable even though the controls are disabled.
+    expect(component.form.getRawValue().deposit).toBe(500);
+
+    // Regression guard: disabled controls drop out of `form.value`, so the deposit pairing rule must be
+    // skipped while locked — otherwise it misfires and blocks every edit save.
+    component.save();
+
+    expect(component.saveError()).toBeNull();
+    const req = httpMock.expectOne(termsUrl);
+    // Omitted entirely, which is what leaves the stored deposit untouched (backend spec v48).
+    expect('deposit' in req.request.body).toBeFalse();
+
+    req.flush(detail());
+  });
+
+  it('allows editing the deposit and sends it when the server reports isDepositEditable: true (spec v12)', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush({ ...detail(), isDepositEditable: true });
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    expect(component.isDepositEditable).toBeTrue();
+    expect(component.form.get('deposit')!.disabled).toBeFalse();
+    expect(component.form.get('depositDueDate')!.disabled).toBeFalse();
+    expect(component.form.get('depositCollected')!.disabled).toBeFalse();
+
+    component.form.patchValue({ deposit: 900 });
+    component.save();
+
+    expect(component.saveError()).toBeNull();
+    const req = httpMock.expectOne(termsUrl);
+    expect(req.request.body.deposit).toBe(900);
+    expect(req.request.body.depositDueDate).toBe('2026-01-01');
+    expect(req.request.body.depositCollected).toBeFalse();
+
+    req.flush(detail());
+  });
+
+  it('re-locks the deposit when the save response reports it is no longer editable (spec v12)', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush({ ...detail(), isDepositEditable: true });
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    expect(component.form.get('deposit')!.disabled).toBeFalse();
+
+    component.save();
+    // The lease was activated between load and save, so the response says the deposit is now locked.
+    httpMock.expectOne(termsUrl).flush({ ...detail(), isDepositEditable: false });
+
+    expect(component.form.get('deposit')!.disabled).toBeTrue();
   });
 
   it('renders a cancelled row from the server and sends it flagged isCancelled rather than omitting it (spec v47)', () => {
