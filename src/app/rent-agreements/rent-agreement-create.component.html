@@ -4,6 +4,7 @@
     <p class="subtitle">
       Change the lease terms or the rent schedule, then save. Nothing is written until you press Save.
       <span class="agreement-id-chip">{{ agreementId() }}</span>
+      <button type="button" class="manage-tenants-link" (click)="goToTenants()">Manage Tenants</button>
     </p>
   } @else {
     <h1>Add Lease</h1>

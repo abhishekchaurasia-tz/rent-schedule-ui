@@ -1,6 +1,6 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
 import { RentAgreementCreateComponent } from './rent-agreement-create.component';
 import { AdditionalChargeCreationRequest, CreateRentAgreementResponse } from './rent-agreement.models';
@@ -10,6 +10,7 @@ describe('RentAgreementCreateComponent', () => {
   let fixture: ComponentFixture<RentAgreementCreateComponent>;
   let component: RentAgreementCreateComponent;
   let httpMock: HttpTestingController;
+  let router: jasmine.SpyObj<Router>;
 
   const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
   const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
@@ -31,6 +32,9 @@ describe('RentAgreementCreateComponent', () => {
   };
 
   beforeEach(() => {
+    router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    router.navigate.and.resolveTo(true);
+
     TestBed.configureTestingModule({
       imports: [RentAgreementCreateComponent, HttpClientTestingModule],
       providers: [
@@ -39,7 +43,8 @@ describe('RentAgreementCreateComponent', () => {
           // provide their own ActivatedRoute below.
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({}) } }
-        }
+        },
+        { provide: Router, useValue: router }
       ]
     });
 
@@ -120,6 +125,8 @@ describe('RentAgreementCreateComponent', () => {
 
     expect(component.saving()).toBeFalse();
     expect(component.saveResult()).toEqual(createResponse);
+    // A fresh create moves straight into step 2 of the wizard — the renter set.
+    expect(router.navigate).toHaveBeenCalledWith(['/rent-agreements', createResponse.agreementId, 'tenants']);
   }));
 
   /** Drives the form to a previewed, two-row state so row-edit behaviour can be exercised. */

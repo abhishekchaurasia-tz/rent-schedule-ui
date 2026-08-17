@@ -228,6 +228,40 @@ export function toChargeCreationRequest(
   };
 }
 
+/**
+ * One tenant's rent/deposit split, as sent to `PUT /rent-agreements/{id}/tenants` (lease wizard
+ * step 2). `tenantId` identifies a tenant *within this demo app only* — there is no tenant-profile
+ * service wired up yet (mirroring `propertyId`/`propertyUnitId`/`propertyOwnerId`, which are also
+ * client-generated placeholders), so the UI mints a `crypto.randomUUID()` per tenant row and never
+ * resolves it against anything real.
+ */
+export interface AgreementTenantShareRequest {
+  tenantId: string;
+  rentAmount: number;
+  rentPercent: number | null;
+  deposit: number;
+  depositPercent: number | null;
+}
+
+/**
+ * The whole-set replace body for Step 2 of the lease wizard. Re-openable and idempotent by design:
+ * submitting the same body twice converges on the same state, and a tenant dropped from the set is
+ * deactivated server-side rather than deleted, so invoices already raised against them survive.
+ */
+export interface SaveAgreementTenantsRequest {
+  isGroupInvoice: boolean;
+  partialPaymentAllowed: boolean;
+  tenants: AgreementTenantShareRequest[];
+}
+
+export interface SaveAgreementTenantsResponse {
+  agreementId: string;
+  isGroupInvoice: boolean;
+  partialPaymentAllowed: boolean;
+  /** The submitted tenant set, echoed back in submission order — a tenant deactivated by omission is absent. */
+  tenantIds: string[];
+}
+
 export interface UpdateRentAgreementTermsRequest {
   endDate?: string | null;
   fullRent: number;

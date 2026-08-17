@@ -7,6 +7,8 @@ import {
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   RentAgreementDetailResponse,
+  SaveAgreementTenantsRequest,
+  SaveAgreementTenantsResponse,
   UpdateRentAgreementTermsRequest
 } from './rent-agreement.models';
 
@@ -39,5 +41,17 @@ export class RentAgreementsService {
     request: UpdateRentAgreementTermsRequest
   ): Observable<RentAgreementDetailResponse> {
     return this.http.put<RentAgreementDetailResponse>(`${this.baseUrl}/${agreementId}/terms`, request);
+  }
+
+  /**
+   * Step 2 of the lease wizard: saves the complete renter set and its two invoicing decisions in
+   * one transaction. A whole-set replace, not a per-tenant operation — see
+   * {@link SaveAgreementTenantsRequest}.
+   */
+  saveTenants(
+    agreementId: string,
+    request: SaveAgreementTenantsRequest
+  ): Observable<SaveAgreementTenantsResponse> {
+    return this.http.put<SaveAgreementTenantsResponse>(`${this.baseUrl}/${agreementId}/tenants`, request);
   }
 }

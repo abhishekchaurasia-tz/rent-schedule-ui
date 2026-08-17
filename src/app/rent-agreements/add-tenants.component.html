@@ -1,0 +1,209 @@
+<div class="tenants-page">
+  @if (loadingAgreement()) {
+    <p class="load-status">Loading lease…</p>
+  }
+
+  @if (loadError(); as message) {
+    <div class="banner error">
+      <strong>Could not load this lease.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+
+  @if (loadedAgreement()) {
+    <h1>ADD TENANTS</h1>
+
+    <div class="summary-bar">
+      <span class="unit-badge">Lease</span>
+      <span class="summary-right">
+        <span class="summary-amounts">
+          {{ fullRent() | currency }} Rent / {{ depositTotal() | currency }} Deposit
+        </span>
+        <span class="summary-count">{{ tenants.length }} Tenant(s)</span>
+      </span>
+    </div>
+
+    <form [formGroup]="form" class="tenants-form">
+      <div class="tenant-rows" formArrayName="tenants">
+        <div class="tenant-rows-header">
+          <span>First Name</span>
+          <span>Last Name</span>
+          <span>Email</span>
+          <span>Mobile</span>
+          <span></span>
+        </div>
+
+        @for (group of tenants.controls; track $index) {
+          <div [formGroupName]="$index" class="tenant-row">
+            <span class="row-index">{{ $index + 1 }}</span>
+            <input type="text" formControlName="firstName" placeholder="First Name" />
+            <input type="text" formControlName="lastName" placeholder="Last Name" />
+            <input type="email" formControlName="email" placeholder="Email" />
+            <input type="tel" formControlName="mobile" placeholder="Phone Number" />
+            @if (tenants.length > 1) {
+              <button
+                type="button"
+                class="remove-tenant-btn"
+                (click)="removeTenant($index)"
+                aria-label="Remove tenant"
+              >
+                &times;
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <button type="button" class="add-tenant-btn" (click)="addTenant()">+ Add tenant</button>
+
+      <div class="split-table">
+        <div class="split-header">
+          <span>Tenant</span>
+          <span class="split-columns">
+            <span class="split-column-label">
+              Rent
+              <span class="unit-toggle">
+                <button
+                  type="button"
+                  [class.active]="rentSplitUnit() === 'percent'"
+                  (click)="setRentSplitUnit('percent')"
+                >
+                  %
+                </button>
+                <button
+                  type="button"
+                  [class.active]="rentSplitUnit() === 'dollar'"
+                  (click)="setRentSplitUnit('dollar')"
+                >
+                  $
+                </button>
+              </span>
+            </span>
+            <span class="split-column-label">
+              Deposit
+              <span class="unit-toggle">
+                <button
+                  type="button"
+                  [class.active]="depositSplitUnit() === 'percent'"
+                  (click)="setDepositSplitUnit('percent')"
+                >
+                  %
+                </button>
+                <button
+                  type="button"
+                  [class.active]="depositSplitUnit() === 'dollar'"
+                  (click)="setDepositSplitUnit('dollar')"
+                >
+                  $
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+
+        <div class="tenant-rows" formArrayName="tenants">
+          @for (group of tenants.controls; track $index) {
+            <div [formGroupName]="$index" class="split-row">
+              <span class="split-tenant-name">{{ tenantDisplayName($index) }}</span>
+              <span class="split-fields">
+                <input
+                  type="number"
+                  class="split-field"
+                  [class.readonly]="rentSplitUnit() !== 'percent'"
+                  formControlName="rentPercent"
+                  [readonly]="rentSplitUnit() !== 'percent'"
+                  (input)="onRentPercentChanged($index)"
+                />
+                <input
+                  type="number"
+                  class="split-field"
+                  [class.readonly]="rentSplitUnit() !== 'dollar'"
+                  formControlName="rentAmount"
+                  [readonly]="rentSplitUnit() !== 'dollar'"
+                  (input)="onRentAmountChanged($index)"
+                />
+                <input
+                  type="number"
+                  class="split-field"
+                  [class.readonly]="depositSplitUnit() !== 'percent'"
+                  formControlName="depositPercent"
+                  [readonly]="depositSplitUnit() !== 'percent'"
+                  (input)="onDepositPercentChanged($index)"
+                />
+                <input
+                  type="number"
+                  class="split-field"
+                  [class.readonly]="depositSplitUnit() !== 'dollar'"
+                  formControlName="depositAmount"
+                  [readonly]="depositSplitUnit() !== 'dollar'"
+                  (input)="onDepositAmountChanged($index)"
+                />
+              </span>
+            </div>
+          }
+        </div>
+
+        <div class="split-row total-row">
+          <span class="split-tenant-name">TOTAL</span>
+          <span class="split-fields">
+            <span class="split-field readonly">{{ rentPercentTotal() }}%</span>
+            <span class="split-field readonly">{{ rentAmountTotal() | currency }}</span>
+            <span class="split-field readonly">{{ depositPercentTotal() }}%</span>
+            <span class="split-field readonly">{{ depositAmountTotal() | currency }}</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="options-row">
+        <div class="invoice-choice">
+          <label class="radio-option">
+            <input type="radio" formControlName="isGroupInvoice" [value]="true" />
+            <span>
+              <strong>All tenants are equally responsible.</strong>
+              <p>
+                If this is selected, we'll send a single invoice to all tenants to share. Regardless of
+                splits, they'll each see the full rental amount. If any of the tenants fails to pay, they'll
+                all be notified.
+              </p>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" formControlName="isGroupInvoice" [value]="false" />
+            <span>
+              <strong>Each tenant is only responsible for his/her portion.</strong>
+              <p>
+                If this is selected, each tenant will receive their own individual invoice equal to their
+                split of the rent. They cannot see or make payments on one another's invoices.
+              </p>
+            </span>
+          </label>
+        </div>
+
+        <div class="partial-payment-row">
+          <span class="partial-payment-label">Partial Payment</span>
+          <label class="toggle-switch">
+            <span [class.active]="!form.get('partialPaymentAllowed')!.value">Off</span>
+            <input type="checkbox" formControlName="partialPaymentAllowed" />
+            <span [class.active]="form.get('partialPaymentAllowed')!.value">On</span>
+          </label>
+          <p class="partial-payment-hint">Tenants are permitted to submit partial payments on invoices.</p>
+        </div>
+      </div>
+
+      @if (saveError()) {
+        <div class="banner error">{{ saveError() }}</div>
+      }
+
+      @if (saveResult()) {
+        <div class="banner success">Tenants saved.</div>
+      }
+
+      <div class="footer-actions">
+        <button type="button" class="cancel-btn" (click)="cancel()">&larr; Back</button>
+        <button type="button" class="save-btn" [disabled]="saving()" (click)="save()">
+          {{ saving() ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+    </form>
+  }
+</div>

@@ -3,7 +3,7 @@ import { Component, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -220,7 +220,8 @@ export class RentAgreementCreateComponent {
     private readonly fb: FormBuilder,
     private readonly rentScheduleService: RentScheduleService,
     private readonly rentAgreementsService: RentAgreementsService,
-    private readonly route: ActivatedRoute
+    private readonly route: ActivatedRoute,
+    private readonly router: Router
   ) {
     const today = new Date();
 
@@ -805,6 +806,14 @@ export class RentAgreementCreateComponent {
     return this.manuallyChangedRowDates().has(scheduledDate);
   }
 
+  /** Jumps to step 2 of the wizard — the renter set — for the agreement currently being edited. */
+  goToTenants(): void {
+    const id = this.agreementId();
+    if (id) {
+      void this.router.navigate(['/rent-agreements', id, 'tenants']);
+    }
+  }
+
   save(): void {
     const preview = this.previewResult();
     if (!preview) {
@@ -870,6 +879,9 @@ export class RentAgreementCreateComponent {
       next: (response) => {
         this.saveResult.set(response);
         this.saving.set(false);
+        // Step 2 of the wizard: the renter set and its invoicing decisions. Only on a fresh create —
+        // an edit save just updates terms in place and stays on this screen.
+        void this.router.navigate(['/rent-agreements', response.agreementId, 'tenants']);
       },
       error: (err: HttpErrorResponse) => {
         this.saveError.set(RentAgreementCreateComponent.describeError(err));
@@ -968,6 +980,9 @@ export class RentAgreementCreateComponent {
           additionalCharges: agreement.additionalCharges
         });
         this.saving.set(false);
+        // Same as a fresh create: move straight into the renter set. "Manage Tenants"/the tenants
+        // screen's own Cancel button are the way back here without saving again.
+        void this.router.navigate(['/rent-agreements', agreementId, 'tenants']);
       },
       error: (err: HttpErrorResponse) => {
         this.saveError.set(RentAgreementCreateComponent.describeError(err));

@@ -1,6 +1,6 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
 import { RentAgreementCreateComponent } from './rent-agreement-create.component';
 import { RentAgreementDetailResponse } from './rent-agreement.models';
@@ -12,6 +12,7 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
   let fixture: ComponentFixture<RentAgreementCreateComponent>;
   let component: RentAgreementCreateComponent;
   let httpMock: HttpTestingController;
+  let router: jasmine.SpyObj<Router>;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000001';
   const detailUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}`;
@@ -62,13 +63,17 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
   });
 
   beforeEach(() => {
+    router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    router.navigate.and.resolveTo(true);
+
     TestBed.configureTestingModule({
       imports: [RentAgreementCreateComponent, HttpClientTestingModule],
       providers: [
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { paramMap: convertToParamMap({ id: agreementId }) } }
-        }
+        },
+        { provide: Router, useValue: router }
       ]
     });
 
@@ -157,6 +162,8 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
 
     req.flush(detail());
     expect(component.saving()).toBeFalse();
+    // Same as a fresh create: a successful save moves straight into the renter set.
+    expect(router.navigate).toHaveBeenCalledWith(['/rent-agreements', agreementId, 'tenants']);
   });
 
   it('sends a deleted row flagged isCancelled: true, carrying its edited due date (spec v45)', () => {
