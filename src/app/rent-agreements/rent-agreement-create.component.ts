@@ -14,6 +14,7 @@ import { debounceTime } from 'rxjs';
 import { RentScheduleService } from '../rent-schedule/rent-schedule.service';
 import {
   CandidateDateRequest,
+  ExistingScheduleRowInput,
   LeaseTermType,
   PreviewRentScheduleResponse,
   RentFrequency
@@ -141,19 +142,9 @@ export class RentAgreementCreateComponent {
   readonly rowMenuPosition = signal<{ top: number; left: number } | null>(null);
 
   /**
-   * `scheduledDate`s of rows the user has removed from the schedule via the kebab menu's Delete,
-   * client-side only — the backend has no delete/restore API for schedule rows at all (there isn't
-   * even a way to fetch a saved agreement's rows back yet, only create + stateless preview). A
-   * deleted row stays visible (greyed out, with a Restore affordance) until Save; only the
-   * non-deleted rows are actually sent in `scheduleRows`.
-   */
-  readonly deletedRowDates = signal<Set<string>>(new Set());
-
-  /**
    * `scheduledDate`s of rows whose **rent** the user has hand-edited, sent to the backend as each
-   * row's `isManualChanged` so a later terms regeneration preserves the edited amount (backend spec
-   * v20 / part1 schema §10.1). Keyed by `scheduledDate` for the same reason `deletedRowDates` is:
-   * it is the row's immutable identity, unaffected by editing the due date.
+   * row's `isManualChanged`. Keyed by `scheduledDate` because that is the row's immutable identity,
+   * unaffected by editing the due date.
    *
    * Deliberately **not** set by a due-date-only edit. The backend needs no flag for that case — it
    * compares `dueDate` against the `scheduledDate` anchor — so flagging it here would wrongly freeze
@@ -180,10 +171,15 @@ export class RentAgreementCreateComponent {
   readonly frozenRowDates = signal<Set<string>>(new Set());
 
   /**
-   * `scheduledDate`s of loaded rows the server reports as already cancelled (spec v38). Display-only —
-   * shown greyed out with a badge, offers no row-menu, and is excluded from `save()`'s `scheduleRows`:
-   * resubmitting a cancelled row's anchor does not restore it server-side (`ActiveRowsByAnchor` no
-   * longer treats it as stored), it would just create a brand-new row on that anchor.
+   * `scheduledDate`s of every cancelled row — the component's **single** source of truth for
+   * cancellation, and never computed by correlating dates or positions itself. It is set from an
+   * authoritative status the server reported: `status === 'Cancelled'` on a preview row (backend spec
+   * v46/v47) or on a loaded/saved agreement row, plus the user's own click in `deleteRow()`.
+   *
+   * There is deliberately no second "deleted this session" set. The backend treats a submitted
+   * `isCancelled: true` as decisive regardless of the row's stored status (spec v47), so every
+   * cancelled row is sent the same way on Save and the client needs no notion of *which kind* of
+   * cancellation it is.
    */
   readonly cancelledRowDates = signal<Set<string>>(new Set());
 
@@ -207,12 +203,14 @@ export class RentAgreementCreateComponent {
     private readonly rentAgreementsService: RentAgreementsService,
     private readonly route: ActivatedRoute
   ) {
+    const today = new Date();
+
     this.form = this.fb.group({
       propertyUnitId: [crypto.randomUUID(), Validators.required],
       propertyId: [crypto.randomUUID(), Validators.required],
       propertyOwnerId: [crypto.randomUUID(), Validators.required],
-      startDate: [null as Date | null, Validators.required],
-      endDate: [null as Date | null],
+      startDate: [today as Date | null, Validators.required],
+      endDate: [RentAgreementCreateComponent.addSixMonths(today) as Date | null],
       leaseTermType: ['fixed' as LeaseTermType, Validators.required],
       rent: [100, [Validators.required, Validators.min(0)]],
       frequency: ['monthly' as RentFrequency, Validators.required],
@@ -237,7 +235,7 @@ export class RentAgreementCreateComponent {
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((startDate: Date | null) => {
         if (startDate && this.form.get('leaseTermType')!.value === 'fixed') {
-          this.form.get('endDate')!.setValue(RentAgreementCreateComponent.addOneYear(startDate));
+          this.form.get('endDate')!.setValue(RentAgreementCreateComponent.addSixMonths(startDate));
         }
       });
 
@@ -331,8 +329,6 @@ export class RentAgreementCreateComponent {
               .map((r) => r.scheduledDate)
           )
         );
-        this.deletedRowDates.set(new Set());
-
         this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
         this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
         this.appliedChargeIds.set(
@@ -539,8 +535,9 @@ export class RentAgreementCreateComponent {
       return;
     }
 
-    // Captured before the reset below clears `previewResult` — see its use in the success handler.
-    const previousDates = new Set(this.previewResult()?.rows.map((row) => row.scheduledDate) ?? []);
+    // Captured before the reset below clears `previewResult` — this is what the request sends AND
+    // the caller-known row state the backend correlates the fresh schedule against (spec v46/v47).
+    const existingRows = this.buildExistingRows();
 
     this.previewLoading.set(true);
     this.previewError.set(null);
@@ -561,33 +558,30 @@ export class RentAgreementCreateComponent {
         monthToMonthInvoiceCount:
           value.leaseTermType === 'month_to_month' ? Number(value.monthToMonthInvoiceCount) : null,
         nextLeaseStartDate:
-          value.leaseTermType === 'month_to_month' ? toIsoDate(value.nextLeaseStartDate) : null
+          value.leaseTermType === 'month_to_month' ? toIsoDate(value.nextLeaseStartDate) : null,
+        existingRows: existingRows.length > 0 ? existingRows : undefined
       })
       .subscribe({
         next: (response) => {
-          // The preview is stateless — it never receives back the rows the user deleted or
-          // hand-edited — so its `rows` are entirely fresh every call. Whether a prior deletion is
-          // still meaningful depends on whether the row it names still exists in this fresh set: the
-          // debounced auto-preview re-fires on ANY schedule-signature change, including one that
-          // cannot move a single date (e.g. only the rent amount changed — `RentSchedulePlan` derives
-          // `scheduledDate`/`dueDate` purely from the recurrence rule and window, never from the
-          // amount). Unconditionally clearing `deletedRowDates` here used to silently resurrect a row
-          // the user had explicitly removed, moments before Save — the anchors are unchanged, so the
-          // deletion is still valid and must survive.
-          const sameAnchors =
-            response.rows.length === previousDates.size &&
-            response.rows.every((row) => previousDates.has(row.scheduledDate));
-
+          // The backend decides which row is cancelled and computes totals excluding those rows
+          // (backend spec v46/v47), correlating the `existingRows` this call just sent against the
+          // freshly generated schedule anchor-first, position-second. This component therefore does no
+          // correlation of its own — it reads the status it was given. That is the whole point of the
+          // v46/v47 move: no date-matching, position-matching, or row-count reasoning lives here.
           this.previewResult.set(response);
           this.lastPreviewSignature = this.scheduleSignature();
           this.previewLoading.set(false);
-          if (!sameAnchors) {
-            this.deletedRowDates.set(new Set());
-          }
-          // A hand-edited amount, unlike a deletion, is always superseded here regardless of anchor
-          // overlap — the preview recomputes every row's rent from scratch and never receives the
-          // prior manual edit back, so the edited value is gone either way.
+          // A hand-edited row's amount is deliberately NOT preserved — any schedule-affecting change
+          // takes the fresh computed value for every row and resets `manuallyChangedRowDates`, mirroring
+          // the backend's reversed D4/D12 rule (spec v44).
           this.manuallyChangedRowDates.set(new Set());
+          this.cancelledRowDates.set(
+            new Set(
+              response.rows
+                .filter((row) => RentAgreementCreateComponent.isCancelledStatus(row.status))
+                .map((row) => row.scheduledDate)
+            )
+          );
           this.closeRowMenu();
         },
         error: (err: HttpErrorResponse) => {
@@ -595,6 +589,30 @@ export class RentAgreementCreateComponent {
           this.previewLoading.set(false);
         }
       });
+  }
+
+  /**
+   * Builds the `existingRows` the preview request sends so the backend can derive each fresh row's
+   * status (backend spec v46) — every row currently in `previewResult()`, tagged `'Cancelled'` when
+   * the client currently tracks it as deleted (this session) or already cancelled (on the server),
+   * `'Planned'` otherwise. Empty for the very first preview of a brand-new lease, when there is nothing
+   * to correlate against yet.
+   */
+  private buildExistingRows(): ExistingScheduleRowInput[] {
+    const preview = this.previewResult();
+    if (!preview) {
+      return [];
+    }
+
+    return preview.rows.map((row) => ({
+      scheduledDate: row.scheduledDate,
+      dueDate: row.dueDate,
+      rent: row.rent,
+      isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate),
+      status: this.cancelledRowDates().has(row.scheduledDate) ? 'Cancelled' : 'Planned',
+      invoiceStatus: null,
+      invoiceDueDate: null
+    }));
   }
 
   toggleRowMenu(index: number, event: MouseEvent): void {
@@ -656,22 +674,39 @@ export class RentAgreementCreateComponent {
     this.editRowDueDate.set(toIsoDate(date) ?? '');
   }
 
-  /** Soft-deletes a row client-side (kebab menu → Delete) — excluded from `save()`'s scheduleRows
-   * but still shown, greyed out, with a Restore affordance until the user undoes it or re-previews. */
+  /**
+   * Cancels a row (kebab menu → Delete). The row stays visible, greyed out, with a Restore
+   * affordance; on Save it is sent flagged `isCancelled: true` rather than omitted, so the backend
+   * applies any edit made to it first and then cancels it (backend spec v45).
+   */
   deleteRow(scheduledDate: string): void {
-    this.deletedRowDates.update((dates) => new Set(dates).add(scheduledDate));
+    this.cancelledRowDates.update((dates) => new Set(dates).add(scheduledDate));
     this.closeRowMenu();
     if (this.editingRowIndex() !== null) {
       this.cancelEditRow();
     }
   }
 
+  /**
+   * Un-cancels a row, whether it was cancelled a moment ago in this session or came back cancelled
+   * from the server — the two are handled identically, because the backend restores a cancelled row
+   * precisely when it is resubmitted *without* the `isCancelled` flag (backend spec v47).
+   */
   restoreRow(scheduledDate: string): void {
-    this.deletedRowDates.update((dates) => {
+    this.cancelledRowDates.update((dates) => {
       const next = new Set(dates);
       next.delete(scheduledDate);
       return next;
     });
+    this.closeRowMenu();
+  }
+
+  /**
+   * Kept as the name the cancelled-row template branch calls; identical to {@link restoreRow} now that
+   * a server-reported cancellation and a this-session one are the same thing to this component.
+   */
+  restoreCancelledRow(scheduledDate: string): void {
+    this.restoreRow(scheduledDate);
   }
 
   /**
@@ -772,7 +807,7 @@ export class RentAgreementCreateComponent {
         dueDate: row.dueDate,
         rent: row.rent,
         isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate),
-        isCancelled: this.deletedRowDates().has(row.scheduledDate)
+        isCancelled: this.cancelledRowDates().has(row.scheduledDate)
       })),
       additionalCharges: this.additionalCharges()
     };
@@ -807,17 +842,19 @@ export class RentAgreementCreateComponent {
       frequency: value.frequency,
       frequencyConfig: buildFrequencyConfig(value),
       firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
-      // Cancelled rows are excluded here alongside client-deleted ones — resubmitting a cancelled
-      // row's anchor would not restore it server-side, it would create a brand-new row on that anchor
-      // (spec v38, `RentAgreement.ActiveRowsByAnchor` no longer treats a cancelled row as stored).
-      scheduleRows: preview.rows
-        .filter((row) => !this.deletedRowDates().has(row.scheduledDate) && !this.cancelledRowDates().has(row.scheduledDate))
-        .map((row) => ({
-          scheduledDate: row.scheduledDate,
-          dueDate: row.dueDate,
-          rent: row.rent,
-          isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate)
-        })),
+      // EVERY row is sent, cancelled or not — no filtering. A cancelled row goes up flagged
+      // `isCancelled: true`, which the backend treats as decisive whatever the row's stored status
+      // (spec v47): an already-cancelled row stays cancelled, and a freshly-cancelled one is cancelled
+      // after its in-flight edits are applied (spec v45). Un-cancelling is expressed by the same row
+      // going up with the flag `false`, which is the restore signal (spec v42). This is why the client
+      // no longer needs to know whether a cancellation originated here or on the server.
+      scheduleRows: preview.rows.map((row) => ({
+        scheduledDate: row.scheduledDate,
+        dueDate: row.dueDate,
+        rent: row.rent,
+        isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate),
+        isCancelled: this.cancelledRowDates().has(row.scheduledDate)
+      })),
       additionalCharges: this.additionalCharges()
     };
 
@@ -850,7 +887,6 @@ export class RentAgreementCreateComponent {
               .map((r) => r.scheduledDate)
           )
         );
-        this.deletedRowDates.set(new Set());
         this.additionalCharges.set(agreement.additionalCharges.map(toChargeCreationRequest));
         this.additionalChargeTargets.set(agreement.additionalCharges.map((c) => c.category));
         this.appliedChargeIds.set(
@@ -951,7 +987,7 @@ export class RentAgreementCreateComponent {
    * API's snake_case/lowercase enum-value convention and arrives PascalCase (`"Cancelled"`), unlike
    * every other status-shaped field on the wire (`leaseTermType`, `frequency`, etc).
    */
-  private static isCancelledStatus(status: ScheduleRowStatus | undefined): boolean {
+  private static isCancelledStatus(status: ScheduleRowStatus | string | undefined): boolean {
     return status?.toLowerCase() === 'cancelled';
   }
 
@@ -972,11 +1008,11 @@ export class RentAgreementCreateComponent {
   }
 
   /**
-   * Adds one year to a date, returning a new `Date` (leaves the input untouched).
+   * Adds six months to a date, returning a new `Date` (leaves the input untouched).
    */
-  private static addOneYear(date: Date): Date {
+  private static addSixMonths(date: Date): Date {
     const result = new Date(date);
-    result.setFullYear(result.getFullYear() + 1);
+    result.setMonth(result.getMonth() + 6);
     return result;
   }
 }

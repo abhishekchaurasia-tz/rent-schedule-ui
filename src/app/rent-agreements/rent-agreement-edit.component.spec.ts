@@ -156,20 +156,25 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(component.saving()).toBeFalse();
   });
 
-  it('omits a deleted row from the save, which is how a removal is expressed', () => {
+  it('sends a deleted row flagged isCancelled: true, carrying its edited due date (spec v45)', () => {
     load();
 
     component.deleteRow('2026-02-01');
     component.save();
 
     const req = httpMock.expectOne(termsUrl);
-    expect(req.request.body.scheduleRows.length).toBe(1);
-    expect(req.request.body.scheduleRows[0].scheduledDate).toBe('2026-01-01');
+    // The row is still sent — not omitted — so the backend applies any in-flight edit (e.g. a due
+    // date changed just before deleting) before cancelling it, instead of discarding it by omission.
+    expect(req.request.body.scheduleRows.length).toBe(2);
+    const deletedRow = (req.request.body.scheduleRows as { scheduledDate: string; isCancelled?: boolean }[]).find(
+      (r) => r.scheduledDate === '2026-02-01'
+    );
+    expect(deletedRow?.isCancelled).toBeTrue();
 
     req.flush(detail());
   });
 
-  it('renders a cancelled row from the server as display-only and omits it from the save (spec v38)', () => {
+  it('renders a cancelled row from the server and sends it flagged isCancelled rather than omitting it (spec v47)', () => {
     fixture.detectChanges();
 
     const withCancelledRow: RentAgreementDetailResponse = {
@@ -191,12 +196,106 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     component.save();
 
     const req = httpMock.expectOne(termsUrl);
-    // Resubmitting a cancelled row's anchor would create a brand-new row server-side rather than
-    // restore it (ActiveRowsByAnchor no longer treats it as stored) — so it must never be resent.
-    expect(req.request.body.scheduleRows.length).toBe(2);
+    // EVERY row is sent now, including the still-cancelled one, flagged isCancelled: true. The backend
+    // treats that flag as decisive whatever the stored status (spec v47), so the row stays cancelled —
+    // it no longer has to be omitted to avoid being restored, which is what let the client drop its
+    // "which kind of cancellation is this" bookkeeping entirely.
+    expect(req.request.body.scheduleRows.length).toBe(3);
+    expect(
+      (req.request.body.scheduleRows as { scheduledDate: string; isCancelled: boolean }[]).find(
+        (r) => r.scheduledDate === '2026-03-01'
+      )?.isCancelled
+    ).toBeTrue();
+
+    req.flush(detail());
+  });
+
+  it('trusts the backend-derived status for a server-confirmed cancelled row after dueOnDay shifts every anchor (spec v46)', fakeAsync(() => {
+    fixture.detectChanges();
+
+    const withCancelledRow: RentAgreementDetailResponse = {
+      ...detail(),
+      scheduleRows: [
+        ...detail().scheduleRows,
+        { id: 'r3', scheduledDate: '2026-03-01', dueDate: '2026-03-01', rent: 1000, isManualChanged: false, status: 'cancelled' }
+      ]
+    };
+    httpMock.expectOne(detailUrl).flush(withCancelledRow);
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    expect(component.isRowCancelled('2026-03-01')).toBeTrue();
+
+    // Changing "Due on the day" shifts every row's scheduledDate too, without changing the row count.
+    // Deciding whether the cancelled row still corresponds to a fresh row is now the backend's job
+    // (spec v46) — the client sends its current known state as existingRows and trusts whatever
+    // status comes back, rather than re-deciding the correlation itself.
+    component.form.patchValue({ dueOnDay: 15 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-15'] }));
+
+    const previewReq = httpMock.expectOne(previewUrl);
+    expect(
+      (previewReq.request.body.existingRows as { scheduledDate: string; status: string }[]).find(
+        (r) => r.scheduledDate === '2026-03-01'
+      )?.status
+    ).toBe('Cancelled');
+
+    previewReq.flush({
+      rows: [
+        { scheduledDate: '2026-01-15', dueDate: '2026-01-15', rent: 800, status: 'Planned' },
+        { scheduledDate: '2026-02-15', dueDate: '2026-02-15', rent: 1000, status: 'Planned' },
+        { scheduledDate: '2026-03-15', dueDate: '2026-03-15', rent: 1000, status: 'Cancelled' }
+      ],
+      totalInvoices: 2,
+      totalAmount: 1800
+    });
+
+    expect(component.isRowCancelled('2026-03-01')).toBeFalse();
+    expect(component.isRowCancelled('2026-03-15')).toBeTrue();
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    // The cancelled row is sent flagged, at its new anchor — the flag keeps it cancelled, so it is no
+    // longer at risk of the silent restore that omission used to guard against (spec v47).
+    expect(req.request.body.scheduleRows.length).toBe(3);
+    expect(
+      (req.request.body.scheduleRows as { scheduledDate: string; isCancelled: boolean }[]).find(
+        (r) => r.scheduledDate === '2026-03-15'
+      )?.isCancelled
+    ).toBeTrue();
+
+    req.flush(detail());
+  }));
+
+  it('restores a cancelled row on request, resubmitting it so the backend reactivates it (spec v42)', () => {
+    fixture.detectChanges();
+
+    const withCancelledRow: RentAgreementDetailResponse = {
+      ...detail(),
+      scheduleRows: [
+        ...detail().scheduleRows,
+        { id: 'r3', scheduledDate: '2026-03-01', dueDate: '2026-03-01', rent: 1000, isManualChanged: false, status: 'cancelled' }
+      ]
+    };
+    httpMock.expectOne(detailUrl).flush(withCancelledRow);
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    expect(component.isRowCancelled('2026-03-01')).toBeTrue();
+
+    component.restoreCancelledRow('2026-03-01');
+
+    expect(component.isRowCancelled('2026-03-01')).toBeFalse();
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    // The restored row is now resubmitted like any other row — its mere presence is the restore
+    // signal the backend acts on (spec v42), not a separate flag.
+    expect(req.request.body.scheduleRows.length).toBe(3);
     expect(
       (req.request.body.scheduleRows as { scheduledDate: string }[]).some((r) => r.scheduledDate === '2026-03-01')
-    ).toBeFalse();
+    ).toBeTrue();
 
     req.flush(detail());
   });

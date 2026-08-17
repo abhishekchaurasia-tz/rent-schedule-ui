@@ -343,10 +343,7 @@
               </thead>
               <tbody>
                 @for (row of res.rows; track row.scheduledDate; let i = $index) {
-                  <tr
-                    [class.row-deleted]="deletedRowDates().has(row.scheduledDate)"
-                    [class.row-cancelled]="isRowCancelled(row.scheduledDate)"
-                  >
+                  <tr [class.row-cancelled]="isRowCancelled(row.scheduledDate)">
                     <td>{{ row.scheduledDate }}</td>
                     @if (isRowCancelled(row.scheduledDate)) {
                       <td>{{ row.dueDate }}</td>
@@ -359,18 +356,14 @@
                           >cancelled</span
                         >
                       </td>
-                      <td></td>
-                    } @else if (deletedRowDates().has(row.scheduledDate)) {
-                      <td>{{ row.dueDate }}</td>
-                      <td>{{ row.rent | number: '1.2-2' }}</td>
                       <td>
                         <button
                           type="button"
                           class="restore-btn"
                           [disabled]="saving()"
-                          (click)="restoreRow(row.scheduledDate)"
+                          (click)="restoreCancelledRow(row.scheduledDate)"
                           aria-label="Restore"
-                          title="Restore"
+                          title="Restore this cancelled payment"
                         >
                           ↺
                         </button>

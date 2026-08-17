@@ -46,6 +46,11 @@ describe('RentAgreementCreateComponent', () => {
     fixture = TestBed.createComponent(RentAgreementCreateComponent);
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
+
+    // The form now defaults startDate/endDate to today/+6 months, so construction immediately
+    // fires a first-rental-due-date-options request — drain it so tests can reason about the
+    // request(s) they trigger themselves.
+    httpMock.expectOne(optionsUrl).flush({ dates: [] } as CandidateDateResponse);
   });
 
   afterEach(() => {
@@ -238,31 +243,166 @@ describe('RentAgreementCreateComponent', () => {
     expect(component.isRowManuallyChanged('2026-08-01')).toBeFalse();
   }));
 
-  it('keeps a deleted row deleted when a same-anchor re-preview fires (e.g. rent-only change)', fakeAsync(() => {
-    const previewResponse = previewTwoRows();
+  it('resets a hand-edited rent and its flag when a same-anchor re-preview fires', fakeAsync(() => {
+    previewTwoRows();
 
-    component.deleteRow('2026-09-01');
-    expect(component.deletedRowDates().has('2026-09-01')).toBeTrue();
+    component.startEditRow(0);
+    component.editRowRent.set(80);
+    component.saveEditRow(0);
+    expect(component.isRowManuallyChanged('2026-08-01')).toBeTrue();
 
-    // Only the rent changed — the recurrence-generated dates are identical, so the deletion must
-    // survive the debounced auto-preview this triggers.
-    component.form.patchValue({ rent: 250 });
+    // Only the overall rent changed — the recurrence-generated dates are identical, but the
+    // manual-edit flag and the hand-set amount (80) must NOT survive: any schedule-affecting change
+    // now takes the fresh preview value for every row and clears manuallyChangedRowDates, matching
+    // the backend's reversed D4/D12 rule (spec v44) — manual no longer protects a row from a recompute.
+    component.form.patchValue({ rent: 300 });
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
     httpMock.expectOne(previewUrl).flush({
-      rows: previewResponse.rows.map((row) => ({ ...row, rent: 250 })),
+      rows: [
+        { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 300 },
+        { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 300 }
+      ],
       totalInvoices: 2,
-      totalAmount: 500
+      totalAmount: 600
     } as PreviewRentScheduleResponse);
 
-    expect(component.deletedRowDates().has('2026-09-01')).toBeTrue();
+    expect(component.isRowManuallyChanged('2026-08-01')).toBeFalse();
+    expect(component.previewResult()!.rows[0].rent).toBe(300);
+    expect(component.previewResult()!.rows[1].rent).toBe(300);
+    expect(component.previewResult()!.totalAmount).toBe(600);
+  }));
+
+  it('sends the deleted row flagged Cancelled in existingRows, on every preview call (spec v46)', fakeAsync(() => {
+    previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
+
+    component.form.patchValue({ rent: 250 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    const req = httpMock.expectOne(previewUrl);
+    // Deciding whether a row is still cancelled is now the backend's job (spec v46) — the client's
+    // only remaining responsibility is reporting its current known row state on every call.
+    expect(req.request.body.existingRows).toEqual([
+      {
+        scheduledDate: '2026-08-01',
+        dueDate: '2026-08-01',
+        rent: 100,
+        isManualChanged: false,
+        status: 'Planned',
+        invoiceStatus: null,
+        invoiceDueDate: null
+      },
+      {
+        scheduledDate: '2026-09-01',
+        dueDate: '2026-09-01',
+        rent: 100,
+        isManualChanged: false,
+        status: 'Cancelled',
+        invoiceStatus: null,
+        invoiceDueDate: null
+      }
+    ]);
+
+    req.flush({
+      rows: [
+        { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 250, status: 'Planned' },
+        { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 250, status: 'Cancelled' }
+      ],
+      totalInvoices: 1,
+      totalAmount: 250
+    } as PreviewRentScheduleResponse);
+
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
+
+    component.save();
+    const saveReq = httpMock.expectOne(createUrl);
+    expect(saveReq.request.body.scheduleRows).toEqual([
+      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 250, isManualChanged: false, isCancelled: false },
+      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 250, isManualChanged: false, isCancelled: true }
+    ]);
+  }));
+
+  it('relabels a backend-derived "Cancelled" status onto cancelledRowDates at its new date, even when the anchor shifted (spec v46)', fakeAsync(() => {
+    previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
+
+    // The exact date the backend assigns to a "Cancelled" row no longer matters to the client at all —
+    // deciding which fresh row corresponds to the previously-deleted one (by position, across any
+    // frequency) is entirely the backend's job now (spec v46). The client only has to recognise the
+    // status it's told and file it into the correct local bucket (deletedRowDates vs cancelledRowDates)
+    // by zipping the existingRows it just sent against the response, position for position.
+    component.form.patchValue({ dueOnDay: 15 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-15'] } as CandidateDateResponse);
+    httpMock.expectOne(previewUrl).flush({
+      rows: [
+        { scheduledDate: '2026-08-15', dueDate: '2026-08-15', rent: 100, status: 'Planned' },
+        { scheduledDate: '2026-09-15', dueDate: '2026-09-15', rent: 100, status: 'Cancelled' }
+      ],
+      totalInvoices: 1,
+      totalAmount: 100
+    } as PreviewRentScheduleResponse);
+
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeFalse();
+    expect(component.cancelledRowDates().has('2026-09-15')).toBeTrue();
+    expect(component.cancelledRowDates().has('2026-08-15')).toBeFalse();
+  }));
+
+  it('keeps a deleted row deleted when an endDate change drops the row count (spec v47)', fakeAsync(() => {
+    previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
+
+    // Shortening the term removes a row from the tail, so existingRows (2) and response.rows (1) differ
+    // in length — the client must NOT gate on equal counts, because the surviving anchor still matches
+    // exactly and the backend already derived its status. Gating here was the reported defect.
+    component.form.patchValue({ endDate: '2026-09-30' });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, status: 'Cancelled' }],
+      totalInvoices: 0,
+      totalAmount: 0
+    } as PreviewRentScheduleResponse);
+
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
 
     component.save();
     const req = httpMock.expectOne(createUrl);
     expect(req.request.body.scheduleRows).toEqual([
-      { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 250, isManualChanged: false, isCancelled: false },
-      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 250, isManualChanged: false, isCancelled: true }
+      { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, isManualChanged: false, isCancelled: true }
     ]);
+  }));
+
+  it('clears cancelledRowDates when the backend returns no "Cancelled" row at all (e.g. a row-count change)', fakeAsync(() => {
+    previewTwoRows();
+
+    component.deleteRow('2026-09-01');
+    expect(component.cancelledRowDates().has('2026-09-01')).toBeTrue();
+
+    // A term/frequency change that alters the row count has no principled positional correspondence,
+    // so the backend reports every row "Planned" (spec v46) — the client must not invent a carry-over.
+    component.form.patchValue({ endDate: '2026-11-01' });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    httpMock.expectOne(previewUrl).flush({
+      rows: [
+        { scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100, status: 'Planned' },
+        { scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 100, status: 'Planned' },
+        { scheduledDate: '2026-10-01', dueDate: '2026-10-01', rent: 100, status: 'Planned' }
+      ],
+      totalInvoices: 3,
+      totalAmount: 300
+    } as PreviewRentScheduleResponse);
+
+    expect(component.cancelledRowDates().size).toBe(0);
   }));
 
   it('does not save without a generated preview first', () => {
