@@ -20,6 +20,62 @@ export interface ScheduleRowCreationRequest {
    * `false`.
    */
   isCancelled?: boolean;
+  /**
+   * This row's per-tenant edits (backend spec v49/v50, FR-068). Omitted or `[]` when the lease bills as
+   * a group, or when the user has not touched a tenant row.
+   *
+   * Nested under the row rather than sent as a parallel list keyed by `scheduledDate`, matching the
+   * backend contract: the screen shows the tenants underneath their row, and a parallel list is one more
+   * thing that can fall out of alignment with the rows it describes.
+   *
+   * **Only `PUT …/terms` accepts this.** `POST /rent/agreements` rejects a non-empty list with `422`,
+   * because no tenant rows exist until the later "add tenants" call.
+   */
+  tenants?: TenantRowEditRequest[];
+}
+
+/**
+ * One tenant's row inside a submitted schedule row (backend spec v49/v50, FR-068).
+ *
+ * **Two asymmetries here are load-bearing, and getting either backwards corrupts data silently.**
+ *
+ * `amount` absent means *"return this tenant to the computed share"* — **not** "leave it unchanged". The
+ * screen submits the complete per-tenant set on every save, so absence is a positive statement and is the
+ * only way to clear an override. A caller that sends a partial set will wipe the property owner's edits.
+ *
+ * `dueDate` absent **does** mean unchanged, because a tenant's date has no computed value to fall back
+ * to — it simply defaults to the cycle's own at generation and then stays where it was put.
+ */
+export interface TenantRowEditRequest {
+  tenantId: string;
+  /** This tenant's own due date, or omitted to leave it unchanged. */
+  dueDate?: string;
+  /** The authored amount (`>= 0`), or omitted to clear any override and return to the computed share. */
+  amount?: number;
+  /**
+   * Whether the tenant is excluded from this cycle. Decisive in **both** directions: `true` cancels or
+   * keeps cancelled (idempotent), and its **absence** restores a cancelled tenant — the same rule the
+   * schedule row itself uses, so there is one rule to learn rather than two.
+   */
+  isCancelled?: boolean;
+}
+
+/**
+ * One tenant's row underneath a schedule row, as returned by `GET /rent/agreements/{id}` and
+ * `PUT …/terms` (backend spec v49/v50, FR-079).
+ */
+export interface RentAgreementTenantRowResponse {
+  tenantId: string;
+  /** Starts as the cycle's own date and moves independently, so it may differ from the parent's. */
+  dueDate: string;
+  amount: number;
+  /** `null` for a **fixed-amount** share, which has no percentage — hence nullable on a tenant row. */
+  sharePercent: number | null;
+  status: 'Planned' | 'Cancelled';
+  /** Whether a person authored `amount`; the screen marks the override and offers to clear it. */
+  isAmountManuallyEdited: boolean;
+  /** Derived per tenant — one tenant paying late does not freeze another's row. */
+  isFrozen: boolean;
 }
 
 export interface AdditionalChargeItemCreationRequest {
@@ -110,6 +166,23 @@ export interface RentAgreementScheduleRowResponse {
    * stored — the UI must not try to recompute it, since "overdue" depends on the server's clock.
    */
   isFrozen?: boolean;
+  /**
+   * This cycle's per-tenant rows (backend spec v49/v50, FR-079). `[]` when the cycle bills as a group.
+   *
+   * **Decided per cycle, not per lease.** After a group/non-group switch a protected cycle keeps its old
+   * shape, so one agreement can carry children on some cycles and none on others. The UI must read this
+   * array rather than inferring the shape from the lease's group-invoice setting, which after a switch
+   * describes only how *future* cycles bill.
+   */
+  tenants?: RentAgreementTenantRowResponse[];
+  /**
+   * The sum of {@link tenants}, or `null` when the cycle has none (FR-080).
+   *
+   * Shown **alongside** {@link rent}, never instead of it: once a tenant's amount is authored the two
+   * legitimately differ, and a screen that renders only one of them misreports either what the lease says
+   * or what the tenants owe. `null` rather than `0`, because zero would read as "the tenants owe nothing".
+   */
+  tenantAmountTotal?: number | null;
 }
 
 export interface RentAgreementAdditionalChargeItemResponse {

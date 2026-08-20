@@ -56,6 +56,64 @@ export interface PreviewRentScheduleRequest {
   monthToMonthInvoiceCount?: number | null;
   nextLeaseStartDate?: string | null;
   existingRows?: ExistingScheduleRowInput[];
+  /**
+   * Whether the lease bills as one shared invoice (backend spec v49/v50, FR-083). Omitted is treated as
+   * `true` by the backend, which suppresses per-tenant rows entirely — so leaving all three per-tenant
+   * fields off keeps the pre-v49 request and response exactly as they were.
+   */
+  isGroupInvoice?: boolean;
+  /**
+   * The active tenants' shares, supplied by the caller.
+   *
+   * The preview reads **nothing** from the database, and that is load-bearing rather than incidental
+   * here: this screen holds the roster and every edit in the browser until Save, so a server-side read
+   * would preview the state being replaced.
+   */
+  tenantSplit?: TenantSplitInput[];
+  /**
+   * Per-tenant edits the user has made but not yet saved, so the preview shows them rather than the
+   * computed split. Must be re-sent on **every** preview call, exactly as `existingRows` must be.
+   */
+  pendingTenantRows?: PendingTenantRowInput[];
+}
+
+/** One tenant's share, as supplied to the preview (backend spec v49/v50). */
+export interface TenantSplitInput {
+  tenantId: string;
+  /** Used verbatim when {@link percent} is absent, and does **not** move when the cycle's rent does. */
+  amount: number;
+  /** The percentage of each cycle's rent, or omitted for a fixed-amount share. */
+  percent?: number | null;
+}
+
+/**
+ * One unsaved per-tenant edit, supplied to the preview so it can show work that exists only in the
+ * browser (backend spec v49/v50, FR-083).
+ *
+ * `amountPaid` and `invoiceDueDate` are the freeze inputs. The preview cannot read them, so omitting them
+ * reports the row as editable — correct for a cycle that has never billed, and the caller's job to supply
+ * for one that has.
+ */
+export interface PendingTenantRowInput {
+  scheduledDate: string;
+  tenantId: string;
+  dueDate?: string | null;
+  /** Supplied overrides the computed share; omitted shows the computed share, as on save. */
+  amount?: number | null;
+  isCancelled?: boolean;
+  amountPaid?: number | null;
+  invoiceDueDate?: string | null;
+}
+
+/** One tenant's previewed row underneath a previewed schedule row (backend spec v49/v50, FR-083). */
+export interface PreviewTenantRow {
+  tenantId: string;
+  dueDate: string;
+  amount: number;
+  sharePercent: number | null;
+  status: string;
+  isAmountManuallyEdited: boolean;
+  isFrozen: boolean;
 }
 
 export interface ScheduleRow {
@@ -69,6 +127,17 @@ export interface ScheduleRow {
    * carry their own authoritative `status` on `RentAgreementScheduleRowDetail` instead.
    */
   status?: string;
+  /**
+   * This cycle's previewed per-tenant rows (backend spec v49/v50). `[]` in group mode and when the caller
+   * supplied no split. Optional for the same reason as {@link status}: rows built from an agreement's own
+   * GET/PUT response carry `RentAgreementScheduleRowResponse.tenants` instead.
+   */
+  tenants?: PreviewTenantRow[];
+  /**
+   * The sum of {@link tenants}, or `null` when there are none — shown alongside {@link rent}, never
+   * instead of it, matching the saved read so the screen renders both the same way before and after Save.
+   */
+  tenantAmountTotal?: number | null;
 }
 
 /**

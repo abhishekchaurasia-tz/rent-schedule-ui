@@ -542,3 +542,36 @@ table {
 .charges-table {
   margin-bottom: 1rem;
 }
+
+// Per-tenant rows (backend spec v49/v50). Indented and tinted so a child reads as belonging to the
+// row above rather than as another cycle — the table has no other nesting, so this is doing real work.
+.tenant-expander {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.tenant-row {
+  background: #fafafa;
+
+  > td:first-child { padding-left: 2rem; }
+  .tenant-name { font-size: 0.85rem; color: #444; word-break: break-all; }
+  .tenant-share { margin-left: 0.4rem; color: #777; }
+  .tenant-input { width: 100%; max-width: 9rem; }
+  .tenant-cancel-btn { font-size: 0.8rem; }
+}
+
+// Beside the row's own rent, not replacing it: once an amount is authored the two legitimately differ,
+// and showing one alone hides either what the lease says or what the tenants owe.
+.tenant-total-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.6rem;
+  background: #eef3ff;
+  color: #2b4a8b;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}

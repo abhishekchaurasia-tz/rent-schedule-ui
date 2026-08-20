@@ -16,8 +16,11 @@ import {
   CandidateDateRequest,
   ExistingScheduleRowInput,
   LeaseTermType,
+  PendingTenantRowInput,
+  PreviewRentScheduleRequest,
   PreviewRentScheduleResponse,
-  RentFrequency
+  RentFrequency,
+  TenantSplitInput
 } from '../rent-schedule/rent-schedule.models';
 import { buildFrequencyConfig, frequencyConfigToFormValue, ordinal } from '../rent-schedule/frequency-config.util';
 import { parseIsoDate, toIsoDate } from '../shared/date.util';
@@ -27,7 +30,9 @@ import {
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   RentAgreementDetailResponse,
+  RentAgreementScheduleRowResponse,
   ScheduleRowStatus,
+  TenantRowEditRequest,
   UpdateRentAgreementTermsRequest,
   toChargeCreationRequest
 } from './rent-agreement.models';
@@ -183,6 +188,35 @@ export class RentAgreementCreateComponent {
    */
   readonly cancelledRowDates = signal<Set<string>>(new Set());
 
+  /**
+   * Per-tenant amount overrides, keyed by `${scheduledDate}|${tenantId}` (backend spec v49/v50, FR-070).
+   *
+   * A composite key rather than a nested map, matching how this component already tracks per-row state:
+   * a tenant edited on March is independent of the same tenant on April, and a flat key keeps every read
+   * a single lookup instead of two with a null check between them.
+   *
+   * **A key's absence is what clears the override on Save.** `saveEdit()` sends the complete per-tenant
+   * set every time and omits `amount` for any tenant not in this map, which is the only way back to the
+   * automatic split. That is why a partial submission would silently wipe a property owner's edits.
+   */
+  readonly tenantAmounts = signal<Map<string, number>>(new Map());
+
+  /** Per-tenant due dates, same key shape. Absence means "unchanged", unlike {@link tenantAmounts}. */
+  readonly tenantDueDates = signal<Map<string, string>>(new Map());
+
+  /**
+   * Tenants the user has excluded from a cycle, same key shape. Sent as `isCancelled: true`; a key's
+   * absence restores the tenant, mirroring how {@link cancelledRowDates} already works at the row level.
+   */
+  readonly cancelledTenantKeys = signal<Set<string>>(new Set());
+
+  /**
+   * Which schedule rows are expanded to show their tenants. **View state only**, and deliberately not
+   * cleared when a preview refreshes: collapsing every row because the user changed an unrelated field
+   * would be hostile, and no correctness rule depends on it.
+   */
+  readonly expandedRowDates = signal<Set<string>>(new Set());
+
   /** `id`s of loaded additional charges the server marked applied (already invoiced) — locked, and not editable/removable. */
   readonly appliedChargeIds = signal<Set<string>>(new Set());
 
@@ -336,11 +370,17 @@ export class RentAgreementCreateComponent {
           { emitEvent: false }
         );
 
+        // Seeded from the response so a saved override shows as an override on load, rather than
+        // looking like a fresh computed share the user could clear without realising it changed anything.
+        this.seedTenantEditsFrom(agreement.scheduleRows);
+
         this.previewResult.set({
           rows: agreement.scheduleRows.map((row) => ({
             scheduledDate: row.scheduledDate,
             dueDate: row.dueDate,
-            rent: row.rent
+            rent: row.rent,
+            tenants: row.tenants ?? [],
+            tenantAmountTotal: row.tenantAmountTotal ?? null
           })),
           totalInvoices: agreement.scheduleRows.filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status)).length,
           totalAmount: agreement.scheduleRows
@@ -407,6 +447,181 @@ export class RentAgreementCreateComponent {
   /** Whether a loaded row is already cancelled by the server — display-only, no row-menu. */
   isRowCancelled(scheduledDate: string): boolean {
     return this.cancelledRowDates().has(scheduledDate);
+  }
+
+  /**
+   * Seeds the three per-tenant edit signals from a loaded or just-saved response.
+   *
+   * Only genuine overrides are seeded. An amount is seeded when the server says
+   * `isAmountManuallyEdited`, not merely because it has a value — every tenant row has an amount, and
+   * treating a computed share as an override would make the next Save re-assert it as hand-typed and
+   * freeze it against a later rent change. A due date is seeded only when it differs from its cycle's,
+   * for the same reason.
+   */
+  private seedTenantEditsFrom(rows: RentAgreementScheduleRowResponse[]): void {
+    const amounts = new Map<string, number>();
+    const dueDates = new Map<string, string>();
+    const cancelled = new Set<string>();
+
+    for (const row of rows) {
+      for (const tenant of row.tenants ?? []) {
+        const key = this.tenantKey(row.scheduledDate, tenant.tenantId);
+
+        if (tenant.isAmountManuallyEdited) {
+          amounts.set(key, tenant.amount);
+        }
+
+        if (tenant.dueDate !== row.dueDate) {
+          dueDates.set(key, tenant.dueDate);
+        }
+
+        if (tenant.status === 'Cancelled') {
+          cancelled.add(key);
+        }
+      }
+    }
+
+    this.tenantAmounts.set(amounts);
+    this.tenantDueDates.set(dueDates);
+    this.cancelledTenantKeys.set(cancelled);
+  }
+
+  /**
+   * Builds one schedule row's `tenants[]` for `PUT …/terms`.
+   *
+   * **Sends the complete set every time**, built from the roster the server last reported for this cycle
+   * rather than from the keys that happen to be in the edit maps. An absent `amount` clears an override
+   * (FR-070), so a partial submission would silently wipe edits the user did not touch on this visit.
+   *
+   * Returns `undefined` for a cycle with no tenant rows — a group cycle — because the backend rejects
+   * per-tenant entries there with a `422`.
+   */
+  private buildTenantEdits(scheduledDate: string): TenantRowEditRequest[] | undefined {
+    const row = this.loadedAgreement()?.scheduleRows.find((r) => r.scheduledDate === scheduledDate);
+    const tenants = row?.tenants ?? [];
+
+    if (tenants.length === 0) {
+      return undefined;
+    }
+
+    return tenants.map((tenant) => {
+      const key = this.tenantKey(scheduledDate, tenant.tenantId);
+      const amount = this.tenantAmounts().get(key);
+      const dueDate = this.tenantDueDates().get(key);
+
+      const edit: TenantRowEditRequest = { tenantId: tenant.tenantId };
+
+      // Each field is attached only when it has a value, so an untouched tenant sends just its id — which
+      // is precisely the payload that means "return this one to the computed share, leave its date alone".
+      if (amount !== undefined) {
+        edit.amount = amount;
+      }
+
+      if (dueDate !== undefined) {
+        edit.dueDate = dueDate;
+      }
+
+      if (this.cancelledTenantKeys().has(key)) {
+        edit.isCancelled = true;
+      }
+
+      return edit;
+    });
+  }
+
+  /**
+   * The composite key the per-tenant signals use. Public because the template needs it too, and a second
+   * copy of the format string in the template is a defect waiting to happen.
+   */
+  tenantKey(scheduledDate: string, tenantId: string): string {
+    return `${scheduledDate}|${tenantId}`;
+  }
+
+  /** Whether the user has excluded this tenant from this cycle. */
+  isTenantCancelled(scheduledDate: string, tenantId: string): boolean {
+    return this.cancelledTenantKeys().has(this.tenantKey(scheduledDate, tenantId));
+  }
+
+  /** Whether this tenant's amount is a hand-typed override rather than the computed share. */
+  isTenantAmountEdited(scheduledDate: string, tenantId: string): boolean {
+    return this.tenantAmounts().has(this.tenantKey(scheduledDate, tenantId));
+  }
+
+  /** Whether a cycle's tenant rows are showing. */
+  isRowExpanded(scheduledDate: string): boolean {
+    return this.expandedRowDates().has(scheduledDate);
+  }
+
+  /** Shows or hides a cycle's tenant rows. View state only — a preview refresh does not reset it. */
+  toggleRowExpansion(scheduledDate: string): void {
+    this.expandedRowDates.update((dates) => {
+      const next = new Set(dates);
+      if (!next.delete(scheduledDate)) {
+        next.add(scheduledDate);
+      }
+
+      return next;
+    });
+  }
+
+  /**
+   * Excludes a tenant from a cycle, or restores them.
+   * </summary>
+   * A single toggle rather than separate cancel/restore actions, because the wire contract is itself a
+   * single decisive flag: sending `isCancelled: true` cancels or keeps cancelled, and omitting it restores
+   * (FR-075). Two actions would imply two server behaviours where there is one.
+   */
+  toggleTenantCancelled(scheduledDate: string, tenantId: string): void {
+    const key = this.tenantKey(scheduledDate, tenantId);
+
+    this.cancelledTenantKeys.update((keys) => {
+      const next = new Set(keys);
+      if (!next.delete(key)) {
+        next.add(key);
+      }
+
+      return next;
+    });
+  }
+
+  /**
+   * Records a hand-typed amount for one tenant on one cycle, or clears the override when the field is
+   * emptied.
+   * </summary>
+   * Clearing removes the key rather than storing `null`: the key's absence is what makes `saveEdit()` omit
+   * `amount`, which is what tells the backend to return the tenant to the computed share. Storing a null
+   * would send `amount: null`, which the backend also treats as a clear — but relying on that would put
+   * the meaning in two places instead of one.
+   */
+  setTenantAmount(scheduledDate: string, tenantId: string, amount: number | null): void {
+    const key = this.tenantKey(scheduledDate, tenantId);
+
+    this.tenantAmounts.update((amounts) => {
+      const next = new Map(amounts);
+      if (amount === null || Number.isNaN(amount)) {
+        next.delete(key);
+      } else {
+        next.set(key, amount);
+      }
+
+      return next;
+    });
+  }
+
+  /** Records a hand-picked due date for one tenant on one cycle, or drops back to the cycle's own. */
+  setTenantDueDate(scheduledDate: string, tenantId: string, dueDate: string | null): void {
+    const key = this.tenantKey(scheduledDate, tenantId);
+
+    this.tenantDueDates.update((dates) => {
+      const next = new Map(dates);
+      if (dueDate) {
+        next.set(key, dueDate);
+      } else {
+        next.delete(key);
+      }
+
+      return next;
+    });
   }
 
   /** Whether a loaded additional charge is already applied (invoiced) — cannot be edited or removed. */
@@ -607,7 +822,13 @@ export class RentAgreementCreateComponent {
           value.leaseTermType === 'month_to_month' ? Number(value.monthToMonthInvoiceCount) : null,
         nextLeaseStartDate:
           value.leaseTermType === 'month_to_month' ? toIsoDate(value.nextLeaseStartDate) : null,
-        existingRows: existingRows.length > 0 ? existingRows : undefined
+        existingRows: existingRows.length > 0 ? existingRows : undefined,
+
+        // The per-tenant preview inputs (backend spec v49/v50, FR-083). The endpoint reads nothing, so
+        // the roster and every unsaved per-tenant edit have to be re-sent on every call — exactly as
+        // `existingRows` already is. Omitted entirely on the create path, where there is no roster yet,
+        // which leaves the request in its pre-v49 shape.
+        ...this.buildTenantPreviewInputs()
       })
       .subscribe({
         next: (response) => {
@@ -661,6 +882,67 @@ export class RentAgreementCreateComponent {
       invoiceStatus: null,
       invoiceDueDate: null
     }));
+  }
+
+  /**
+   * Builds the preview's three per-tenant fields, or `{}` when there is nothing per-tenant to preview.
+   *
+   * Returns an empty object rather than explicit `undefined`s so the spread leaves the request in its
+   * pre-v49 shape on the create path — which is what keeps this change invisible to that flow.
+   *
+   * The roster comes from the last loaded agreement, because it is the only place the client knows the
+   * tenants and their shares from. Cycles are keyed by `scheduledDate`, matching the pending-edit keys.
+   */
+  private buildTenantPreviewInputs(): Partial<PreviewRentScheduleRequest> {
+    const rows = this.loadedAgreement()?.scheduleRows ?? [];
+    const withTenants = rows.filter((row) => (row.tenants?.length ?? 0) > 0);
+
+    if (withTenants.length === 0) {
+      return {};
+    }
+
+    // One entry per tenant, deduplicated across cycles: the split is a property of the lease, while the
+    // per-cycle amounts are what the backend recomputes from it.
+    const split = new Map<string, TenantSplitInput>();
+    for (const tenant of withTenants.flatMap((row) => row.tenants ?? [])) {
+      if (!split.has(tenant.tenantId)) {
+        split.set(tenant.tenantId, {
+          tenantId: tenant.tenantId,
+          amount: tenant.sharePercent === null ? tenant.amount : 0,
+          percent: tenant.sharePercent
+        });
+      }
+    }
+
+    const pending: PendingTenantRowInput[] = [];
+    for (const row of withTenants) {
+      for (const tenant of row.tenants ?? []) {
+        const key = this.tenantKey(row.scheduledDate, tenant.tenantId);
+        const amount = this.tenantAmounts().get(key);
+        const dueDate = this.tenantDueDates().get(key);
+        const cancelled = this.cancelledTenantKeys().has(key);
+
+        // Only send an entry that actually says something. A tenant with no override, no moved date and
+        // no cancel is fully described by the split, and sending a no-op entry would just be noise.
+        if (amount === undefined && dueDate === undefined && !cancelled) {
+          continue;
+        }
+
+        pending.push({
+          scheduledDate: row.scheduledDate,
+          tenantId: tenant.tenantId,
+          amount: amount ?? null,
+          dueDate: dueDate ?? null,
+          isCancelled: cancelled
+        });
+      }
+    }
+
+    return {
+      isGroupInvoice: false,
+      tenantSplit: [...split.values()],
+      pendingTenantRows: pending.length > 0 ? pending : undefined
+    };
   }
 
   toggleRowMenu(index: number, event: MouseEvent): void {
@@ -927,7 +1209,10 @@ export class RentAgreementCreateComponent {
         dueDate: row.dueDate,
         rent: row.rent,
         isManualChanged: this.manuallyChangedRowDates().has(row.scheduledDate),
-        isCancelled: this.cancelledRowDates().has(row.scheduledDate)
+        isCancelled: this.cancelledRowDates().has(row.scheduledDate),
+        // Undefined for a group cycle, which the backend rejects per-tenant entries on. JSON.stringify
+        // drops an undefined property, so the key simply does not go on the wire.
+        tenants: this.buildTenantEdits(row.scheduledDate)
       })),
       additionalCharges: this.additionalCharges()
     };
@@ -941,11 +1226,17 @@ export class RentAgreementCreateComponent {
         // Re-sync the deposit lock too — the PUT response carries a freshly computed isDepositEditable,
         // so if the lease was activated between load and save the fields lock without needing a reload.
         this.setDepositFieldsEnabled(agreement.isDepositEditable);
+        // Seeded from the response so a saved override shows as an override on load, rather than
+        // looking like a fresh computed share the user could clear without realising it changed anything.
+        this.seedTenantEditsFrom(agreement.scheduleRows);
+
         this.previewResult.set({
           rows: agreement.scheduleRows.map((row) => ({
             scheduledDate: row.scheduledDate,
             dueDate: row.dueDate,
-            rent: row.rent
+            rent: row.rent,
+            tenants: row.tenants ?? [],
+            tenantAmountTotal: row.tenantAmountTotal ?? null
           })),
           totalInvoices: agreement.scheduleRows.filter((r) => !RentAgreementCreateComponent.isCancelledStatus(r.status)).length,
           totalAmount: agreement.scheduleRows

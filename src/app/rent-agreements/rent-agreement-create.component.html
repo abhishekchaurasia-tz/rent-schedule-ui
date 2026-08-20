@@ -358,7 +358,24 @@
               <tbody>
                 @for (row of res.rows; track row.scheduledDate; let i = $index) {
                   <tr [class.row-cancelled]="isRowCancelled(row.scheduledDate)">
-                    <td>{{ row.scheduledDate }}</td>
+                    <td>
+                      <!--
+                        The expander appears only when the cycle actually has tenant rows. A group cycle
+                        reports none, so it renders as a plain schedule row — and the shape is read per
+                        cycle, never from the lease's group-invoice setting, because after a mode switch a
+                        protected cycle keeps its old shape while its siblings flip.
+                      -->
+                      @if (row.tenants?.length) {
+                        <button
+                          type="button"
+                          class="tenant-expander"
+                          [attr.aria-expanded]="isRowExpanded(row.scheduledDate)"
+                          [attr.aria-label]="isRowExpanded(row.scheduledDate) ? 'Hide tenants' : 'Show tenants'"
+                          (click)="toggleRowExpansion(row.scheduledDate)"
+                        >{{ isRowExpanded(row.scheduledDate) ? '▾' : '▸' }}</button>
+                      }
+                      {{ row.scheduledDate }}
+                    </td>
                     @if (isRowCancelled(row.scheduledDate)) {
                       <td>{{ row.dueDate }}</td>
                       <td>
@@ -428,6 +445,22 @@
                             >locked</span
                           >
                         }
+                        <!--
+                          Shown only when the two figures disagree, which happens once a tenant's amount is
+                          authored. Both are shown because each answers a different question: the rent is
+                          what the lease says, the total is what the tenants owe.
+                        -->
+                        @if (row.tenantAmountTotal != null && row.tenantAmountTotal !== row.rent) {
+                          <span
+                            class="tenant-total-badge"
+                            [title]="
+                              'The tenants\'  amounts total ' +
+                              (row.tenantAmountTotal | number: '1.2-2') +
+                              ', which differs from this month\'s rent because an amount was edited'
+                            "
+                            >tenants {{ row.tenantAmountTotal | number: '1.2-2' }}</span
+                          >
+                        }
                       </td>
                       <td>
                         <button
@@ -442,6 +475,94 @@
                       </td>
                     }
                   </tr>
+
+                  @if (isRowExpanded(row.scheduledDate)) {
+                    @for (tenant of row.tenants ?? []; track tenant.tenantId) {
+                      <tr
+                        class="tenant-row"
+                        [class.row-cancelled]="isTenantCancelled(row.scheduledDate, tenant.tenantId)"
+                      >
+                        <td class="tenant-name">
+                          {{ tenant.tenantId }}
+                          @if (tenant.sharePercent != null) {
+                            <span class="tenant-share">{{ tenant.sharePercent | number: '1.0-2' }}%</span>
+                          }
+                        </td>
+
+                        <!--
+                          A frozen tenant row is read-only, exactly as a frozen schedule row is: the server
+                          refuses the change, so offering the field would promise an edit the save rejects.
+                        -->
+                        @if (tenant.isFrozen) {
+                          <td>{{ tenant.dueDate }}</td>
+                          <td>
+                            {{ tenant.amount | number: '1.2-2' }}
+                            <span
+                              class="frozen-badge"
+                              title="This tenant's invoice is paid or past due — their row cannot be changed"
+                              aria-label="Locked — already billed"
+                              >locked</span
+                            >
+                          </td>
+                          <td></td>
+                        } @else {
+                          <td>
+                            <input
+                              type="date"
+                              class="tenant-input"
+                              [value]="tenantDueDates().get(tenantKey(row.scheduledDate, tenant.tenantId)) ?? tenant.dueDate"
+                              (change)="setTenantDueDate(row.scheduledDate, tenant.tenantId, $any($event.target).value)"
+                              [attr.aria-label]="'Due date for this tenant on ' + row.scheduledDate"
+                            />
+                          </td>
+                          <td>
+                            <!--
+                              Emptying the field clears the override rather than sending 0 — the component
+                              drops the key, and an absent amount is what returns the tenant to the computed
+                              share on save.
+                            -->
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              class="tenant-input"
+                              [value]="tenantAmounts().get(tenantKey(row.scheduledDate, tenant.tenantId)) ?? tenant.amount"
+                              (input)="
+                                setTenantAmount(
+                                  row.scheduledDate,
+                                  tenant.tenantId,
+                                  $any($event.target).value === '' ? null : $any($event.target).valueAsNumber
+                                )
+                              "
+                              [attr.aria-label]="'Amount for this tenant on ' + row.scheduledDate"
+                            />
+                            @if (isTenantAmountEdited(row.scheduledDate, tenant.tenantId)) {
+                              <span
+                                class="manual-edit-badge"
+                                title="Amount edited — clear the field to return this tenant to their computed share"
+                                aria-label="Amount edited"
+                                >edited</span
+                              >
+                            }
+                          </td>
+                          <td>
+                            <!--
+                              One toggle, because the wire contract is one decisive flag: sending it cancels
+                              or keeps cancelled, omitting it restores.
+                            -->
+                            <button
+                              type="button"
+                              class="tenant-cancel-btn"
+                              [disabled]="saving()"
+                              (click)="toggleTenantCancelled(row.scheduledDate, tenant.tenantId)"
+                            >
+                              {{ isTenantCancelled(row.scheduledDate, tenant.tenantId) ? 'Restore' : 'Cancel' }}
+                            </button>
+                          </td>
+                        }
+                      </tr>
+                    }
+                  }
                 }
               </tbody>
             </table>
