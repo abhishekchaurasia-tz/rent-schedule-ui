@@ -189,6 +189,16 @@ export class AdditionalChargePanelComponent implements OnInit {
       startDate.updateValueAndValidity();
     });
 
+    // Attached-to-rental-invoice charges ride the rental invoice's own due-date cadence, so the
+    // independent Frequency picker (and its per-frequency config) is hidden — force it back to the
+    // plain "monthly" candidate-date flow rather than leaving it on a stale frequency (e.g. Custom's
+    // free-form pickers) picked before the toggle was flipped.
+    this.form.get('attachedWithRentalInvoice')!.valueChanges.subscribe((attached: boolean) => {
+      if (attached) {
+        this.form.get('frequency')!.setValue('monthly');
+      }
+    });
+
     // Clears a stale End Date pick once it's no longer after the (possibly newly re-picked) Start
     // Date — mirrors the reference component's dueDatesForEndDate always being re-filtered to
     // "after the selected start date" whenever the start date selection changes.

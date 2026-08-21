@@ -204,6 +204,7 @@ export interface RentAgreementAdditionalChargeResponse {
   isRecurring: boolean;
   dueDate?: string | null;
   frequency?: RentFrequency | null;
+  frequencyConfig?: FrequencyConfig | null;
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
@@ -285,6 +286,7 @@ export function toChargeCreationRequest(
     isRecurring: charge.isRecurring,
     dueDate: charge.dueDate,
     frequency: charge.frequency,
+    frequencyConfig: charge.frequencyConfig,
     startDate: charge.startDate,
     endDate: charge.endDate,
     hasNoEndDate: charge.hasNoEndDate,
