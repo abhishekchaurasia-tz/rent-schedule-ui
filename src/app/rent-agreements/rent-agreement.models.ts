@@ -252,6 +252,14 @@ export interface RentAgreementDetailResponse {
    * per-charge `isApplied` capability flags.
    */
   isDepositEditable: boolean;
+  /**
+   * Server-computed: whether the first rental due date may currently be re-picked — true only while
+   * the lease's status is `Active` or `Expiring` (backend spec v61). Confirmed by the user 2026-08-20:
+   * an unactivated draft (`InProcess`) behaves like create (the picker always resolves against fresh
+   * candidates); once active, an edit must not silently clear the saved value out from under the user
+   * just because it no longer appears in the forward-looking candidate list.
+   */
+  isFirstRentalDueDateEditable: boolean;
   /** `draft` before activation, then the lease's rental status. */
   status: string;
   /** The server's current UTC date — used to derive "overdue" without trusting the client's clock. */

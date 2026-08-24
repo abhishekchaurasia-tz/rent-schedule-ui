@@ -31,6 +31,7 @@ describe('AddTenantsComponent', () => {
     depositDueDate: '2026-01-01',
     depositCollected: false,
     isDepositEditable: true,
+    isFirstRentalDueDateEditable: false,
     status: 'draft',
     todayUtc: '2026-01-15',
     scheduleRows: [],

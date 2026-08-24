@@ -38,6 +38,8 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     // Locked by default in this fixture, so the existing tests keep exercising the read-only path; the
     // editable-deposit tests below override it.
     isDepositEditable: false,
+    // False by default, matching this fixture's 'draft' status — the reselection tests below override it.
+    isFirstRentalDueDateEditable: false,
     status: 'draft',
     todayUtc: '2026-01-15',
     scheduleRows: [
@@ -113,6 +115,23 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(component.loadingAgreement()).toBeFalse();
     expect(component.loadError()).toBeNull();
   });
+
+  it(
+    'preserves the loaded first rental due date on the very first candidate fetch, even on a draft ' +
+      'lease, when the fresh list does not happen to include it (spec v15)',
+    () => {
+      fixture.detectChanges();
+      httpMock.expectOne(detailUrl).flush(detail()); // isFirstRentalDueDateEditable: false (draft)
+
+      // The candidate endpoint enumerates purely from the recurrence's cadence, so the freely-picked
+      // anchor saved at creation ('2026-01-01') routinely will not appear in it — reported by the user
+      // as the picker coming up blank on the very first page open, with no edit made at all.
+      httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-02-01', '2026-03-01'] }));
+
+      expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
+      expect(component.firstRentalDueDateSelectOptions()).toContain('2026-01-01');
+    }
+  );
 
   it('fills the form and the schedule table from the loaded agreement', () => {
     load();
@@ -244,6 +263,45 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
 
     expect(component.form.get('deposit')!.disabled).toBeTrue();
   });
+
+  it('clears the first rental due date when the lease is not yet reselection-eligible and the value falls out of the candidate list (draft, spec v61)', fakeAsync(() => {
+    load(); // isFirstRentalDueDateEditable: false, per this fixture's default status: 'draft'
+
+    expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
+
+    // Any change re-fires the candidate-date lookup; the fresh list no longer includes the loaded value.
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-02-01'] }));
+    httpMock
+      .expectOne(previewUrl)
+      .flush({ rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }], totalInvoices: 1, totalAmount: 1200 });
+
+    expect(component.form.get('firstRentalDueDate')!.value).toBeNull();
+  }));
+
+  it('preserves the first rental due date on an active lease even when it falls out of the fresh candidate list (spec v61)', fakeAsync(() => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush({ ...detail(), isFirstRentalDueDateEditable: true, status: 'active' });
+    httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
+
+    expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
+
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-02-01'] }));
+    httpMock
+      .expectOne(previewUrl)
+      .flush({ rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }], totalInvoices: 1, totalAmount: 1200 });
+
+    // The server allows reselection on this lease, but nothing has asked to reselect yet — the saved
+    // value must not be silently wiped out just because it no longer appears in the forward-looking
+    // candidate list (confirmed by the user 2026-08-20).
+    expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
+    // The preserved value is still rendered as a selectable option, even though it is absent from the
+    // server's own candidate list — otherwise the <select> would show nothing chosen.
+    expect(component.firstRentalDueDateSelectOptions()).toContain('2026-01-01');
+  }));
 
   it('renders a cancelled row from the server and sends it flagged isCancelled rather than omitting it (spec v47)', () => {
     fixture.detectChanges();

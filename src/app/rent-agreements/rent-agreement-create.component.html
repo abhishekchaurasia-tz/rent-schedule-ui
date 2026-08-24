@@ -197,18 +197,18 @@
           @if (frequency !== 'custom') {
             <select
               formControlName="firstRentalDueDate"
-              [attr.disabled]="candidateDatesLoading() || candidateDates().length === 0 ? true : null"
+              [attr.disabled]="candidateDatesLoading() || firstRentalDueDateSelectOptions().length === 0 ? true : null"
             >
               <option value="" disabled>
                 {{
                   candidateDatesLoading()
                     ? 'Loading options…'
-                    : candidateDates().length === 0
+                    : firstRentalDueDateSelectOptions().length === 0
                       ? 'Complete the form above to see options'
                       : 'Select a date'
                 }}
               </option>
-              @for (date of candidateDates(); track date) {
+              @for (date of firstRentalDueDateSelectOptions(); track date) {
                 <option [value]="date">{{ date }}</option>
               }
             </select>
