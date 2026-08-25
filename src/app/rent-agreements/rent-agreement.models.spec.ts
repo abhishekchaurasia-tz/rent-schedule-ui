@@ -17,8 +17,6 @@ describe('toChargeCreationRequest', () => {
       startDate: '2026-08-01',
       endDate: null,
       hasNoEndDate: true,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [],
       isApplied: false,
       ...overrides

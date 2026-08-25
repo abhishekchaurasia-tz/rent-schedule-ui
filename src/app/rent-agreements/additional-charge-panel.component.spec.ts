@@ -162,8 +162,6 @@ describe('AdditionalChargePanelComponent', () => {
       startDate: null,
       endDate: null,
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [
         {
           lineItemId: petFeeItem.id,
@@ -187,6 +185,7 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
+      attachedWithRentalInvoice: true,
       frequency: 'monthly',
       dueOnDay: 15,
       startDate: '2026-08-01',
@@ -208,6 +207,37 @@ describe('AdditionalChargePanelComponent', () => {
     expect(emitted?.items[0].itemType).toBe('Parking');
   });
 
+  it('omits the cadence for a recurring charge that does not ride the rental invoice (FR-088)', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    const item = component.items.at(0);
+    item.patchValue({ lineItemId: parkingItem.id, description: 'Internet', quantity: 1, rate: 20 });
+    component.recalculateAmount(0);
+
+    component.form.patchValue({
+      isRecurring: true,
+      attachedWithRentalInvoice: false,
+      frequency: 'monthly',
+      dueOnDay: 15,
+      startDate: '2026-08-01',
+      hasNoEndDate: true
+    });
+
+    let emitted: AdditionalChargeCreationRequest | undefined;
+    component.created.subscribe((c) => (emitted = c));
+
+    component.create();
+
+    // A standalone recurring charge bills once per rent cycle, so it has no cadence of its own. Sending
+    // one is what the server rejects with 422.
+    expect(emitted?.isRecurring).toBeTrue();
+    expect(emitted?.frequency).toBeNull();
+    expect(emitted?.frequencyConfig).toBeNull();
+    expect(emitted?.startDate).toBe('2026-08-01');
+    expect(emitted?.hasNoEndDate).toBeTrue();
+  });
+
   it('builds a bi-monthly frequencyConfig from the two due-on-day controls', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
@@ -218,6 +248,7 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
+      attachedWithRentalInvoice: true,
       frequency: 'bi_monthly',
       startDate: '2026-08-01',
       hasNoEndDate: true
@@ -243,6 +274,7 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
+      attachedWithRentalInvoice: true,
       frequency: 'custom',
       startDate: '2026-08-01',
       hasNoEndDate: true
@@ -379,8 +411,6 @@ describe('AdditionalChargePanelComponent', () => {
       startDate: null,
       endDate: null,
       hasNoEndDate: false,
-      isGrouped: true,
-      isSharedByAll: false,
       items: [
         {
           lineItemId: parkingItem.id,
@@ -401,8 +431,6 @@ describe('AdditionalChargePanelComponent', () => {
     expect(component.form.get('alreadyPaid')!.value).toBe(15);
     expect(component.form.get('attachedWithRentalInvoice')!.value).toBeTrue();
     expect(component.form.get('isRecurring')!.value).toBeFalse();
-    expect(component.form.get('isGrouped')!.value).toBeTrue();
-    expect(component.form.get('isSharedByAll')!.value).toBeFalse();
     expect(component.items.length).toBe(1);
     expect(component.items.at(0).get('lineItemId')!.value).toBe(parkingItem.id);
     expect(component.items.at(0).get('description')!.value).toBe('Parking space');
@@ -423,8 +451,6 @@ describe('AdditionalChargePanelComponent', () => {
       startDate: '2026-09-01',
       endDate: null,
       hasNoEndDate: true,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [
         { lineItemId: null, itemType: 'Snow Removal', description: 'Winter snow removal', quantity: 1, rate: 60, amount: 60 }
       ]
@@ -453,8 +479,6 @@ describe('AdditionalChargePanelComponent', () => {
       frequencyConfig: { dueOnDays: [3, 22] },
       startDate: '2026-09-01',
       hasNoEndDate: true,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ lineItemId: parkingItem.id, itemType: 'Parking', description: 'x', quantity: 1, rate: 10, amount: 10 }]
     };
     component.initialCharge = existing;
@@ -475,8 +499,6 @@ describe('AdditionalChargePanelComponent', () => {
       frequencyConfig: { dueDates: ['2026-09-01', '2026-10-15', '2026-11-30'] },
       startDate: '2026-09-01',
       hasNoEndDate: true,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ lineItemId: parkingItem.id, itemType: 'Parking', description: 'x', quantity: 1, rate: 10, amount: 10 }]
     };
     component.initialCharge = existing;
@@ -497,8 +519,6 @@ describe('AdditionalChargePanelComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-20',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [
         { lineItemId: parkingItem.id, itemType: 'Parking', description: 'a', quantity: 1, rate: 10, amount: 10 },
         { lineItemId: petFeeItem.id, itemType: 'PetFee', description: 'b', quantity: 1, rate: 20, amount: 20 }

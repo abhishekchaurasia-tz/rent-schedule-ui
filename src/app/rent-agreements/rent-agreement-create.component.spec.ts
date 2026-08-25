@@ -487,8 +487,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-15',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'Pet Fee', description: 'One-time pet fee', quantity: 1, rate: 50, amount: 50 }]
     };
 
@@ -508,8 +506,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-15',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
     component.onAdditionalChargeCreated(charge);
@@ -528,8 +524,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-15',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
     component.onAdditionalChargeCreated(rentCharge);
@@ -540,8 +534,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-20',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'PetDeposit', description: 'Pet deposit', quantity: 1, rate: 200, amount: 200 }]
     };
     component.onDepositChargeCreated(depositCharge);
@@ -569,8 +561,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-15',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
     component.onAdditionalChargeCreated(original);
@@ -603,8 +593,6 @@ describe('RentAgreementCreateComponent', () => {
       isRecurring: false,
       dueDate: '2026-08-15',
       hasNoEndDate: false,
-      isGrouped: false,
-      isSharedByAll: true,
       items: [{ itemType: 'Late Fee', description: 'Late payment', quantity: 1, rate: 25, amount: 25 }]
     };
     component.onAdditionalChargeCreated(charge);

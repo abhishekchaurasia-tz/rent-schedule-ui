@@ -118,8 +118,6 @@ export interface AdditionalChargeCreationRequest {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
-  isGrouped: boolean;
-  isSharedByAll: boolean;
   items: AdditionalChargeItemCreationRequest[];
 }
 
@@ -208,8 +206,6 @@ export interface RentAgreementAdditionalChargeResponse {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
-  isGrouped: boolean;
-  isSharedByAll: boolean;
   items: RentAgreementAdditionalChargeItemResponse[];
   /**
    * Server-computed: this charge has already been attached to an invoice, so it may no longer be
@@ -298,8 +294,6 @@ export function toChargeCreationRequest(
     startDate: charge.startDate,
     endDate: charge.endDate,
     hasNoEndDate: charge.hasNoEndDate,
-    isGrouped: charge.isGrouped,
-    isSharedByAll: charge.isSharedByAll,
     items: charge.items.map((item) => ({
       id: item.id,
       itemType: item.itemType,

@@ -56,8 +56,6 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
         isRecurring: false,
         dueDate: '2026-01-01',
         hasNoEndDate: false,
-        isGrouped: false,
-        isSharedByAll: true,
         items: [{ id: 'i1', itemType: 'Parking', description: 'Parking', quantity: 1, rate: 50, amount: 50 }],
         isApplied: false
       }
