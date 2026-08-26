@@ -339,6 +339,83 @@ export interface SaveAgreementTenantsResponse {
   tenantIds: string[];
 }
 
+/**
+ * One saved tenant's shares, read back from `GET /rent-agreements/{id}/tenants` **exactly as they
+ * were entered**.
+ *
+ * `rentPercent`/`depositPercent` are `null` when the owner typed a fixed dollar amount rather than a
+ * percentage — which is what lets the screen re-open on the input mode they actually chose, instead
+ * of guessing one. `rentAmount`/`deposit` are always present, because a percentage share resolves to
+ * an amount server-side.
+ */
+export interface AgreementTenantShareResponse {
+  tenantId: string;
+  rentAmount: number;
+  rentPercent: number | null;
+  deposit: number;
+  depositPercent: number | null;
+}
+
+/**
+ * The saved state of lease-wizard step 2, as `GET /rent-agreements/{id}/tenants` returns it.
+ *
+ * Mirrors {@link SaveAgreementTenantsRequest} field for field, so the screen round-trips what it
+ * submitted rather than having to reconstruct it. The per-tenant rows are present in **group** mode
+ * too: group invoicing changes how the lease is billed, not whether a share was recorded per tenant.
+ *
+ * Only **active** tenants come back. A tenant dropped from an earlier save was deactivated rather
+ * than deleted and stays out of this list — their historical split lives on the invoices already
+ * raised against them.
+ *
+ * The service maps the endpoint's `204 No Content` — the lease exists but step 2 was never saved —
+ * to `null`, which is deliberately *not* the same as a saved set that happens to be empty.
+ */
+export interface AgreementTenantsResponse {
+  isGroupInvoice: boolean;
+  partialPaymentAllowed: boolean;
+  tenants: AgreementTenantShareResponse[];
+}
+
+/**
+ * `POST /rent-agreements/{id}/activate` — opens the lease's billing gate and generates the invoices
+ * that bring it up to its unpaid-cycle target, in one transaction.
+ *
+ * In production this call is made by the Lease service when a lease activates, which is where the three
+ * fields below come from. This app has no Lease service, so:
+ *
+ * - **`leaseId` is the rent agreement's own id.** Confirmed by the user 2026-08-26. A minted placeholder
+ *   would be one more meaningless GUID to reconcile; reusing the agreement id keeps the two sides of the
+ *   demo obviously paired.
+ * - **`version` is the caller's ordering fence.** A call carrying a version *below* the stored one is
+ *   rejected as out of order (`409`), which is what stops a delayed retry from overwriting newer state.
+ *   Nothing here issues versions, so the first activation sends `1`.
+ * - **`activatedAt` is now**, converted server-side to a date in the property's own time zone before the
+ *   begin-date gate judges it.
+ */
+export interface ActivateRentAgreementRequest {
+  leaseId: string;
+  version: number;
+  activatedAt: string;
+}
+
+/**
+ * What activation did — enough to tell a genuine activation from a harmless retry without re-reading
+ * the agreement.
+ */
+export interface ActivateRentAgreementResponse {
+  rentAgreementId: string;
+  leaseId: string;
+  /** The **original** instant on a repeat, not the retry's. */
+  activatedAt: string;
+  /**
+   * `true` when the agreement was already active and this call changed nothing. Still a `200`: the
+   * endpoint is idempotent by contract, so a repeat is a success rather than a conflict.
+   */
+  alreadyActive: boolean;
+  /** How many invoices this call raised — always `0` on a repeat, which generates nothing. */
+  invoicesGenerated: number;
+}
+
 export interface UpdateRentAgreementTermsRequest {
   endDate?: string | null;
   fullRent: number;

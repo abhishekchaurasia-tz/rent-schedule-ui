@@ -1,0 +1,39 @@
+<div class="activate-lease">
+  @if (canActivate()) {
+    <button type="button" class="activate-btn" [disabled]="activating()" (click)="activate()">
+      {{ activating() ? 'Activating…' : 'Activate lease' }}
+    </button>
+  } @else {
+    <span class="activated-chip">Active</span>
+  }
+
+  @if (activateResult(); as result) {
+    <!--
+      A repeat is a success, not a failure — the endpoint is idempotent by contract because in
+      production the Lease service retries it on timeout. Saying so plainly beats a green banner that
+      claims invoices were raised when none were.
+    -->
+    <div class="banner" [class.success]="!result.alreadyActive" [class.info]="result.alreadyActive">
+      @if (result.alreadyActive) {
+        <strong>Already active.</strong>
+        <p>
+          This lease was activated at {{ result.activatedAt | date: 'medium' }}. Nothing changed and no
+          invoices were raised.
+        </p>
+      } @else {
+        <strong>Lease activated.</strong>
+        <p>
+          {{ result.invoicesGenerated }} invoice(s) generated · lease id
+          <code>{{ result.leaseId }}</code>
+        </p>
+      }
+    </div>
+  }
+
+  @if (activateError(); as message) {
+    <div class="banner error">
+      <strong>Could not activate this lease.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+</div>
