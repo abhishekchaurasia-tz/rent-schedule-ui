@@ -110,9 +110,11 @@
         <mat-datepicker #dueDatePicker></mat-datepicker>
       </mat-form-field>
     } @else {
-      <!-- FR-088: the cadence belongs to a charge that rides the rental invoice. A standalone recurring
-           charge follows the rent cycles, so it has no frequency of its own to pick. -->
-      @if (form.get('attachedWithRentalInvoice')!.value) {
+      <!-- Attached to the rental invoice (Yes): the charge rides the already-existing rental invoice's
+           own cadence, so it needs no frequency of its own — just the Start/End Date window below.
+           Not attached (No): this creates its own standalone recurring invoice, so it needs its own
+           Frequency (and per-frequency config) in addition to that same Start/End Date window. -->
+      @if (!form.get('attachedWithRentalInvoice')!.value) {
         <div class="recurring-fields grid">
           <label>
             Frequency <span class="required">*</span>

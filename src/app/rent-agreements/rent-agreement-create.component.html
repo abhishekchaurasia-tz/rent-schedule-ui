@@ -6,6 +6,15 @@
       <span class="agreement-id-chip">{{ agreementId() }}</span>
       <button type="button" class="manage-tenants-link" (click)="goToTenants()">Manage Tenants</button>
     </p>
+
+    <!--
+      Lease-level activation, beside the other lease-level actions. The same component the tenants
+      screen uses, so the idempotency and error handling exist once rather than twice.
+    -->
+    <app-activate-lease
+      [agreementId]="agreementId()!"
+      (activated)="onActivated()"
+    />
   } @else {
     <h1>Add Lease</h1>
     <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>

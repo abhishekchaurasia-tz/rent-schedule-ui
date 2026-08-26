@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -36,6 +36,7 @@ import {
   UpdateRentAgreementTermsRequest,
   toChargeCreationRequest
 } from './rent-agreement.models';
+import { ActivateLeaseComponent } from './activate-lease.component';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
 
 /**
@@ -55,7 +56,8 @@ import { AdditionalChargePanelComponent } from './additional-charge-panel.compon
     MatDatepickerModule,
     MatFormFieldModule,
     MatInputModule,
-    AdditionalChargePanelComponent
+    AdditionalChargePanelComponent,
+    ActivateLeaseComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './rent-agreement-create.component.html',
@@ -222,6 +224,29 @@ export class RentAgreementCreateComponent {
 
   get isEditMode(): boolean {
     return this.agreementId() !== null;
+  }
+
+  /**
+   * Re-reads the lease after an activation so the status shown here matches the server.
+   *
+   * Deliberately reads only the agreement's status back into {@link loadedAgreement} rather than
+   * re-running the whole load: this page holds an editable form, and re-hydrating it from the server
+   * would discard any change the user has in progress. Activation does not alter the terms anyway —
+   * it opens the billing gate and raises invoices.
+   */
+  onActivated(): void {
+    const id = this.agreementId();
+    if (!id) {
+      return;
+    }
+
+    this.rentAgreementsService.getById(id).subscribe({
+      next: (agreement) => this.loadedAgreement.set(agreement),
+      error: () => {
+        // Swallowed on purpose: the activation succeeded and says so in its own banner. A failed
+        // refresh only means the status chip is stale, which a reload fixes.
+      }
+    });
   }
 
   /**

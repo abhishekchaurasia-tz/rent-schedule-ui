@@ -1,9 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import {
+  ActivateRentAgreementRequest,
+  ActivateRentAgreementResponse,
+  AgreementTenantsResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   RentAgreementDetailResponse,
@@ -53,5 +56,43 @@ export class RentAgreementsService {
     request: SaveAgreementTenantsRequest
   ): Observable<SaveAgreementTenantsResponse> {
     return this.http.put<SaveAgreementTenantsResponse>(`${this.baseUrl}/${agreementId}/tenants`, request);
+  }
+
+  /**
+   * Reads back what step 2 saved, so a re-opened tenants screen is pre-filled from the server rather
+   * than from whatever the client happens to still hold.
+   *
+   * Resolves to `null` when the endpoint answers `204 No Content` — the lease is real but step 2 was
+   * never saved, which is an ordinary state for a lease still in the wizard and **not** an error.
+   * That is a different fact from a saved set with nobody in it, and the two must not be collapsed:
+   * `null` means "start this screen blank", whereas an empty `tenants` array would mean "the owner
+   * saved an empty roster". A `404` still surfaces as an error, because it means the lease itself is
+   * unknown.
+   *
+   * Angular already hands an empty body through as `null`; the `map` is here so the type says so.
+   */
+  getTenants(agreementId: string): Observable<AgreementTenantsResponse | null> {
+    return this.http
+      .get<AgreementTenantsResponse | null>(`${this.baseUrl}/${agreementId}/tenants`)
+      .pipe(map((saved) => saved ?? null));
+  }
+
+  /**
+   * Opens the lease's billing gate and generates its first invoices, in one transaction.
+   *
+   * **Idempotent by contract** — a repeat answers `200` with `alreadyActive: true` and no side effects,
+   * because in production the Lease service calls this synchronously and retries on timeout. The
+   * failures worth rendering distinctly are `409` (the caller's `version` is below the stored one) and
+   * `422` (the begin date has not arrived, or the lease's payer lanes cannot be billed — which is what
+   * a lease with no tenants hits).
+   */
+  activate(
+    agreementId: string,
+    request: ActivateRentAgreementRequest
+  ): Observable<ActivateRentAgreementResponse> {
+    return this.http.post<ActivateRentAgreementResponse>(
+      `${this.baseUrl}/${agreementId}/activate`,
+      request
+    );
   }
 }

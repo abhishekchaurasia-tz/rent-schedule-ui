@@ -11,7 +11,14 @@
   }
 
   @if (loadedAgreement()) {
-    <h1>ADD TENANTS</h1>
+    <h1>{{ mode() === 'edit' ? 'EDIT TENANTS' : 'ADD TENANTS' }}</h1>
+
+    @if (mode() === 'edit') {
+      <p class="prefill-note">
+        Pre-filled from this lease's saved tenants. Change what you need and save — the whole set is
+        replaced, and anyone you remove is deactivated rather than deleted.
+      </p>
+    }
 
     <div class="summary-bar">
       <span class="unit-badge">Lease</span>
@@ -33,7 +40,13 @@
           <span></span>
         </div>
 
-        @for (group of tenants.controls; track $index) {
+        <!--
+          Tracked by the control itself, not by $index. A prefill clears the array and pushes fresh
+          groups, so index 0 ends up holding a *different* FormGroup than before — and with index
+          tracking Angular keeps the existing row, leaving its `formGroupName` bound to the group that
+          was just discarded. The row then renders the blank defaults instead of the saved tenant.
+        -->
+        @for (group of tenants.controls; track group) {
           <div [formGroupName]="$index" class="tenant-row">
             <span class="row-index">{{ $index + 1 }}</span>
             <input type="text" formControlName="firstName" placeholder="First Name" />
@@ -50,6 +63,15 @@
                 &times;
               </button>
             }
+          </div>
+          <!--
+            The one identity the server actually knows. Name/email/mobile above are placeholders this
+            app invents (there is no tenant-profile service); this id is what the save reconciles
+            against, so it is on screen to be checked against the API by eye.
+          -->
+          <div class="tenant-id-row">
+            <span class="tenant-id-label">Tenant ID</span>
+            <code class="tenant-id-value">{{ tenantIdAt($index) }}</code>
           </div>
         }
       </div>
@@ -102,7 +124,8 @@
         </div>
 
         <div class="tenant-rows" formArrayName="tenants">
-          @for (group of tenants.controls; track $index) {
+          <!-- Tracked by the control for the same reason the identity rows above are. -->
+          @for (group of tenants.controls; track group) {
             <div [formGroupName]="$index" class="split-row">
               <span class="split-tenant-name">{{ tenantDisplayName($index) }}</span>
               <span class="split-fields">
@@ -194,14 +217,31 @@
         <div class="banner error">{{ saveError() }}</div>
       }
 
-      @if (saveResult()) {
-        <div class="banner success">Tenants saved.</div>
+      @if (saveResult(); as result) {
+        <div class="banner success">
+          <strong>Tenants saved.</strong>
+          <p>Now stored against {{ result.tenantIds.length }} tenant(s): {{ result.tenantIds.join(', ') }}</p>
+        </div>
       }
 
+      <!--
+        The end of the wizard. Activation is offered here because it is the first point at which it can
+        actually succeed: the payer lanes it bills are derived from the tenants saved on this screen, so
+        a lease with none gets a 422.
+      -->
       <div class="footer-actions">
         <button type="button" class="cancel-btn" (click)="cancel()">&larr; Back</button>
+        <app-activate-lease
+          [agreementId]="agreementId"
+          (activated)="onActivated()"
+        />
+        <span class="footer-spacer"></span>
         <button type="button" class="save-btn" [disabled]="saving()" (click)="save()">
-          {{ saving() ? 'Saving…' : 'Save' }}
+          @if (saving()) {
+            Saving…
+          } @else {
+            {{ mode() === 'edit' ? 'Update' : 'Save' }}
+          }
         </button>
       </div>
     </form>
