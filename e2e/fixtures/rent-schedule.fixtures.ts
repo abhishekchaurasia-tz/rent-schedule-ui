@@ -46,8 +46,6 @@ export function minimalOneTimeCharge(overrides: Record<string, unknown> = {}) {
     startDate: null,
     endDate: null,
     hasNoEndDate: false,
-    isGrouped: false,
-    isSharedByAll: true,
     items: [
       {
         lineItemId: null,
@@ -76,8 +74,6 @@ export function minimalRecurringCharge(overrides: Record<string, unknown> = {}) 
     startDate: '2026-09-01',
     endDate: null,
     hasNoEndDate: true,
-    isGrouped: false,
-    isSharedByAll: true,
     items: [
       {
         lineItemId: null,

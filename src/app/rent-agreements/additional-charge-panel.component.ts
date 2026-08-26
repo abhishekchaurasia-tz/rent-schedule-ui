@@ -166,8 +166,6 @@ export class AdditionalChargePanelComponent implements OnInit {
       startDate: [null as Date | string | null],
       endDate: [null as Date | string | null],
       hasNoEndDate: [false],
-      isGrouped: [false],
-      isSharedByAll: [true]
     });
 
     this.form.get('isRecurring')!.valueChanges.subscribe((isRecurring: boolean) => {
@@ -256,8 +254,6 @@ export class AdditionalChargePanelComponent implements OnInit {
             : charge.endDate
           : null,
       hasNoEndDate: charge.hasNoEndDate,
-      isGrouped: charge.isGrouped,
-      isSharedByAll: charge.isSharedByAll
     });
 
     if (charge.isRecurring) {
@@ -527,20 +523,23 @@ export class AdditionalChargePanelComponent implements OnInit {
 
     const value = this.form.value;
     const isRecurring = !!value.isRecurring;
+    const ridesRentalInvoice = this.depositOnly ? false : !!value.attachedWithRentalInvoice;
 
     const request: AdditionalChargeCreationRequest = {
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
-      attachedWithRentalInvoice: this.depositOnly ? false : !!value.attachedWithRentalInvoice,
+      attachedWithRentalInvoice: ridesRentalInvoice,
       isRecurring,
       dueDate: isRecurring ? null : toIsoDate(value.dueDate),
-      frequency: isRecurring ? value.frequency : null,
-      frequencyConfig: isRecurring ? buildFrequencyConfig(value) : null,
+
+      // FR-088: only a recurring charge that RIDES the rental invoice carries a cadence of its own. A
+      // standalone recurring charge bills once per rent cycle, so sending a frequency would be a second,
+      // contradictory cadence — and the server rejects it with 422.
+      frequency: isRecurring && ridesRentalInvoice ? value.frequency : null,
+      frequencyConfig: isRecurring && ridesRentalInvoice ? buildFrequencyConfig(value) : null,
       startDate: isRecurring ? toIsoDate(value.startDate) : null,
       endDate: isRecurring && !value.hasNoEndDate ? toIsoDate(value.endDate) : null,
       hasNoEndDate: isRecurring ? !!value.hasNoEndDate : false,
-      isGrouped: !!value.isGrouped,
-      isSharedByAll: !!value.isSharedByAll,
       items: value.items.map((item: any) => {
         // A row is either an existing catalog pick (lineItemId set) or a brand-new item type typed
         // inline (lineItemId omitted) — the backend get-or-creates a catalog entry server-side from

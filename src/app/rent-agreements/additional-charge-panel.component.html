@@ -75,17 +75,6 @@
       </div>
     </div>
 
-    <div class="charge-options-row">
-      <label class="checkbox-label">
-        <input type="checkbox" formControlName="isGrouped" />
-        Group with other fees
-      </label>
-      <label class="checkbox-label">
-        <input type="checkbox" formControlName="isSharedByAll" />
-        Split evenly among all tenants
-      </label>
-    </div>
-
     <hr />
 
     <div class="recurring-row">
@@ -121,7 +110,9 @@
         <mat-datepicker #dueDatePicker></mat-datepicker>
       </mat-form-field>
     } @else {
-      @if (!form.get('attachedWithRentalInvoice')!.value) {
+      <!-- FR-088: the cadence belongs to a charge that rides the rental invoice. A standalone recurring
+           charge follows the rent cycles, so it has no frequency of its own to pick. -->
+      @if (form.get('attachedWithRentalInvoice')!.value) {
         <div class="recurring-fields grid">
           <label>
             Frequency <span class="required">*</span>

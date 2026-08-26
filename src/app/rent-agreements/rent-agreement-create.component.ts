@@ -410,7 +410,7 @@ export class RentAgreementCreateComponent {
         // Treat the loaded terms as already previewed — see the doc comment above.
         this.lastPreviewSignature = this.scheduleSignature();
         this.loadingAgreement.set(false);
-        this.refreshCandidateDates();
+        this.refreshCandidateDates(true);
       },
       error: (err: HttpErrorResponse) => {
         this.loadError.set(
@@ -1307,7 +1307,35 @@ export class RentAgreementCreateComponent {
     });
   }
 
-  private refreshCandidateDates(): void {
+  /**
+   * Whether a change to the form should be allowed to silently clear the current
+   * `firstRentalDueDate` selection when it no longer appears in a freshly-fetched candidate list.
+   * Create mode, and an edit-mode lease whose status does not yet allow reselection (an unactivated
+   * `InProcess` draft — the server reports `isFirstRentalDueDateEditable: false`, backend spec v61),
+   * behave as before: the value always resolves against the fresh, forward-looking candidate list,
+   * clearing to unset when the current one falls out of it. An edit-mode lease the server DOES allow
+   * reselecting on (`Active`/`Expiring`) must not have its saved due date silently wiped out just
+   * because the candidate endpoint's forward-looking list no longer happens to include it — the user
+   * asked for that value to stay put once the lease is live, confirmed 2026-08-20.
+   */
+  private get canAutoClearFirstRentalDueDate(): boolean {
+    return !this.isEditMode || this.loadedAgreement()?.isFirstRentalDueDateEditable !== true;
+  }
+
+  /**
+   * Fetches the candidate first-rental-due-dates for the form's current values.
+   * @param isInitialLoad
+   * `true` only for the very first call this makes right after `loadAgreement()` patches the form
+   * with the saved lease's own values — before the user has touched anything. That call must never
+   * clear `firstRentalDueDate`, in **every** status, not only the ones {@link canAutoClearFirstRentalDueDate}
+   * exempts: the candidate endpoint enumerates dates purely from the recurrence's cadence
+   * (`dueOnDay`/etc.), so an already-saved anchor that was picked freely at creation — the exact
+   * "verbatim first row" the domain's `GenerationWindow.AnchorDate` deliberately allows off-cadence
+   * — routinely will not appear in it, with no edit having happened at all (reported by the user
+   * 2026-08-24: blank on the very first page open, lease still a draft). Every later call, triggered
+   * by an actual form change, goes through the normal, status-gated rule.
+   */
+  private refreshCandidateDates(isInitialLoad = false): void {
     const value = this.form.value;
 
     const canRequestOptions =
@@ -1342,7 +1370,12 @@ export class RentAgreementCreateComponent {
         this.candidateDatesLoading.set(false);
 
         const currentSelection = this.form.get('firstRentalDueDate')!.value;
-        if (dates.length > 0 && !dates.includes(currentSelection)) {
+        if (
+          dates.length > 0 &&
+          !dates.includes(currentSelection) &&
+          !isInitialLoad &&
+          this.canAutoClearFirstRentalDueDate
+        ) {
           this.form.get('firstRentalDueDate')!.setValue(null, { emitEvent: false });
         }
       },
@@ -1351,6 +1384,18 @@ export class RentAgreementCreateComponent {
         this.candidateDatesLoading.set(false);
       }
     });
+  }
+
+  /**
+   * The first-rental-due-date `<select>`'s option list — {@link candidateDates} plus the currently
+   * selected value when it isn't already in that list. Without this, an active/expiring lease's
+   * preserved-but-out-of-list value (see {@link canAutoClearFirstRentalDueDate}) would render as
+   * nothing selected in the dropdown even though the form control still holds it.
+   */
+  firstRentalDueDateSelectOptions(): string[] {
+    const dates = this.candidateDates();
+    const current = this.form.get('firstRentalDueDate')!.value;
+    return current && !dates.includes(current) ? [current, ...dates] : dates;
   }
 
   /**

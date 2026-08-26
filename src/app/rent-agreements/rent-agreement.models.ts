@@ -118,8 +118,6 @@ export interface AdditionalChargeCreationRequest {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
-  isGrouped: boolean;
-  isSharedByAll: boolean;
   items: AdditionalChargeItemCreationRequest[];
 }
 
@@ -208,8 +206,6 @@ export interface RentAgreementAdditionalChargeResponse {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
-  isGrouped: boolean;
-  isSharedByAll: boolean;
   items: RentAgreementAdditionalChargeItemResponse[];
   /**
    * Server-computed: this charge has already been attached to an invoice, so it may no longer be
@@ -252,6 +248,14 @@ export interface RentAgreementDetailResponse {
    * per-charge `isApplied` capability flags.
    */
   isDepositEditable: boolean;
+  /**
+   * Server-computed: whether the first rental due date may currently be re-picked — true only while
+   * the lease's status is `Active` or `Expiring` (backend spec v61). Confirmed by the user 2026-08-20:
+   * an unactivated draft (`InProcess`) behaves like create (the picker always resolves against fresh
+   * candidates); once active, an edit must not silently clear the saved value out from under the user
+   * just because it no longer appears in the forward-looking candidate list.
+   */
+  isFirstRentalDueDateEditable: boolean;
   /** `draft` before activation, then the lease's rental status. */
   status: string;
   /** The server's current UTC date — used to derive "overdue" without trusting the client's clock. */
@@ -290,8 +294,6 @@ export function toChargeCreationRequest(
     startDate: charge.startDate,
     endDate: charge.endDate,
     hasNoEndDate: charge.hasNoEndDate,
-    isGrouped: charge.isGrouped,
-    isSharedByAll: charge.isSharedByAll,
     items: charge.items.map((item) => ({
       id: item.id,
       itemType: item.itemType,
