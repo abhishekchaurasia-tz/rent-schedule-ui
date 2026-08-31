@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v2 | 2026-08-31 | **Two input controls replaced with the ones the rest of the app already uses, on user feedback that v1's form "sahi nahi hai".** (1) **Item type is now the ADD ADDITIONAL FEE panel's catalog picker** — the same "Select Type" button and floating menu, fed by the same `GET /api/v1/line-items`, scoped `DepositOnly` for a deposit invoice and `AllExcludingCredit` otherwise (matching that panel's `depositOnly` mode) — instead of a free-text `itemType` box. Picking sets **both** `lineItemId` and `itemType`, because the endpoint asks them separately: `itemType` is parsed into the `InvoiceItemType` enum and checked against the deposit allowlist, while `lineItemId` names the catalog row and is *required* on every line of a deposit proposal. **The panel's "+ Add Item Type" row is deliberately not carried over**: that panel's endpoint get-or-creates a catalog entry from free text, whereas this one answers `invoice.unrecognized_charge_item_type` for any name outside the enum, so an invented type could only ever be refused. A line with no `lineItemId` — which is what a *rent* line is — labels its button with its stored `itemType` rather than "Select Type", so a perfectly well-typed line does not read as unset. (2) **Due date is now the Material datepicker** the lease form and the fee panel use, so the control holds a native `Date` converted by the existing `toIsoDate`/`parseIsoDate` — never `Date#toISOString`, which shifts to UTC and lands on the previous day west of Greenwich. New FR 14–16. | [2026-08-31T1600-03-update-proposed-invoice-ui](../../plans/rent-agreements/2026-08-31T1600-03-update-proposed-invoice-ui.md) |
 | v1 | 2026-08-31 | **Initial spec: a standalone "Update Invoice" page.** Paste an **invoice** id, the page reads it with `GET /invoices/{id}`, renders its due date and line items as an editable table, and submits the correction to `PATCH /rent/agreements/{rentAgreementId}/proposed-invoices/{proposedInvoiceId}` — the two ids taken from the invoice the GET returned, never typed. A true read-modify-write: each line's `lineId` round-trips, so an untouched line stays the same line, an edited one is revised, a removed one is soft-deleted and a new one is added. Depends on backend `02-invoicing.md` **v36**, which added `proposedInvoiceId` to the invoice read for exactly this. | [2026-08-31T1600-03-update-proposed-invoice-ui](../../plans/rent-agreements/2026-08-31T1600-03-update-proposed-invoice-ui.md) |
 
 ## Overview
@@ -68,9 +69,22 @@ proposal come back.
 11. On success the system shall render the returned `ProposedInvoiceDetailResponse` — the corrected
     due date, amount, and live lines with their ids — and shall re-seed the form from it, so a second
     correction starts from what the server now holds rather than from the pre-edit state.
-12. The system shall require every submitted line to carry a non-empty description and a quantity and
-    rate greater than zero, matching the endpoint's own validation, so an obvious `400` is caught
-    before the request.
+12. The system shall require every submitted line to carry an item type, a non-empty description, and
+    a quantity and rate greater than zero, matching the endpoint's own validation, so an obvious `400`
+    is caught before the request.
+13. **v2** — The system shall fetch the owner's line-item catalog on load
+    (`GET /api/v1/line-items`), scoped `DepositOnly` for a deposit-category invoice and
+    `AllExcludingCredit` otherwise, and shall let a line's item type be chosen only from it — using the
+    same picker control the ADD ADDITIONAL FEE panel uses. A failed catalog fetch shall leave the
+    invoice loaded and correctable, with only the picker empty.
+14. **v2** — Choosing a catalog entry shall set **both** the row's `lineItemId` and its `itemType`, and
+    the system shall offer no way to invent a new item type here — the endpoint parses `itemType` into
+    a fixed enum and refuses anything outside it.
+15. **v2** — A line carrying no `lineItemId` — which every generated **rent** line does — shall label
+    its picker with the line's own `itemType` rather than a "Select Type" placeholder, so a typed line
+    is not presented as an untyped one.
+16. **v2** — The due date shall be picked with the same Material datepicker the lease form and the fee
+    panel use, and converted to the wire's `YYYY-MM-DD` in **local** time.
 
 ## Constraints
 
@@ -154,6 +168,9 @@ The page persists nothing of its own, so this spec carries no Data Model or Tabl
   this screen's whole navigation surface, matching Open Lease and Add Additional Fee.
 - **Correcting a *planned* proposal that has no invoice yet.** It has no invoice id to be reached by;
   that needs a proposal read endpoint the backend does not have.
-- **The line-item catalog picker.** `lineItemId` is carried through verbatim from what was loaded; a
-  new line is free-form. A deposit-category proposal requires a catalog id on every line, so adding a
-  line there will be refused with `422` — surfaced, not pre-empted.
+- ~~**The line-item catalog picker.**~~ **Brought into scope by v2** — item type is now chosen from the
+  owner's catalog with the ADD ADDITIONAL FEE panel's picker, which also supplies the `lineItemId` a
+  deposit-category proposal requires on every line.
+- **Creating a new catalog entry.** The fee panel can, because its endpoint get-or-creates one from
+  free text. This one cannot: `itemType` must already be a member of the backend's `InvoiceItemType`
+  enum. A type that does not exist is added from the fee screen, not here.

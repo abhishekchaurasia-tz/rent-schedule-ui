@@ -79,6 +79,11 @@ Files changed:
 | 6 | An invoice with no `proposedInvoiceId` | Refuse locally, explain why, send nothing (FR 9) | Send anyway and let it 404 | Null is a known, permanent fact about pre-pipeline invoices (backend FR 52/53), not a transient failure. A request built from it would be addressed to nothing |
 | 7 | After a successful PATCH | Re-seed the form from the returned proposal | Leave the pre-edit form; reload the invoice | The response *is* the new state, with the new line ids. Re-seeding makes a second correction start from truth; a reload would be a second round trip to learn what we were just told |
 | 8 | Page folder | New `src/app/invoices/` | Add to `src/app/rent-agreements/` | The read resource is an invoice; nothing else in `rent-agreements/` is. The spec still lives in the `rent-agreements` docs folder, because the capability is the lease's billing |
+| 9 | **v2** — How item type is entered | The ADD ADDITIONAL FEE panel's catalog picker, reusing `LineItemsService` and its markup/styles | v1's free-text `itemType` input; a plain `<select>` | Requested by the user (*"exiting drop down show kro same line item wala jo additional pe tha"*, 2026-08-31), and correct besides: `itemType` must parse to an `InvoiceItemType` member, so free text was a `422` waiting to happen. The picker also supplies the `lineItemId` a deposit proposal requires on every line |
+| 10 | **v2** — Whether to carry over "+ Add Item Type" | No | Copy the panel wholesale | The fee endpoint get-or-creates a catalog entry from free text; this one parses a fixed enum and answers `invoice.unrecognized_charge_item_type` otherwise. Offering the affordance would offer a refusal |
+| 11 | **v2** — A line with no `lineItemId` | Label the picker with the line's own `itemType` | Show "Select Type" | Every generated **rent** line is raised with no catalog id. "Select Type" would report the app's most common line as unset |
+| 12 | **v2** — Catalog fetch failure | Empty picker, invoice still loaded and correctable | Fail the whole load | The due date, quantities and rates are all still editable without a catalog. Failing the load would withhold the parts that work |
+| 13 | **v2** — Due-date control | The Material datepicker used by the lease form and the fee panel, with `toIsoDate`/`parseIsoDate` | v1's native `<input type="date">` | Requested by the user (*"calender sahi wala use kro jo already add lease wale pe hai material wala"*, 2026-08-31); it also makes the date read and written in local time by the same helpers the rest of the app uses, rather than by the browser's own control |
 
 ## Data Model & Schema Changes
 
@@ -105,6 +110,20 @@ mirroring backend contracts that already exist: `UpdateProposedInvoiceRequest`,
       already at 793 kB of 800 kB; the Add Additional Fee page is lazy for the same reason).
 - [x] `src/app/app.component.html` — sidebar link "Update Invoice".
 - [x] `npx ng test --watch=false --browsers=ChromeHeadless` and `npx ng build` both clean.
+
+**v2 follow-up (user feedback on the form's controls):**
+
+- [x] `update-proposed-invoice.component.ts` — inject `LineItemsService`; fetch the catalog on load
+      scoped by the invoice's category; picker state (`lineItems`, `openItemPickerIndex`,
+      `itemPickerPosition`) and behaviour (`toggleItemPicker`, `closeItemPicker`, `selectLineItem`,
+      `itemDisplayLabel`, `isItemUnset`); close the picker on row removal.
+- [x] `update-proposed-invoice.component.html` / `.scss` — the "Select Type" button and floating menu,
+      styles lifted from the fee panel minus its "+ Add Item Type" row.
+- [x] `update-proposed-invoice.component.ts` / `.html` — Material datepicker for `dueDate`
+      (`MatDatepickerModule`/`MatFormFieldModule`/`MatInputModule` + `provideNativeDateAdapter()`), with
+      `parseIsoDate` on seed and `toIsoDate` on submit.
+- [x] `update-proposed-invoice.component.spec.ts` — seven new cases for the picker and the catalog
+      fetch; existing due-date cases moved to `Date` values.
 
 ## Test Plan
 

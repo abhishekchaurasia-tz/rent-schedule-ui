@@ -114,41 +114,7 @@ h1 {
 
 /* ---- banners -------------------------------------------------------------------------------- */
 
-.banner {
-  margin: 1.25rem 0;
-  padding: 0.85rem 1rem;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  font-size: 0.88rem;
 
-  p {
-    margin: 0.35rem 0 0;
-  }
-
-  &.error {
-    background: #fdecea;
-    border-color: #f2b8b5;
-    color: #7f1d1b;
-  }
-
-  &.warn {
-    background: #fff7e6;
-    border-color: #f0d9a8;
-    color: #6b4d09;
-  }
-
-  /* Above the fee panel (z-index 101) so a validation failure is readable without closing it. */
-  &.floating {
-    position: fixed;
-    top: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 102;
-    max-width: 520px;
-    width: calc(100vw - 2rem);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  }
-}
 
 /* ---- lease summary -------------------------------------------------------------------------- */
 

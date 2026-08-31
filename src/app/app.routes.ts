@@ -29,6 +29,12 @@ export const routes: Routes = [
   // Step 2 of the lease wizard, reached after a fresh create or via "Manage Tenants" from edit.
   { path: 'rent-agreements/:id/tenants', component: AddTenantsComponent },
   { path: 'rent-schedule/preview', component: RentSchedulePreviewComponent },
+  // One owner's invoices, filtered and paged. Each row links to the correction page below with
+  // `?invoiceId=`, which is what makes that page reachable without knowing an id by heart.
+  {
+    path: 'invoices',
+    loadComponent: () => import('./invoices/invoice-list.component').then((m) => m.InvoiceListComponent)
+  },
   // Corrects one invoice: looked up by invoice id, corrected through the proposal behind it. Lazy for
   // the same bundle-budget reason as the additional-fee page above.
   {

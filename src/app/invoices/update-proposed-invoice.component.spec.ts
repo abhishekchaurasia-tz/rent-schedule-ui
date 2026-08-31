@@ -1,7 +1,9 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 
 import { environment } from '../../environments/environment';
+import { LineItemResponse } from '../rent-agreements/line-item.models';
 import { ProposedInvoiceDetailResponse } from '../rent-agreements/rent-agreement.models';
 import { InvoiceDetailResponse } from './invoice.models';
 import { UpdateProposedInvoiceComponent } from './update-proposed-invoice.component';
@@ -18,9 +20,32 @@ describe('UpdateProposedInvoiceComponent', () => {
   const lineTwoId = '44444444-4444-4444-4444-444444444444';
 
   const invoicesUrl = `${environment.apiBaseUrl}/api/v1/invoices`;
+  const lineItemsUrl = `${environment.apiBaseUrl}/api/v1/line-items`;
   const patchUrl =
     `${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}` +
     `/proposed-invoices/${proposedInvoiceId}`;
+
+  const rentCatalogItem: LineItemResponse = {
+    id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+    name: 'Monthly Rent',
+    itemType: 'Rent',
+    isDepositType: false
+  };
+
+  const lateFeeCatalogItem: LineItemResponse = {
+    id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    name: 'Late Fee',
+    itemType: 'LateFee',
+    isDepositType: false
+  };
+
+  const lineItems: LineItemResponse[] = [rentCatalogItem, lateFeeCatalogItem];
+
+  /** A local-time `Date` for the Material datepicker, matching how `parseIsoDate` builds one. */
+  function localDate(iso: string): Date {
+    const [year, month, day] = iso.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
 
   const invoice: InvoiceDetailResponse = {
     invoiceId,
@@ -114,7 +139,8 @@ describe('UpdateProposedInvoiceComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [UpdateProposedInvoiceComponent, HttpClientTestingModule]
+      imports: [UpdateProposedInvoiceComponent, HttpClientTestingModule],
+      providers: [provideRouter([])]
     }).compileComponents();
 
     fixture = TestBed.createComponent(UpdateProposedInvoiceComponent);
@@ -127,11 +153,15 @@ describe('UpdateProposedInvoiceComponent', () => {
     httpMock.verify();
   });
 
-  /** Loads `body` (the standard invoice unless overridden) and leaves the form seeded from it. */
-  function loadInvoice(body: InvoiceDetailResponse = invoice): void {
+  /**
+   * Loads `body` (the standard invoice unless overridden) and leaves the form seeded from it, with the
+   * item catalog answered too — the load fetches it so the type picker has something to offer.
+   */
+  function loadInvoice(body: InvoiceDetailResponse = invoice, catalog: LineItemResponse[] = lineItems): void {
     component.invoiceIdInput.setValue(invoiceId);
     component.load();
     httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush(body);
+    httpMock.expectOne((request) => request.url === lineItemsUrl).flush(catalog);
     fixture.detectChanges();
   }
 
@@ -158,7 +188,7 @@ describe('UpdateProposedInvoiceComponent', () => {
     loadInvoice();
 
     expect(component.invoice()?.invoiceNumber).toBe('INV-092026-000042');
-    expect(component.form.get('dueDate')!.value).toBe('2026-09-01');
+    expect(component.form.get('dueDate')!.value).toEqual(localDate('2026-09-01'));
     expect(component.lines.length).toBe(2);
     expect(component.lines.at(0).get('lineId')!.value).toBe(lineOneId);
     expect(component.lines.at(1).get('lineId')!.value).toBe(lineTwoId);
@@ -181,7 +211,7 @@ describe('UpdateProposedInvoiceComponent', () => {
   it('sends only dueDate when only the due date changed — lines stay absent, so their ids are untouched', () => {
     loadInvoice();
 
-    component.form.get('dueDate')!.setValue('2026-09-05');
+    component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
 
     const request = httpMock.expectOne(patchUrl);
@@ -240,8 +270,9 @@ describe('UpdateProposedInvoiceComponent', () => {
     loadInvoice();
 
     component.addLine();
+    // Typed through the catalog picker, the way the screen actually does it.
+    component.selectLineItem(2, lateFeeCatalogItem);
     component.lines.at(2).patchValue({
-      itemType: 'Late Fee',
       description: 'Late fee for September',
       quantity: 1,
       rate: 50
@@ -275,7 +306,7 @@ describe('UpdateProposedInvoiceComponent', () => {
   it('addresses the PATCH with the ids from the loaded invoice, not from anything typed', () => {
     loadInvoice();
 
-    component.form.get('dueDate')!.setValue('2026-09-05');
+    component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
 
     // expectOne on the fully-built URL is the assertion: a wrong agreement or proposal id would not match.
@@ -297,7 +328,7 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.isCorrectable).toBeFalse();
     expect(fixture.nativeElement.textContent).toContain('cannot be corrected');
 
-    component.form.get('dueDate')!.setValue('2026-09-05');
+    component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
 
     expect(component.submitNotice()).toContain('no proposal behind it');
@@ -307,7 +338,7 @@ describe('UpdateProposedInvoiceComponent', () => {
   it('renders a 422 detail and keeps the edits on screen for a retry', () => {
     loadInvoice();
 
-    component.form.get('dueDate')!.setValue('2026-09-05');
+    component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
 
     httpMock.expectOne(patchUrl).flush(
@@ -324,7 +355,7 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.submitError()).toBe(
       'This proposed invoice can no longer be edited: money has been recorded against it.'
     );
-    expect(component.form.get('dueDate')!.value).toBe('2026-09-05');
+    expect(component.form.get('dueDate')!.value).toEqual(localDate('2026-09-05'));
     expect(component.lines.length).toBe(2);
     expect(component.updatedProposal()).toBeNull();
   });
@@ -338,7 +369,7 @@ describe('UpdateProposedInvoiceComponent', () => {
     fixture.detectChanges();
 
     expect(component.updatedProposal()?.amount).toBe(1100);
-    expect(component.form.get('dueDate')!.value).toBe('2026-09-05');
+    expect(component.form.get('dueDate')!.value).toEqual(localDate('2026-09-05'));
     expect(component.lines.length).withContext('re-seeded from the response, not the load').toBe(1);
     expect(component.lines.at(0).get('rate')!.value).toBe(1100);
 
@@ -368,11 +399,114 @@ describe('UpdateProposedInvoiceComponent', () => {
   it('does not submit twice while a request is in flight', () => {
     loadInvoice();
 
-    component.form.get('dueDate')!.setValue('2026-09-05');
+    component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
     component.submit();
 
     httpMock.expectOne(patchUrl).flush(correctedProposal);
+  });
+
+  it('fetches the owner catalog on load, scoped to the invoice category', () => {
+    component.invoiceIdInput.setValue(invoiceId);
+    component.load();
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush(invoice);
+
+    const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
+    expect(catalogRequest.request.method).toBe('GET');
+    expect(catalogRequest.request.params.get('propertyOwnerId')).toBe(invoice.propertyOwnerId);
+    expect(catalogRequest.request.params.get('scope')).toBe('AllExcludingCredit');
+
+    catalogRequest.flush(lineItems);
+    expect(component.lineItems().length).toBe(2);
+  });
+
+  it('asks for deposit-only items when the invoice is a deposit invoice', () => {
+    component.invoiceIdInput.setValue(invoiceId);
+    component.load();
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush({ ...invoice, category: 'Deposit' });
+
+    const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
+    expect(catalogRequest.request.params.get('scope')).toBe('DepositOnly');
+
+    catalogRequest.flush([]);
+  });
+
+  it('leaves the invoice usable when the catalog fetch fails — only the picker is empty', () => {
+    component.invoiceIdInput.setValue(invoiceId);
+    component.load();
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush(invoice);
+    httpMock
+      .expectOne((request) => request.url === lineItemsUrl)
+      .flush(null, { status: 500, statusText: 'Server Error' });
+
+    expect(component.invoice()).not.toBeNull();
+    expect(component.lineItems()).toEqual([]);
+    expect(component.loadError()).toBeNull();
+  });
+
+  it('picking a catalog item sets BOTH the catalog id and the item type on that row', () => {
+    loadInvoice();
+
+    component.selectLineItem(0, lateFeeCatalogItem);
+
+    expect(component.lines.at(0).get('lineItemId')!.value).toBe(lateFeeCatalogItem.id);
+    expect(component.lines.at(0).get('itemType')!.value).toBe('LateFee');
+
+    component.submit();
+
+    const request = httpMock.expectOne(patchUrl);
+    expect(request.request.body.lines[0].lineItemId).toBe(lateFeeCatalogItem.id);
+    expect(request.request.body.lines[0].itemType).toBe('LateFee');
+
+    request.flush(correctedProposal);
+  });
+
+  it('labels a row by its catalog name, falling back to the item type when it has no catalog id', () => {
+    loadInvoice();
+
+    // The rent line comes back with lineItemId null — its type is still known, so the button must not
+    // read "Select Type" as though nothing had been chosen.
+    expect(component.itemDisplayLabel(0)).toBe('Rent');
+    expect(component.isItemUnset(0)).toBeFalse();
+
+    component.selectLineItem(0, rentCatalogItem);
+    expect(component.itemDisplayLabel(0)).toBe('Monthly Rent');
+
+    component.addLine();
+    expect(component.itemDisplayLabel(2)).toBe('Select Type');
+    expect(component.isItemUnset(2)).toBeTrue();
+  });
+
+  it('opens the picker at the clicked row, toggles it shut, and closes it when a row is removed', () => {
+    loadInvoice();
+
+    const event = {
+      currentTarget: { getBoundingClientRect: () => ({ bottom: 120, left: 40 }) }
+    } as unknown as MouseEvent;
+
+    component.toggleItemPicker(1, event);
+    expect(component.openItemPickerIndex()).toBe(1);
+    expect(component.itemPickerPosition()).toEqual({ top: 120, left: 40 });
+
+    component.toggleItemPicker(1, event);
+    expect(component.openItemPickerIndex()).toBeNull();
+
+    component.toggleItemPicker(1, event);
+    component.removeLine(1);
+    expect(component.openItemPickerIndex())
+      .withContext('every row after the removed one shifted up, so an open menu now points elsewhere')
+      .toBeNull();
+  });
+
+  it('blocks submission when an added row has no item type picked', () => {
+    loadInvoice();
+
+    component.addLine();
+    component.lines.at(2).patchValue({ description: 'Something', quantity: 1, rate: 10 });
+    component.submit();
+
+    expect(component.submitNotice()).toContain('item type');
+    httpMock.expectNone(patchUrl);
   });
 
   it('computes a row amount and the running total from quantity x rate', () => {
@@ -400,5 +534,72 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.lines.length).toBe(0);
 
     httpMock.expectOne(`${invoicesUrl}/cccccccc-cccc-cccc-cccc-cccccccccccc`).flush(invoice);
+    httpMock.expectOne((request) => request.url === lineItemsUrl).flush(lineItems);
+  });
+});
+
+describe('UpdateProposedInvoiceComponent reached from the invoice list', () => {
+  const invoiceId = '8f14e45f-ceea-467e-bd9f-000000000001';
+  const invoicesUrl = `${environment.apiBaseUrl}/api/v1/invoices`;
+  const lineItemsUrl = `${environment.apiBaseUrl}/api/v1/line-items`;
+
+  /** The narrowest invoice the component will accept — this suite only cares that it was fetched. */
+  const minimalInvoice = {
+    invoiceId,
+    invoiceNumber: 'INV-092026-000042',
+    dueDate: '2026-09-01',
+    propertyOwnerId: '55555555-5555-5555-5555-555555555555',
+    rentAgreementId: '11111111-1111-1111-1111-111111111111',
+    proposedInvoiceId: '22222222-2222-2222-2222-222222222222',
+    category: 'Rent',
+    lines: []
+  } as unknown as InvoiceDetailResponse;
+
+  /** Builds the fixture with `?invoiceId=` already on the route, as a row link leaves it. */
+  async function createWith(queryParams: Record<string, string>) {
+    await TestBed.configureTestingModule({
+      imports: [UpdateProposedInvoiceComponent, HttpClientTestingModule],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } }
+        }
+      ]
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(UpdateProposedInvoiceComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('loads the invoice named by ?invoiceId= without it being retyped', async () => {
+    const fixture = await createWith({ invoiceId });
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    expect(fixture.componentInstance.invoiceIdInput.value).toBe(invoiceId);
+
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush(minimalInvoice);
+    httpMock.expectOne((request) => request.url === lineItemsUrl).flush([]);
+
+    expect(fixture.componentInstance.invoice()?.invoiceId).toBe(invoiceId);
+    httpMock.verify();
+  });
+
+  it('puts a hand-edited parameter through the same GUID check as a typed id', async () => {
+    const fixture = await createWith({ invoiceId: 'not-a-guid' });
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    expect(fixture.componentInstance.idError()).toContain('valid id');
+    httpMock.verify();
+  });
+
+  it('stays idle when no parameter is present', async () => {
+    const fixture = await createWith({});
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    expect(fixture.componentInstance.invoice()).toBeNull();
+    expect(fixture.componentInstance.idError()).toBeNull();
+    httpMock.verify();
   });
 });

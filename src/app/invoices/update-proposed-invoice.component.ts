@@ -1,8 +1,16 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
+import { provideNativeDateAdapter } from '@angular/material/core';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 
+import { toIsoDate, parseIsoDate } from '../shared/date.util';
+import { LineItemResponse, LineItemScope } from '../rent-agreements/line-item.models';
+import { LineItemsService } from '../rent-agreements/line-items.service';
 import { RentAgreementsService } from '../rent-agreements/rent-agreements.service';
 import {
   ProposedInvoiceDetailResponse,
@@ -41,11 +49,18 @@ const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 @Component({
   selector: 'app-update-proposed-invoice',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatDatepickerModule,
+    MatFormFieldModule,
+    MatInputModule
+  ],
+  providers: [provideNativeDateAdapter()],
   templateUrl: './update-proposed-invoice.component.html',
   styleUrl: './update-proposed-invoice.component.scss'
 })
-export class UpdateProposedInvoiceComponent {
+export class UpdateProposedInvoiceComponent implements OnInit {
   /** The pasted invoice id. Shape-checked here; whether it exists is the load's answer. */
   readonly invoiceIdInput = new FormControl('', { nonNullable: true });
 
@@ -66,6 +81,25 @@ export class UpdateProposedInvoiceComponent {
   /** The corrected proposal the server answered with, or `null` before the first successful save. */
   readonly updatedProposal = signal<ProposedInvoiceDetailResponse | null>(null);
 
+  /**
+   * The line-item catalog for this invoice's owner, fetched on load — the same
+   * `GET /api/v1/line-items` catalog the ADD ADDITIONAL FEE panel picks from, so an item is named the
+   * same way wherever it is chosen.
+   */
+  readonly lineItems = signal<LineItemResponse[]>([]);
+
+  /** Index of the row whose "Select Type" menu is open, or `null` if none. */
+  readonly openItemPickerIndex = signal<number | null>(null);
+
+  /**
+   * Viewport coordinates for the open picker, from the clicked button's `getBoundingClientRect()`.
+   *
+   * Rendered `position: fixed` as a sibling of the form rather than a child of the row, matching the
+   * fee panel: an ancestor's `overflow` clips a descendant's paint, fixed positioning included, so a
+   * menu nested inside a scrollable table gets cut off.
+   */
+  readonly itemPickerPosition = signal<{ top: number; left: number } | null>(null);
+
   readonly form: FormGroup;
 
   /**
@@ -81,12 +115,31 @@ export class UpdateProposedInvoiceComponent {
   constructor(
     private readonly fb: FormBuilder,
     private readonly invoices: InvoicesService,
-    private readonly agreements: RentAgreementsService
+    private readonly agreements: RentAgreementsService,
+    private readonly lineItemsService: LineItemsService,
+    private readonly route: ActivatedRoute
   ) {
     this.form = this.fb.group({
-      dueDate: ['', Validators.required],
+      // A native `Date`, because the Material datepicker binds one. It is converted back to the wire's
+      // "YYYY-MM-DD" by `toIsoDate` at submit time — never by `Date#toISOString`, which shifts to UTC
+      // and lands on the previous day for anyone west of Greenwich.
+      dueDate: [null as Date | null, Validators.required],
       lines: this.fb.array([])
     });
+  }
+
+  /**
+   * Loads the invoice named by `?invoiceId=`, when the page was reached from the Invoices list.
+   *
+   * The parameter is put through the same `load()` as a typed id — including its GUID check — rather
+   * than trusted because it came from a link: a hand-edited URL is exactly as untrusted as typing.
+   */
+  ngOnInit(): void {
+    const invoiceId = this.route.snapshot.queryParamMap.get('invoiceId');
+    if (invoiceId) {
+      this.invoiceIdInput.setValue(invoiceId);
+      this.load();
+    }
   }
 
   get lines(): FormArray {
@@ -139,6 +192,7 @@ export class UpdateProposedInvoiceComponent {
       next: (invoice) => {
         this.invoice.set(invoice);
         this.seedForm(invoice.dueDate, invoice.lines);
+        this.loadLineItems(invoice);
         this.loading.set(false);
       },
       error: (err: HttpErrorResponse) => {
@@ -146,6 +200,93 @@ export class UpdateProposedInvoiceComponent {
         this.loadError.set(UpdateProposedInvoiceComponent.describeError(err));
       }
     });
+  }
+
+  /**
+   * Fetches the item catalog this invoice's lines may be typed from.
+   *
+   * **Scoped by the invoice's own category**, mirroring the fee panel's `depositOnly` mode: a deposit
+   * invoice may only carry deposit-shaped items, and the backend enforces that with its own allowlist.
+   * Offering the wrong half of the catalog would only produce a `422` the user could not have
+   * predicted.
+   *
+   * A failure leaves the catalog empty rather than failing the load. The invoice is still correctable —
+   * its due date, its quantities and rates all work — and only the type picker is unavailable, which
+   * the menu says for itself.
+   */
+  private loadLineItems(invoice: InvoiceDetailResponse): void {
+    const scope: LineItemScope =
+      invoice.category?.toLowerCase() === 'deposit' ? 'DepositOnly' : 'AllExcludingCredit';
+
+    this.lineItemsService.list(invoice.propertyOwnerId, scope).subscribe({
+      next: (items) => this.lineItems.set(items),
+      error: () => this.lineItems.set([])
+    });
+  }
+
+  /** Looks up a fetched catalog entry by id. */
+  private findLineItem(lineItemId: string): LineItemResponse | undefined {
+    return this.lineItems().find((item) => item.id === lineItemId);
+  }
+
+  /**
+   * The label on row `index`'s "Select Type" button.
+   *
+   * Prefers the catalog entry's display name, and falls back to the row's stored `itemType`. The
+   * fallback is the ordinary case for a **rent** line, which the backend raises with no `lineItemId` at
+   * all — showing "Select Type" there would suggest nothing had been chosen when in fact the line is
+   * perfectly well typed.
+   */
+  itemDisplayLabel(index: number): string {
+    const group = this.lines.at(index);
+    const lineItemId = group.get('lineItemId')!.value;
+    const itemType = String(group.get('itemType')!.value ?? '');
+
+    if (lineItemId) {
+      return this.findLineItem(lineItemId)?.name ?? itemType ?? 'Select Type';
+    }
+
+    return itemType || 'Select Type';
+  }
+
+  /** Whether row `index` still has no item type — used to grey the button as a placeholder. */
+  isItemUnset(index: number): boolean {
+    return !String(this.lines.at(index).get('itemType')!.value ?? '').trim();
+  }
+
+  toggleItemPicker(index: number, event: MouseEvent): void {
+    if (this.openItemPickerIndex() === index) {
+      this.closeItemPicker();
+      return;
+    }
+
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.itemPickerPosition.set({ top: rect.bottom, left: rect.left });
+    this.openItemPickerIndex.set(index);
+  }
+
+  closeItemPicker(): void {
+    this.openItemPickerIndex.set(null);
+    this.itemPickerPosition.set(null);
+  }
+
+  /**
+   * Types row `index` from a catalog entry, setting **both** the catalog id and the item type.
+   *
+   * Both, because they answer different questions the endpoint asks separately: `itemType` is parsed
+   * into the `InvoiceItemType` enum and checked against the deposit allowlist, while `lineItemId` names
+   * the catalog row — and is *required* on every line of a deposit-category proposal. Setting only one
+   * would leave a line the server either cannot classify or cannot accept.
+   *
+   * **There is no "add a new item type" here**, unlike the ADD ADDITIONAL FEE panel. That panel's
+   * backend get-or-creates a catalog entry from free text; this endpoint instead parses `itemType` into
+   * a fixed enum and answers `invoice.unrecognized_charge_item_type` for anything else, so an invented
+   * name could only ever be refused.
+   */
+  selectLineItem(index: number, lineItem: LineItemResponse): void {
+    this.lines.at(index).patchValue({ lineItemId: lineItem.id, itemType: lineItem.itemType });
+    this.submitNotice.set(null);
+    this.closeItemPicker();
   }
 
   /** Adds a blank row. It carries no `lineId`, which is what tells the server to add a line. */
@@ -167,6 +308,9 @@ export class UpdateProposedInvoiceComponent {
       return;
     }
     this.lines.removeAt(index);
+    // The open picker is addressed by row index, and every row after this one just shifted up — so a
+    // menu left open would now be pointed at a different line than the one it was opened from.
+    this.closeItemPicker();
     this.submitNotice.set(null);
   }
 
@@ -187,7 +331,8 @@ export class UpdateProposedInvoiceComponent {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.submitNotice.set(
-        'Every line needs a description, and a quantity and rate above zero. Fix the highlighted rows.'
+        'Every line needs an item type and a description, and a quantity and rate above zero. ' +
+          'Fix the highlighted rows.'
       );
       return;
     }
@@ -234,7 +379,7 @@ export class UpdateProposedInvoiceComponent {
       return null;
     }
 
-    const dueDate = String(this.form.get('dueDate')!.value ?? '');
+    const dueDate = toIsoDate(this.form.get('dueDate')!.value);
     const lines = this.currentLines();
 
     const request: UpdateProposedInvoiceRequest = {};
@@ -283,7 +428,9 @@ export class UpdateProposedInvoiceComponent {
     dueDate: string,
     lines: readonly (InvoiceLineResponse | { lineId: string; lineItemId?: string | null; itemType: string; description: string; quantity: number; rate: number })[]
   ): void {
-    this.form.get('dueDate')!.setValue(dueDate);
+    // Parsed to a local-time `Date` for the picker; the ISO string is what the baseline keeps, so the
+    // diff never has to reason about two representations of the same day.
+    this.form.get('dueDate')!.setValue(parseIsoDate(dueDate));
     this.lines.clear();
 
     lines.forEach((line) => {
@@ -322,8 +469,10 @@ export class UpdateProposedInvoiceComponent {
     this.submitError.set(null);
     this.submitNotice.set(null);
     this.lines.clear();
-    this.form.get('dueDate')!.setValue('');
+    this.form.get('dueDate')!.setValue(null);
     this.baseline = null;
+    this.lineItems.set([]);
+    this.closeItemPicker();
   }
 
   /** Mirrors the other screens' error rendering — the RFC 9457 `detail` when the body carries one. */

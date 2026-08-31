@@ -77,25 +77,28 @@
 
     <form [formGroup]="form" class="correction-form">
       <div class="due-date-row">
-        <label for="correctedDueDate">Due date</label>
-        <!--
-          `[attr.disabled]`, not `[disabled]`: the latter on a control bound by a reactive directive is
-          the pattern Angular warns about, because it sets the DOM attribute behind the FormControl's
-          back and the two then disagree about the control's state.
-        -->
-        <input
-          id="correctedDueDate"
-          type="date"
-          formControlName="dueDate"
-          [attr.disabled]="isCorrectable ? null : ''"
-        />
+        <!-- The same Material datepicker the lease form and the fee panel use, so a date is picked the
+             same way everywhere in the app rather than falling back to the browser's native control. -->
+        <mat-form-field appearance="outline" class="date-field">
+          <mat-label>Due Date</mat-label>
+          <input
+            matInput
+            [matDatepicker]="correctedDueDatePicker"
+            formControlName="dueDate"
+            (click)="correctedDueDatePicker.open()"
+          />
+          <mat-datepicker-toggle matIconSuffix [for]="correctedDueDatePicker"></mat-datepicker-toggle>
+          <mat-datepicker #correctedDueDatePicker></mat-datepicker>
+        </mat-form-field>
         <span class="field-hint">Left alone unless you change it.</span>
       </div>
 
       <h2>Line items</h2>
       <p class="lines-hint">
         Every line shown is submitted together — a line you remove here is removed from the invoice,
-        and a line you add is added to it. Amount is quantity × rate and is calculated for you.
+        and a line you add is added to it. Amount is quantity × rate and is calculated for you. Item
+        type is picked from your catalog: unlike the additional-fee screen, a new type cannot be
+        invented here, because this endpoint only accepts types it already recognises.
       </p>
 
       <div class="lines-table" formArrayName="lines">
@@ -110,7 +113,14 @@
 
         @for (group of lines.controls; track group) {
           <div [formGroupName]="$index" class="line-row">
-            <input type="text" formControlName="itemType" placeholder="Rent" />
+            <button
+              type="button"
+              class="item-picker-btn"
+              [class.placeholder]="isItemUnset($index)"
+              (click)="toggleItemPicker($index, $event)"
+            >
+              {{ itemDisplayLabel($index) }}
+            </button>
             <input type="text" formControlName="description" placeholder="Description" />
             <input type="number" formControlName="quantity" min="0.01" step="0.01" />
             <input type="number" formControlName="rate" min="0.01" step="0.01" />
@@ -208,5 +218,37 @@
         }
       </section>
     }
+  }
+
+  <!--
+    The same catalog picker the ADD ADDITIONAL FEE panel uses, minus its "+ Add Item Type" row: that
+    panel's endpoint get-or-creates a catalog entry from free text, whereas this one parses `itemType`
+    into a fixed enum and refuses anything else, so an invented name could only ever come back a 422.
+
+    Rendered here, outside the form, because it is `position: fixed` — an ancestor with `overflow` would
+    clip it once the line table scrolled.
+  -->
+  @if (openItemPickerIndex() !== null && itemPickerPosition(); as pos) {
+    <div class="item-picker-overlay" (click)="closeItemPicker()"></div>
+    <div class="item-picker-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
+      <div class="item-picker-list">
+        @for (lineItem of lineItems(); track lineItem.id) {
+          <button
+            type="button"
+            class="item-picker-option"
+            (click)="selectLineItem(openItemPickerIndex()!, lineItem)"
+          >
+            <span
+              class="item-picker-checkbox"
+              [class.checked]="lines.at(openItemPickerIndex()!).get('lineItemId')!.value === lineItem.id"
+            ></span>
+            {{ lineItem.name }}
+          </button>
+        }
+        @if (lineItems().length === 0) {
+          <p class="item-picker-empty">No catalog items available for this invoice.</p>
+        }
+      </div>
+    </div>
   }
 </div>

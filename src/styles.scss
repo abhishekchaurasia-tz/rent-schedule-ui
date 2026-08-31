@@ -60,3 +60,57 @@ html {
 .mat-datepicker-toggle .mat-mdc-icon-button.mat-mdc-button-base {
   --mdc-icon-button-state-layer-size: 32px;
 }
+
+/*
+ * Inline notice banners.
+ *
+ * Global rather than per-component because three screens had defined them identically — the invoice
+ * list, the invoice correction page and the Add Additional Fee page — which is both duplication and,
+ * on the largest of the three, enough CSS to breach the 6 kB per-component budget. One definition also
+ * means a warning looks the same wherever it appears, which is the whole point of a notice style.
+ */
+.banner {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+
+  p {
+    margin: 0.35rem 0 0;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &.error {
+    background: #fdecea;
+    border-color: #f2b8b5;
+    color: #7f1d1b;
+  }
+
+  &.warn {
+    background: #fff7e6;
+    border-color: #f0d9a8;
+    color: #6b4d09;
+  }
+
+  &.success {
+    background: #eef8f1;
+    border-color: #bcdfc7;
+    color: #1c5c33;
+  }
+
+  /* Above a side panel (z-index 101) so a refusal stays readable without closing the form it belongs to. */
+  &.floating {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 102;
+    max-width: 520px;
+    width: calc(100vw - 2rem);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  }
+}

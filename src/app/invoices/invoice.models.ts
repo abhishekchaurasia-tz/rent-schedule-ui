@@ -61,9 +61,13 @@ export interface InvoiceDetailResponse {
   /** The display number, `INV-MMYYYY-NNNNNN`. Globally unique. */
   invoiceNumber: string;
   invoiceType: string;
-  /** The derived payment state — `NotReceived`, `PartialPaid`, `Received`, `Overdue`, `Voided`, `Deleted`. */
+  /**
+   * The derived payment state, **snake_case on the wire** — `not_received`, `partial_paid`,
+   * `received`, `overdue`, `voided`, `deleted`. The API serializes every enum with
+   * `JsonStringEnumConverter(SnakeCaseLower)`; only the non-enum `string` fields stay PascalCase.
+   */
   status: string;
-  /** Which kind of anchor raised this invoice — `Schedule`, `System`, `Manual`, `Deposit`. */
+  /** Which kind of anchor raised this invoice — `schedule`, `system`, `manual`, `deposit` (snake_case). */
   source: string;
   generatedOn: string;
   /** The immutable original due date — the late-fee anchor, distinct from the current {@link dueDate}. */
@@ -100,7 +104,12 @@ export interface InvoiceDetailResponse {
   tenantShares: InvoiceTenantShareResponse[];
   notes?: string | null;
   isGroupInvoice: boolean;
-  /** What this invoice bills for deposit-segregation purposes — `Rent` or `Deposit`. */
+  /**
+   * What this invoice bills for deposit-segregation purposes — `Rent` or `Deposit`.
+   *
+   * PascalCase, unlike its neighbours: the backend carries this as a smart enum's `Name` rather than a
+   * C# `enum`, so the snake_case converter never sees it. Compare case-insensitively.
+   */
   category: string;
 
   /**
@@ -120,4 +129,109 @@ export interface InvoiceDetailResponse {
    * the field is simply absent and every invoice reads as not correctable.
    */
   proposedInvoiceId?: string | null;
+}
+
+/**
+ * The payment states an invoice can be in, as they appear **on the wire** — `snake_case`, because the
+ * API serializes every enum with `JsonStringEnumConverter(SnakeCaseLower)`.
+ *
+ * Derived by the backend's fold from the stored facts (`voidedAt`, `deletedAt`, `balance`,
+ * `overdueMarkedOn`, `amountPaid`) and never stored independently, so a client must render it and never
+ * recompute it.
+ */
+export type InvoiceStatus =
+  | 'not_received'
+  | 'partial_paid'
+  | 'received'
+  | 'overdue'
+  | 'voided'
+  | 'deleted';
+
+/** One row of `GET /api/v1/invoices`. */
+export interface InvoiceSummaryResponse {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceType: string;
+  status: InvoiceStatus;
+  generatedOn: string;
+  dueDate: string;
+  total: number;
+  amountPaid: number;
+  balance: number;
+  propertyId: string;
+  propertyUnitId?: string | null;
+  /** The payer **lane** — `null` on a group invoice. For "who pays", read {@link tenantIds}. */
+  tenantId?: string | null;
+  rentAgreementId?: string | null;
+  /** **Deprecated by the backend** — the same value as {@link rentAgreementId}. */
+  leaseId?: string | null;
+
+  /**
+   * The date the invoice was last settled — the **latest** of the payments counting toward
+   * {@link amountPaid} (backend spec `02-invoicing.md` **v37**, FR 45).
+   *
+   * `null` when nothing has been paid, and a **reversed** payment sets nothing, so this and
+   * `amountPaid` never contradict each other on the same row.
+   *
+   * Optional here so the app degrades honestly against a backend older than v37, where it is absent and
+   * the column reads "—".
+   */
+  paidOn?: string | null;
+
+  /**
+   * Every payer this invoice divides between, in display order (backend **v37**, FR 46).
+   *
+   * **Not interchangeable with {@link tenantId}**, which is `null` on exactly the group invoices that
+   * have several payers. Empty when the invoice records no shares.
+   */
+  tenantIds?: string[];
+}
+
+/**
+ * The paging envelope every list endpoint returns (`Innago.BuildingBlocks.Application.PagedResult<T>`).
+ *
+ * `totalPages`, `hasNextPage` and `hasPreviousPage` are computed **server-side** and must be read rather
+ * than recomputed: the endpoint caps `pageSize`, so client arithmetic over `totalCount` can disagree
+ * with the page actually served.
+ */
+export interface PagedResult<T> {
+  items: T[];
+  totalCount: number;
+  /** 1-based. */
+  pageNumber: number;
+  pageSize: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+/**
+ * The criteria `GET /api/v1/invoices` accepts.
+ *
+ * **Only `propertyOwnerId` is required**, and that is a security control rather than a convenience: no
+ * authentication scheme is registered on the API, so an unscoped list would page through every owner's
+ * billing data. "All invoices" means all of one owner's.
+ *
+ * Every other member is omitted from the query string when absent — an empty `invoiceNumber` sent as
+ * `""` would be an exact-match filter for the empty string, not the absence of a filter.
+ */
+export interface InvoiceSearchQuery {
+  propertyOwnerId: string;
+  page?: number;
+  /** Defaults to 50 server-side; the endpoint rejects anything above 200. */
+  pageSize?: number;
+  invoiceNumber?: string;
+  /** Repeated once per value on the wire, and **unioned** by the endpoint. */
+  status?: InvoiceStatus[];
+  invoiceType?: string;
+  outstandingOnly?: boolean;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  generatedOnFrom?: string;
+  generatedOnTo?: string;
+  includeDeleted?: boolean;
+  propertyId?: string;
+  propertyUnitId?: string;
+  tenantId?: string;
+  rentAgreementId?: string;
 }

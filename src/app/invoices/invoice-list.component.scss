@@ -1,0 +1,465 @@
+.invoices-page {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
+.add-invoice-btn {
+  flex: 0 0 auto;
+  margin-top: 0.5rem;
+}
+
+// ---- filters
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  span {
+    font-size: 0.76rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #666;
+  }
+
+  input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-size: 0.86rem;
+    min-width: 150px;
+
+    &:focus {
+      outline: 2px solid #1a56db;
+      outline-offset: -1px;
+      border-color: #1a56db;
+    }
+  }
+
+  &.owner input {
+    min-width: 320px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+
+  &.narrow input {
+    min-width: 90px;
+  }
+}
+
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  padding-bottom: 0.45rem;
+  cursor: pointer;
+}
+
+.primary-btn {
+  padding: 0.5rem 1.4rem;
+  border: none;
+  border-radius: 3px;
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #1544ab;
+  }
+
+  &:disabled {
+    background: #9aabd4;
+    cursor: default;
+  }
+}
+
+.status-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.85rem 0 1.1rem;
+}
+
+.chips-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+  margin-right: 0.25rem;
+}
+
+.chip {
+  border: 1px solid #c9d3e0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.8rem;
+  color: #445;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #1a56db;
+  }
+
+  &.selected {
+    background: #1a56db;
+    border-color: #1a56db;
+    color: #fff;
+  }
+}
+
+.chips-hint {
+  font-size: 0.78rem;
+  color: #888;
+  margin-left: 0.35rem;
+}
+
+.inline-error {
+  margin: 0.65rem 0 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.idle-hint {
+  margin-top: 1.5rem;
+  color: #777;
+  font-size: 0.88rem;
+}
+
+// ---- banners
+
+// ---- the "add invoice" first step
+
+.panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.agreement-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 100vw);
+  background: #fff;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.2);
+}
+
+.agreement-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #eee;
+
+  h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
+.close-btn {
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #666;
+  cursor: pointer;
+}
+
+.agreement-panel-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #555;
+    margin-bottom: 0.4rem;
+  }
+
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.88rem;
+
+    &:focus {
+      outline: 2px solid #1a56db;
+      outline-offset: -1px;
+      border-color: #1a56db;
+    }
+  }
+}
+
+.agreement-panel-hint,
+.agreement-panel-note {
+  font-size: 0.83rem;
+  color: #666;
+  line-height: 1.5;
+}
+
+.agreement-panel-hint {
+  margin: 0 0 1.1rem;
+}
+
+.agreement-panel-note {
+  margin: 1.1rem 0 0;
+
+  a {
+    color: #1a56db;
+  }
+}
+
+.agreement-panel-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #eee;
+}
+
+// ---- list header
+
+.list-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0;
+  font-size: 0.82rem;
+  color: #555;
+}
+
+.showing {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #444;
+}
+
+.count-pill {
+  display: inline-block;
+  background: #eceff3;
+  border-radius: 3px;
+  padding: 0.15rem 0.45rem;
+  margin-left: 0.3rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// ---- table
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.invoice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+
+  th,
+  td {
+    padding: 0.75rem 0.85rem;
+    text-align: left;
+    vertical-align: middle;
+    border-bottom: 1px solid #ededed;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f6f7f9;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #555;
+  }
+
+  tbody tr:hover {
+    background: #fafbfc;
+  }
+
+  .numeric {
+    text-align: right;
+  }
+
+  .mono {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.8rem;
+  }
+}
+
+// A row that still owes money reads in the alert colour, per the design. Driven by the balance rather
+// than the status: a partially-paid invoice still owes, and must not read as settled.
+.invoice-table tbody tr.outstanding td.numeric {
+  color: #d3302f;
+  font-weight: 600;
+}
+
+.party-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  white-space: normal;
+}
+
+.property-ref {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #222;
+}
+
+.payers {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.status-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+
+  &.paid {
+    background: #17a673;
+  }
+
+  &.overdue {
+    background: #e35d5b;
+  }
+
+  &.partial {
+    background: #e0a12c;
+  }
+
+  &.pending {
+    background: #8a94a6;
+  }
+
+  &.muted {
+    background: #c4c9d1;
+    color: #444;
+  }
+}
+
+// ---- pager
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem 0;
+  font-size: 0.85rem;
+}
+
+// One outlined-button rule for both: the pager's arrows and the panel's Cancel differ only in padding,
+// and two near-identical blocks are how they drift apart.
+.pager-btn,
+.ghost-btn {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #c9d3e0;
+  border-radius: 3px;
+  background: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: #1a56db;
+    color: #1a56db;
+  }
+
+  &:disabled {
+    color: #aaa;
+    cursor: default;
+  }
+}
+
+.ghost-btn {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.9rem;
+}
+
+.pager-position {
+  color: #666;
+}

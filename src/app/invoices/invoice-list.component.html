@@ -1,0 +1,295 @@
+<div class="invoices-page">
+  <div class="page-header">
+    <div>
+      <h1>Invoices</h1>
+      <p class="subtitle">
+        One property owner's invoices, filtered and paged. Click any row to correct it.
+      </p>
+    </div>
+    <button type="button" class="primary-btn add-invoice-btn" (click)="openAddInvoice()">
+      + ADD INVOICE
+    </button>
+  </div>
+
+  @if (chargeSuccess(); as message) {
+    <div class="banner success">
+      <strong>{{ message }}</strong>
+      <p>
+        On an activated lease a standalone one-off fee raises its own invoice in the same transaction,
+        so the list below has been refreshed.
+      </p>
+    </div>
+  }
+
+  <form [formGroup]="filters" class="filter-bar">
+    <label class="filter owner">
+      <span>Property Owner ID</span>
+      <input
+        type="text"
+        formControlName="propertyOwnerId"
+        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+        autocomplete="off"
+        spellcheck="false"
+        (keyup.enter)="search()"
+      />
+    </label>
+
+    <label class="filter">
+      <span>Invoice number</span>
+      <input
+        type="text"
+        formControlName="invoiceNumber"
+        placeholder="INV-092026-000042"
+        (change)="onFilterChanged()"
+      />
+    </label>
+
+    <label class="filter">
+      <span>Due from</span>
+      <input type="date" formControlName="dueDateFrom" (change)="onFilterChanged()" />
+    </label>
+
+    <label class="filter">
+      <span>Due to</span>
+      <input type="date" formControlName="dueDateTo" (change)="onFilterChanged()" />
+    </label>
+
+    <label class="filter narrow">
+      <span>Page size</span>
+      <input type="number" formControlName="pageSize" min="1" max="200" (change)="onFilterChanged()" />
+    </label>
+
+    <label class="filter-check">
+      <input type="checkbox" formControlName="outstandingOnly" (change)="onFilterChanged()" />
+      Outstanding only
+    </label>
+
+    <label class="filter-check">
+      <input type="checkbox" formControlName="includeDeleted" (change)="onFilterChanged()" />
+      Include deleted
+    </label>
+
+    <button type="button" class="primary-btn" (click)="search()" [disabled]="loading()">
+      {{ loading() ? 'Searching…' : 'Search' }}
+    </button>
+  </form>
+
+  <div class="status-chips">
+    <span class="chips-label">Status</span>
+    @for (status of statusOptions; track status) {
+      <button
+        type="button"
+        class="chip"
+        [class.selected]="isStatusSelected(status)"
+        (click)="toggleStatus(status)"
+      >
+        {{ statusPresentation(status).label }}
+      </button>
+    }
+    <span class="chips-hint">
+      @if (selectedStatuses().size === 0) {
+        None selected — every status is included.
+      } @else {
+        {{ selectedStatuses().size }} selected; results match any of them.
+      }
+    </span>
+  </div>
+
+  @if (idError(); as message) {
+    <p class="inline-error">{{ message }}</p>
+  }
+
+  @if (searchError(); as message) {
+    <div class="banner error">
+      <strong>Could not load invoices.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+
+  @if (result(); as page) {
+    <div class="list-header">
+      <span class="showing">
+        SHOWING <span class="count-pill">{{ page.items.length }} of {{ page.totalCount }}</span>
+      </span>
+      @if (lastRefreshedAt(); as refreshedAt) {
+        <span class="refreshed">
+          Last refreshed at {{ refreshedAt | date: 'shortTime' }}. Not seeing recent changes?
+          <button type="button" class="link-btn" (click)="refresh()">Refresh Now</button>
+        </span>
+      }
+    </div>
+
+    @if (page.items.length === 0) {
+      <div class="banner warn">
+        <strong>No invoices matched.</strong>
+        <p>Widen the filters, or check that the owner id is the one you meant.</p>
+      </div>
+    } @else {
+      <div class="table-scroll">
+        <table class="invoice-table">
+          <thead>
+            <tr>
+              <!--
+                No sort controls, deliberately. The endpoint's order is fixed at dueDate then
+                invoiceNumber precisely so offset pagination stays stable — invoice numbers are unique,
+                so that pair is a total order. Carets that did nothing would be worse than none.
+              -->
+              <th>Property / Shared by</th>
+              <th>Due on</th>
+              <th>Paid on</th>
+              <th>ID</th>
+              <th>Status</th>
+              <th>Unit</th>
+              <th class="numeric">Amount</th>
+              <th class="numeric">Paid</th>
+              <th class="numeric">Balance</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (invoice of rows; track invoice.invoiceId) {
+              <tr [class.outstanding]="isOutstanding(invoice)">
+                <td class="party-cell">
+                  <!-- The id, not a name: this service holds no property names. Full value on hover. -->
+                  <span class="property-ref" [title]="invoice.propertyId">
+                    {{ shortReference(invoice.propertyId) }}
+                  </span>
+                  <span class="payers">{{ payerLabel(invoice) }}</span>
+                </td>
+                <td>{{ invoice.dueDate }}</td>
+                <td>{{ invoice.paidOn ?? 'N/A' }}</td>
+                <td class="mono">{{ invoice.invoiceNumber }}</td>
+                <td>
+                  <span class="status-badge" [class]="statusPresentation(invoice.status).className">
+                    {{ statusPresentation(invoice.status).label }}
+                  </span>
+                </td>
+                <td class="mono" [title]="invoice.propertyUnitId ?? ''">
+                  {{ shortReference(invoice.propertyUnitId) }}
+                </td>
+                <td class="numeric">{{ invoice.total | currency }}</td>
+                <td class="numeric">{{ invoice.amountPaid | currency }}</td>
+                <td class="numeric">{{ invoice.balance | currency }}</td>
+                <td>
+                  <a
+                    class="link-btn"
+                    [routerLink]="['/invoices/update']"
+                    [queryParams]="{ invoiceId: invoice.invoiceId }"
+                  >
+                    Correct
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pager">
+        <button
+          type="button"
+          class="pager-btn"
+          (click)="goToPage(currentPage - 1)"
+          [disabled]="!page.hasPreviousPage || loading()"
+        >
+          ‹ Previous
+        </button>
+        <span class="pager-position">Page {{ page.pageNumber }} of {{ page.totalPages }}</span>
+        <button
+          type="button"
+          class="pager-btn"
+          (click)="goToPage(currentPage + 1)"
+          [disabled]="!page.hasNextPage || loading()"
+        >
+          Next ›
+        </button>
+      </div>
+    }
+  } @else if (!loading()) {
+    <p class="idle-hint">Enter a property owner id and search to see their invoices.</p>
+  }
+
+  <!--
+    Step one of the add flow. The lease is TYPED here rather than picked from the rows above: this
+    screen adds to any lease, including one with no invoices yet — which is exactly the lease that
+    could never appear in an invoice list.
+
+    It is a step of its own rather than a field inside the fee panel because the panel cannot render
+    until the lease is loaded: it needs the owner id to fetch the item catalog, and the lease dates to
+    resolve the candidate dates a recurring fee is picked from.
+  -->
+  @if (addInvoiceStep() === 'agreement') {
+    <div class="panel-overlay" (click)="closeAddInvoice()"></div>
+    <div class="agreement-panel">
+      <div class="agreement-panel-header">
+        <button type="button" class="close-btn" (click)="closeAddInvoice()" aria-label="Close">
+          &times;
+        </button>
+        <h2>Add Invoice</h2>
+      </div>
+
+      <div class="agreement-panel-body">
+        <p class="agreement-panel-hint">
+          Which lease is this for? The fee is added to that lease, and on an activated one a standalone
+          one-off fee raises its own invoice straight away.
+        </p>
+
+        <label for="addInvoiceAgreementId">Rent Agreement ID</label>
+        <input
+          id="addInvoiceAgreementId"
+          type="text"
+          [formControl]="addInvoiceAgreementId"
+          placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+          autocomplete="off"
+          spellcheck="false"
+          (keyup.enter)="loadAgreementForCharge()"
+        />
+
+        @if (addInvoiceIdError(); as message) {
+          <p class="inline-error">{{ message }}</p>
+        }
+
+        <p class="agreement-panel-note">
+          The fee is charged to <strong>every active tenant</strong> on the lease. To charge only some
+          of them, use the <a routerLink="/rent-agreements/additional-charges">Add Additional Fee</a>
+          screen, which lists the lease's tenants to pick from.
+        </p>
+      </div>
+
+      <div class="agreement-panel-footer">
+        <button type="button" class="ghost-btn" (click)="closeAddInvoice()">Cancel</button>
+        <button
+          type="button"
+          class="primary-btn"
+          (click)="loadAgreementForCharge()"
+          [disabled]="loadingAgreement()"
+        >
+          {{ loadingAgreement() ? 'Loading lease…' : 'Continue' }}
+        </button>
+      </div>
+    </div>
+  }
+
+  <!--
+    Step two: the ADD ADDITIONAL FEE panel itself, used unchanged. The submission error is rendered
+    floating above it — the panel is a fixed overlay, so an error left in the page flow would sit
+    behind the very form the user has to correct.
+  -->
+  @if (addInvoiceStep() === 'fee') {
+    @if (chargeError(); as message) {
+      <div class="banner error floating">
+        <strong>The fee was not saved.</strong>
+        <p>{{ message }}</p>
+      </div>
+    }
+
+    <app-additional-charge-panel
+      [propertyOwnerId]="chargePropertyOwnerId"
+      [leaseStartDate]="chargeLeaseStartDate"
+      [leaseEndDate]="chargeLeaseEndDate"
+      [leaseMonthToMonthInvoiceCount]="chargeMonthToMonthInvoiceCount"
+      (created)="onChargeCreated($event)"
+      (closed)="closeAddInvoice()"
+    />
+  }
+</div>

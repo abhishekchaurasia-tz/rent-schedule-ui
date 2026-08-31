@@ -45,6 +45,46 @@ describe('InvoicesService', () => {
     expect(actual?.proposedInvoiceId).toBe('22222222-2222-2222-2222-222222222222');
   });
 
+  it('search() sends the owner scope and omits every absent filter', () => {
+    service.search({ propertyOwnerId: '55555555-5555-5555-5555-555555555555' }).subscribe();
+
+    const request = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(request.request.method).toBe('GET');
+    expect(request.request.params.get('propertyOwnerId')).toBe('55555555-5555-5555-5555-555555555555');
+
+    // An empty `invoiceNumber` on the wire is an exact-match filter for the empty string, not the
+    // absence of a filter — so a blank must not be sent at all.
+    expect(request.request.params.has('invoiceNumber')).toBeFalse();
+    expect(request.request.params.has('page')).toBeFalse();
+    expect(request.request.params.has('outstandingOnly')).toBeFalse();
+
+    request.flush({ items: [], totalCount: 0, pageNumber: 1, pageSize: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
+  });
+
+  it('search() repeats `status` once per value rather than overwriting it', () => {
+    service
+      .search({
+        propertyOwnerId: '55555555-5555-5555-5555-555555555555',
+        status: ['overdue', 'partial_paid'],
+        page: 2,
+        pageSize: 25,
+        invoiceNumber: '  INV-082026-000002  ',
+        outstandingOnly: true,
+        includeDeleted: true
+      })
+      .subscribe();
+
+    const request = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(request.request.params.getAll('status')).toEqual(['overdue', 'partial_paid']);
+    expect(request.request.params.get('page')).toBe('2');
+    expect(request.request.params.get('pageSize')).toBe('25');
+    expect(request.request.params.get('invoiceNumber')).toBe('INV-082026-000002');
+    expect(request.request.params.get('outstandingOnly')).toBe('true');
+    expect(request.request.params.get('includeDeleted')).toBe('true');
+
+    request.flush({ items: [], totalCount: 0, pageNumber: 2, pageSize: 25, totalPages: 0, hasNextPage: false, hasPreviousPage: true });
+  });
+
   it('getById() propagates a 404 to the caller rather than swallowing it', () => {
     let error: unknown;
     service.getById(invoiceId).subscribe({ error: (err) => (error = err) });
