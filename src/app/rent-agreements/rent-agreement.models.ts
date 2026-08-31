@@ -118,8 +118,38 @@ export interface AdditionalChargeCreationRequest {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
+  /**
+   * The tenants this fee is charged to (backend spec v37 FR-058).
+   *
+   * **An empty array — or an omitted field — means every active tenant shares the fee.** That is the
+   * backend's own encoding, not a client convention, which is why there is no way to express "charge
+   * nobody" and none is needed: a fee nobody owes is not a fee.
+   *
+   * Only the Add Additional Fee page fills this in. The lease create/edit screens leave it absent and
+   * so keep their pre-existing shared-fee behaviour unchanged.
+   */
+  tenantIds?: string[];
   items: AdditionalChargeItemCreationRequest[];
 }
+
+/**
+ * The body of `POST /rent-agreements/{id}/additional-charges` — appending **one** fee to a lease that
+ * is already saved.
+ *
+ * **The charge's own fields sit at the body root**, which is why this is the charge itself rather than
+ * a wrapper around it. The backend's `AddAdditionalChargeCommandJsonConverter` reads the charge from
+ * `document.RootElement`; a body nested under a `charge` member would deserialize to a charge with
+ * every required field missing and come back as a `400`.
+ *
+ * `isManualInvoice` is deliberately **not** modelled. The endpoint still accepts it and documents it
+ * as ignored — every invoice this route raises is `Manual` regardless — so sending it would assert a
+ * decision the client does not get to make.
+ *
+ * `id` is this endpoint's **idempotency key** rather than an edit selector: repeating a body that
+ * carries one returns the stored charge and writes nothing. The fee panel emits no id, so this app
+ * never sends one and instead blocks its own submit while a request is in flight.
+ */
+export type AddAdditionalChargeRequest = AdditionalChargeCreationRequest;
 
 /**
  * Bound directly to `POST /rent-agreements`. Unlike {@link import('../rent-schedule/rent-schedule.models').PreviewRentScheduleRequest},
@@ -206,6 +236,13 @@ export interface RentAgreementAdditionalChargeResponse {
   startDate?: string | null;
   endDate?: string | null;
   hasNoEndDate: boolean;
+  /**
+   * Who the fee is charged to, echoed back on every path that returns a charge — **empty meaning
+   * every active tenant shares it** (backend spec v37 FR-058). Optional on this interface only
+   * because it cannot be re-derived client-side and older responses this app was written against
+   * predate the field; when the server sends it, it is authoritative.
+   */
+  tenantIds?: string[];
   items: RentAgreementAdditionalChargeItemResponse[];
   /**
    * Server-computed: this charge has already been attached to an invoice, so it may no longer be
@@ -294,6 +331,10 @@ export function toChargeCreationRequest(
     startDate: charge.startDate,
     endDate: charge.endDate,
     hasNoEndDate: charge.hasNoEndDate,
+    // Carried across for the same reason as every other field: `PUT …/terms` resubmits the complete
+    // charge, so a fee charged to two of four tenants — which only the Add Additional Fee page can
+    // create — would silently become a fee shared by all four the next time the lease screen saved.
+    tenantIds: charge.tenantIds,
     items: charge.items.map((item) => ({
       id: item.id,
       itemType: item.itemType,

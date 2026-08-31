@@ -4,6 +4,7 @@ import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } fr
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 
+import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { ActivateLeaseComponent } from './activate-lease.component';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
@@ -209,7 +210,7 @@ export class AddTenantsComponent {
     const depositAmount = AddTenantsComponent.round((depositPercent / 100) * this.depositTotal());
 
     const tenantId = crypto.randomUUID();
-    const identity = AddTenantsComponent.placeholderIdentity(tenantId);
+    const identity = placeholderTenantIdentity(tenantId);
 
     return this.fb.group({
       tenantId: [tenantId],
@@ -235,7 +236,7 @@ export class AddTenantsComponent {
    * column reads correctly whichever mode the row re-opens in.
    */
   private buildSavedTenantGroup(tenant: AgreementTenantShareResponse): FormGroup {
-    const identity = AddTenantsComponent.placeholderIdentity(tenant.tenantId);
+    const identity = placeholderTenantIdentity(tenant.tenantId);
     const fullRent = this.fullRent();
     const depositTotal = this.depositTotal();
 
@@ -477,59 +478,6 @@ export class AddTenantsComponent {
 
   private static round(value: number): number {
     return Math.round(value * 100) / 100;
-  }
-
-  /** Names the placeholder identities are drawn from. Arbitrary — nothing depends on the values. */
-  private static readonly FIRST_NAMES = [
-    'Ada', 'Bilal', 'Chandra', 'Diego', 'Elif', 'Farhan', 'Grace', 'Hina',
-    'Ivan', 'Jaya', 'Kenji', 'Leila', 'Marco', 'Nadia', 'Omar', 'Priya'
-  ];
-
-  /** Surnames the placeholder identities are drawn from. */
-  private static readonly LAST_NAMES = [
-    'Ahmed', 'Baker', 'Chowdhury', 'Diaz', 'Eriksen', 'Fontaine', 'Gupta', 'Haddad',
-    'Iyer', 'Jensen', 'Kaur', 'Lindqvist', 'Mensah', 'Novak', 'Okafor', 'Pereira'
-  ];
-
-  /**
-   * Invents a stable stand-in person for a tenant id.
-   *
-   * The endpoint stores shares against a `tenantId` and carries no personal fields, and this app has
-   * no tenant-profile service to look one up in — so the name, email and mobile on screen have to come
-   * from somewhere. They are **derived from the id** rather than randomised, so re-opening the screen
-   * shows the same made-up person each time instead of a fresh one on every reload; a row that changed
-   * its name on every load would look like the data had changed when nothing had.
-   *
-   * None of it is sent anywhere. The `tenantId` is the only identity that leaves this screen.
-   */
-  private static placeholderIdentity(tenantId: string): {
-    firstName: string;
-    lastName: string;
-    email: string;
-    mobile: string;
-  } {
-    // A plain FNV-style walk over the id. It needs to be stable and well-spread, nothing more —
-    // there is no security or collision concern in naming a demo row.
-    let hash = 2166136261;
-    for (const character of tenantId) {
-      hash ^= character.charCodeAt(0);
-      hash = Math.imul(hash, 16777619) >>> 0;
-    }
-
-    const firstName = AddTenantsComponent.FIRST_NAMES[hash % AddTenantsComponent.FIRST_NAMES.length];
-    const lastName =
-      AddTenantsComponent.LAST_NAMES[(hash >>> 8) % AddTenantsComponent.LAST_NAMES.length];
-
-    // The last four hex characters of the id, so two placeholder people who happen to draw the same
-    // name still get different contact details.
-    const suffix = tenantId.replace(/[^0-9a-f]/gi, '').slice(-4).toLowerCase() || '0000';
-
-    return {
-      firstName,
-      lastName,
-      email: `${firstName}.${lastName}.${suffix}@example.com`.toLowerCase(),
-      mobile: `555-${(hash % 900 + 100).toString()}-${(hash >>> 16) % 9000 + 1000}`
-    };
   }
 
   /** Mirrors {@link import('./rent-agreement-create.component').RentAgreementCreateComponent}'s error rendering. */

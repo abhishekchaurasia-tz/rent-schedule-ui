@@ -1,0 +1,204 @@
+<div class="charge-page">
+  <h1>Add Additional Fee</h1>
+  <p class="subtitle">
+    Append a one-off or recurring fee to a lease that is already saved, and choose which of its
+    tenants it is charged to. This screen can only <strong>add</strong> — editing or removing a fee is
+    still done on the lease screen.
+  </p>
+
+  <section class="lookup-box">
+    <label for="chargeAgreementId">Rent Agreement ID</label>
+    <div class="lookup-row">
+      <input
+        id="chargeAgreementId"
+        type="text"
+        [formControl]="agreementIdInput"
+        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+        autocomplete="off"
+        spellcheck="false"
+        (keyup.enter)="load()"
+      />
+      <button type="button" class="primary-btn" (click)="load()" [disabled]="loading()">
+        {{ loading() ? 'Loading…' : 'Load Lease' }}
+      </button>
+    </div>
+
+    @if (idError(); as message) {
+      <p class="inline-error">{{ message }}</p>
+    }
+
+    <p class="lookup-hint">
+      The id is returned as <code>agreementId</code> when a lease is saved on the Add Lease screen.
+    </p>
+  </section>
+
+  @if (loadError(); as message) {
+    <div class="banner error">
+      <strong>Could not load this lease.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+
+  @if (agreement(); as lease) {
+    <section class="summary-bar">
+      <span class="unit-badge">Lease</span>
+      <span class="summary-right">
+        <span class="summary-amounts">
+          {{ lease.fullRent | currency }} Rent &middot; {{ lease.startDate }} →
+          {{ lease.endDate ?? 'month-to-month' }}
+        </span>
+        <span class="summary-count">{{ lease.status }}</span>
+      </span>
+    </section>
+
+    <section class="tenants-card">
+      <div class="card-header">
+        <h2>Charge To</h2>
+        @if (hasSavedTenants() && tenants().length > 0) {
+          <div class="bulk-actions">
+            <button type="button" class="link-btn" (click)="selectAllTenants()">Select all</button>
+            <button type="button" class="link-btn" (click)="clearTenantSelection()">Clear</button>
+          </div>
+        }
+      </div>
+
+      @if (!hasSavedTenants()) {
+        <div class="banner warn">
+          <strong>This lease has no tenants saved yet.</strong>
+          <p>
+            Step 2 of the lease wizard was never completed, so there is nobody to charge individually.
+            You can still add a fee — it will be shared by every tenant added later — or
+            <a [routerLink]="['/rent-agreements', lease.agreementId, 'tenants']">add the tenants first</a>.
+          </p>
+        </div>
+      } @else if (tenants().length === 0) {
+        <div class="banner warn">
+          <strong>This lease's saved tenant roster is empty.</strong>
+          <p>Any fee added here is recorded against the lease and shared by every tenant added later.</p>
+        </div>
+      } @else {
+        <p class="selection-note">
+          @if (selectedCount() === 0) {
+            <strong>Nobody ticked — the fee is shared by every active tenant.</strong>
+            That is the same thing the server means by an empty list, so this is a complete choice,
+            not an unfinished one. Tick tenants only to charge a subset.
+          } @else {
+            <strong>{{ selectedCount() }} of {{ tenants().length }} tenants ticked.</strong>
+            Only they are charged this fee. Clear the selection to share it across everyone.
+          }
+        </p>
+
+        <p class="invoice-mode">
+          This lease bills its tenants
+          <strong>{{ isGroupInvoice() ? 'on one group invoice' : 'individually' }}</strong>.
+        </p>
+
+        <div class="tenant-rows">
+          @for (tenant of tenants(); track tenant.tenantId) {
+            <label class="tenant-row" [class.selected]="isTenantSelected(tenant.tenantId)">
+              <input
+                type="checkbox"
+                [checked]="isTenantSelected(tenant.tenantId)"
+                (change)="toggleTenant(tenant.tenantId)"
+              />
+              <span class="tenant-main">
+                <span class="tenant-name">{{ tenantName(tenant.tenantId) }}</span>
+                <code class="tenant-id">{{ tenant.tenantId }}</code>
+              </span>
+              <span class="tenant-shares">
+                <span>
+                  Rent {{ tenant.rentAmount | currency }}
+                  @if (tenant.rentPercent !== null) {
+                    <span class="muted">({{ tenant.rentPercent }}%)</span>
+                  }
+                </span>
+                <span>
+                  Deposit {{ tenant.deposit | currency }}
+                  @if (tenant.depositPercent !== null) {
+                    <span class="muted">({{ tenant.depositPercent }}%)</span>
+                  }
+                </span>
+              </span>
+            </label>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="fee-actions">
+      <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
+        + ADD ADDITIONAL FEE
+      </button>
+      @if (submitting()) {
+        <span class="submitting-note">Saving the fee…</span>
+      }
+    </section>
+
+<!--
+      Floated above the fee panel while it is open. The panel is a fixed overlay, so an error left in
+      the page flow would sit behind the very form the user has to correct — and this endpoint's
+      failures (the deposit/rent mixing rule, the recurring-field matrix, an inactive lease) are
+      precisely the ones you fix in that form.
+    -->
+    @if (submitError(); as message) {
+      <div class="banner error" [class.floating]="showPanel()">
+        <strong>The fee was not saved.</strong>
+        <p>{{ message }}</p>
+      </div>
+    }
+
+    @if (addedCharges().length > 0) {
+      <section class="added-card">
+        <h2>Added to this lease ({{ addedCharges().length }})</h2>
+        <p class="added-note">
+          Already committed on the server. This screen cannot edit or remove them — use the lease
+          screen for that.
+        </p>
+
+        @for (charge of addedCharges(); track charge.id) {
+          <article class="added-charge">
+            <header>
+              <span class="charge-category">{{ charge.category }}</span>
+              <span class="charge-total">{{ chargeTotal(charge) | currency }}</span>
+            </header>
+            <dl>
+              <dt>Charge id</dt>
+              <dd><code>{{ charge.id }}</code></dd>
+              <dt>Charged to</dt>
+              <dd>{{ chargePayerLabel(charge) }}</dd>
+              <dt>Billing</dt>
+              <dd>
+                {{ chargeCadenceLabel(charge) }} &middot;
+                {{ charge.attachedWithRentalInvoice ? 'on the rent invoice' : 'its own invoice' }}
+              </dd>
+              @if (charge.notes) {
+                <dt>Notes</dt>
+                <dd>{{ charge.notes }}</dd>
+              }
+            </dl>
+            <ul class="charge-items">
+              @for (item of charge.items; track item.id) {
+                <li>
+                  <span>{{ item.description }}</span>
+                  <span class="muted">{{ item.quantity }} × {{ item.rate | currency }}</span>
+                  <span>{{ item.amount | currency }}</span>
+                </li>
+              }
+            </ul>
+          </article>
+        }
+      </section>
+    }
+  }
+
+  @if (showPanel()) {
+    <app-additional-charge-panel
+      [propertyOwnerId]="propertyOwnerId"
+      [leaseStartDate]="leaseStartDate"
+      [leaseEndDate]="leaseEndDate"
+      [leaseMonthToMonthInvoiceCount]="leaseMonthToMonthInvoiceCount"
+      (created)="onChargeCreated($event)"
+      (closed)="closePanel()"
+    />
+  }
+</div>

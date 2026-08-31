@@ -6,9 +6,11 @@ import { environment } from '../../environments/environment';
 import {
   ActivateRentAgreementRequest,
   ActivateRentAgreementResponse,
+  AddAdditionalChargeRequest,
   AgreementTenantsResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
+  RentAgreementAdditionalChargeResponse,
   RentAgreementDetailResponse,
   SaveAgreementTenantsRequest,
   SaveAgreementTenantsResponse,
@@ -75,6 +77,32 @@ export class RentAgreementsService {
     return this.http
       .get<AgreementTenantsResponse | null>(`${this.baseUrl}/${agreementId}/tenants`)
       .pipe(map((saved) => saved ?? null));
+  }
+
+  /**
+   * Appends **one** additional fee to an already-saved lease, together with any brand-new catalog
+   * entries its items need, in a single transaction.
+   *
+   * **Additive only.** This endpoint cannot edit or remove a charge — `PUT …/terms` remains the only
+   * path that does — which is why the Add Additional Fee page offers no edit affordance on what it
+   * has added.
+   *
+   * The body is the charge itself, not a wrapper around it: the backend reads the charge from the
+   * JSON root. `tenantIds` rides along on it, and an empty array means every active tenant shares the
+   * fee.
+   *
+   * The response is the persisted charge with its real ids — `201` when created, `200` when the
+   * request replayed an `id` the lease already held. Both resolve here identically, because the body
+   * is the same charge either way and this app never sends an `id` to replay with.
+   */
+  addAdditionalCharge(
+    agreementId: string,
+    request: AddAdditionalChargeRequest
+  ): Observable<RentAgreementAdditionalChargeResponse> {
+    return this.http.post<RentAgreementAdditionalChargeResponse>(
+      `${this.baseUrl}/${agreementId}/additional-charges`,
+      request
+    );
   }
 
   /**

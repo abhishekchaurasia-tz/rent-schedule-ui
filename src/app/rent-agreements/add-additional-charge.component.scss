@@ -1,0 +1,368 @@
+.charge-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  max-width: 70ch;
+}
+
+/* ---- stage 1: the lease id box ------------------------------------------------------------ */
+
+.lookup-box {
+  max-width: 640px;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+  padding: 1.25rem;
+
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.4rem;
+  }
+}
+
+.lookup-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+
+  input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.9rem;
+
+    &:focus {
+      outline: 2px solid #1a56db;
+      outline-offset: -1px;
+      border-color: #1a56db;
+    }
+  }
+}
+
+.lookup-hint {
+  margin: 0.9rem 0 0;
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.inline-error {
+  margin: 0.65rem 0 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.primary-btn {
+  flex: 0 0 auto;
+  padding: 0.55rem 1.4rem;
+  border: none;
+  border-radius: 3px;
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #1544ab;
+  }
+
+  &:disabled {
+    background: #9aabd4;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #0b2f7a;
+    outline-offset: 2px;
+  }
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* ---- banners -------------------------------------------------------------------------------- */
+
+.banner {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+
+  p {
+    margin: 0.35rem 0 0;
+  }
+
+  &.error {
+    background: #fdecea;
+    border-color: #f2b8b5;
+    color: #7f1d1b;
+  }
+
+  &.warn {
+    background: #fff7e6;
+    border-color: #f0d9a8;
+    color: #6b4d09;
+  }
+
+  /* Above the fee panel (z-index 101) so a validation failure is readable without closing it. */
+  &.floating {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 102;
+    max-width: 520px;
+    width: calc(100vw - 2rem);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* ---- lease summary -------------------------------------------------------------------------- */
+
+.summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.5rem 0 1rem;
+  padding: 0.75rem 1rem;
+  background: #f2f4f6;
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+.unit-badge {
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+}
+
+.summary-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.summary-count {
+  font-weight: 600;
+}
+
+/* ---- stage 2: the tenant picker ------------------------------------------------------------- */
+
+.tenants-card,
+.added-card {
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+
+  h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.bulk-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.selection-note,
+.invoice-mode,
+.added-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.83rem;
+  color: #555;
+  max-width: 80ch;
+}
+
+.tenant-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tenant-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e2e2e2;
+  border-radius: 3px;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #c4c4c4;
+  }
+
+  &.selected {
+    border-color: #1a56db;
+    background: #f5f8ff;
+  }
+
+  input[type='checkbox'] {
+    width: 1.05rem;
+    height: 1.05rem;
+    cursor: pointer;
+  }
+}
+
+.tenant-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.tenant-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.tenant-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  color: #777;
+  overflow-wrap: anywhere;
+}
+
+.tenant-shares {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+  color: #444;
+  white-space: nowrap;
+}
+
+.muted {
+  color: #888;
+}
+
+/* ---- stage 3: add + the committed list ------------------------------------------------------ */
+
+.fee-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.submitting-note {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.added-charge {
+  border: 1px solid #e2e2e2;
+  border-radius: 3px;
+  padding: 0.85rem 1rem;
+  margin-top: 0.75rem;
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 0.25rem 0.75rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  dt {
+    color: #777;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.charge-category {
+  background: #e8f0fe;
+  color: #1a3f9e;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+}
+
+.charge-total {
+  font-weight: 700;
+}
+
+.charge-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #eee;
+
+  li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    font-size: 0.84rem;
+    border-bottom: 1px solid #f4f4f4;
+  }
+}
