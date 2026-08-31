@@ -10,10 +10,12 @@ import {
   AgreementTenantsResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
+  ProposedInvoiceDetailResponse,
   RentAgreementAdditionalChargeResponse,
   RentAgreementDetailResponse,
   SaveAgreementTenantsRequest,
   SaveAgreementTenantsResponse,
+  UpdateProposedInvoiceRequest,
   UpdateRentAgreementTermsRequest
 } from './rent-agreement.models';
 
@@ -77,6 +79,35 @@ export class RentAgreementsService {
     return this.http
       .get<AgreementTenantsResponse | null>(`${this.baseUrl}/${agreementId}/tenants`)
       .pipe(map((saved) => saved ?? null));
+  }
+
+  /**
+   * Corrects one proposed invoice on a lease's billing plan — its due date, its line set, or both.
+   *
+   * **This is how an invoice is corrected**, including one that has already been issued: the edit is
+   * carried onto the invoice's event stream by appending a correction, committed in the same
+   * transaction as the proposal write. `PUT /api/v1/invoices/{id}` was removed; there is no other path.
+   *
+   * **Both members of the body are optional and absence means "leave unchanged"** — and a *present*
+   * `lines` is the **complete** new set, so an omitted live line is soft-deleted. Never send a partial
+   * array.
+   *
+   * The two ids are the route's whole address and neither is typed by a person: both come off
+   * `InvoicesService.getById`, whose response carries `rentAgreementId` and `proposedInvoiceId`.
+   *
+   * Failures worth rendering distinctly: `422` for a business rule — a payment recorded against the
+   * proposal, a cancelled or superseded one, an issued **deposit**, a lease whose status forbids
+   * editing, or a due-date rule — and `409` when a concurrent write to the same agreement won the race.
+   */
+  updateProposedInvoice(
+    agreementId: string,
+    proposedInvoiceId: string,
+    request: UpdateProposedInvoiceRequest
+  ): Observable<ProposedInvoiceDetailResponse> {
+    return this.http.patch<ProposedInvoiceDetailResponse>(
+      `${this.baseUrl}/${agreementId}/proposed-invoices/${proposedInvoiceId}`,
+      request
+    );
   }
 
   /**

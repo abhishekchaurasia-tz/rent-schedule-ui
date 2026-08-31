@@ -474,3 +474,106 @@ export interface UpdateRentAgreementTermsRequest {
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges: AdditionalChargeCreationRequest[];
 }
+
+/**
+ * One submitted line of a proposed-invoice correction —
+ * `PATCH /rent/agreements/{id}/proposed-invoices/{proposedInvoiceId}`.
+ *
+ * **There is no `amount`.** The amount is `quantity × rate`, derived server-side; a client-supplied
+ * total that disagreed with its own factors would be one nobody could reconcile, so the contract gives
+ * it nowhere to go.
+ */
+export interface UpdateProposedLineRequest {
+  /**
+   * The existing line this entry revises, or omitted to **add** a new line.
+   *
+   * Post back the `lineId` that came off the invoice read: the backend derives each invoice line's id
+   * from the proposed line it was raised from, so the two are the same value. Dropping it on a line
+   * the user merely edited would soft-delete that line and add a stranger in its place.
+   */
+  lineId?: string;
+  /** The catalog row, or `null` for a free-form line. **Required** when the proposal's category is deposit. */
+  lineItemId?: string | null;
+  /** Parsed case-insensitively server-side, and subject to the deposit allowlist. */
+  itemType: string;
+  description: string;
+  /** Must be greater than zero. */
+  quantity: number;
+  /** Must be greater than zero. */
+  rate: number;
+}
+
+/**
+ * The body of `PATCH /rent/agreements/{id}/proposed-invoices/{proposedInvoiceId}` — a correction to
+ * one invoice's due date, its line set, or both.
+ *
+ * **`PATCH` semantics: an absent member means "leave unchanged".** Omit `dueDate` to keep the current
+ * date; omit `lines` to keep the current line set.
+ *
+ * **A present `lines` is the COMPLETE new set** — each entry may carry the `lineId` it revises, an
+ * entry without one adds a line, and a live line the array omits is **soft-deleted**. That is the only
+ * shape in which a removal can be expressed, and it is also why a partial array is a data-loss bug
+ * rather than a smaller request.
+ */
+export interface UpdateProposedInvoiceRequest {
+  dueDate?: string;
+  lines?: UpdateProposedLineRequest[];
+}
+
+/** One live line of a corrected proposal, as returned by the PATCH. */
+export interface ProposedLineResponse {
+  /** The line's identity, to be posted back on a subsequent correction. */
+  lineId: string;
+  /** Where the line came from — `Rent` or `Manual`. */
+  source: string;
+  lineItemId?: string | null;
+  itemType: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  /** The share percentage the line was derived from, or `null`. */
+  appliedSharePercent?: number | null;
+  amount: number;
+  /** Whether a person authored this line's figure. */
+  isAuthored: boolean;
+}
+
+/** One tenant who owes part of a corrected proposal, and what they owe. */
+export interface ProposedInvoicePayerResponse {
+  tenantId: string;
+  amount: number;
+  sharePercent?: number | null;
+  /** Display position within the proposal, starting at one. */
+  order: number;
+}
+
+/**
+ * A proposed invoice as returned after a successful correction.
+ *
+ * **Deliberately not the invoice shape.** Seventeen of `InvoiceDetailResponse`'s members — invoice
+ * number, generated-on, timezone, property ids, payments, credits, tenant shares, stream version,
+ * void/delete stamps — do not exist on a proposal, and returning them null would misstate what a
+ * proposal is. The **lines** are the part that genuinely is shared, and their field names are aligned
+ * with `InvoiceLineResponse` on purpose so one table component can render both.
+ */
+export interface ProposedInvoiceDetailResponse {
+  id: string;
+  occurrenceId: string;
+  /** The cycle billed, or `null` for a manual, charge, or deposit proposal. */
+  rentScheduleId?: string | null;
+  /** What anchored this proposal — `Schedule`, `System`, `Manual`, `Deposit`. */
+  source: string;
+  /** What it bills for — `Rent` or `Deposit`. */
+  category: string;
+  status: string;
+  dueDate: string;
+  /** The derived total — the sum of the live lines. */
+  amount: number;
+  amountPaid: number;
+  isGroupProposal: boolean;
+  payers: ProposedInvoicePayerResponse[];
+  /** Always `true` on a successful correction. */
+  isManuallyUpdated: boolean;
+  /** The live lines; soft-deleted ones are excluded. */
+  lines: ProposedLineResponse[];
+}

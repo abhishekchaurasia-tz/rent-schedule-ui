@@ -1,0 +1,212 @@
+<div class="invoice-page">
+  <h1>Update Invoice</h1>
+  <p class="subtitle">
+    Correct an invoice's due date, its line items, or both. You look it up by <strong>invoice</strong>
+    id; the correction is applied to the proposal behind it, which is what carries the change onto the
+    invoice itself. Both ids for that come from the invoice — you never type them.
+  </p>
+
+  <section class="lookup-box">
+    <label for="invoiceIdInput">Invoice ID</label>
+    <div class="lookup-row">
+      <input
+        id="invoiceIdInput"
+        type="text"
+        [formControl]="invoiceIdInput"
+        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+        autocomplete="off"
+        spellcheck="false"
+        (keyup.enter)="load()"
+      />
+      <button type="button" class="primary-btn" (click)="load()" [disabled]="loading()">
+        {{ loading() ? 'Loading…' : 'Load Invoice' }}
+      </button>
+    </div>
+
+    @if (idError(); as message) {
+      <p class="inline-error">{{ message }}</p>
+    }
+  </section>
+
+  @if (loadError(); as message) {
+    <div class="banner error">
+      <strong>Could not load this invoice.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+
+  @if (invoice(); as loaded) {
+    <section class="summary-bar">
+      <span class="invoice-number">{{ loaded.invoiceNumber }}</span>
+      <span class="summary-right">
+        <span class="pill">{{ loaded.status }}</span>
+        <span class="pill">{{ loaded.category }}</span>
+        <span class="summary-amounts">
+          {{ loaded.total | currency }} total &middot; {{ loaded.amountPaid | currency }} paid &middot;
+          {{ loaded.balance | currency }} balance
+        </span>
+      </span>
+    </section>
+
+    <dl class="invoice-facts">
+      <dt>Generated on</dt>
+      <dd>{{ loaded.generatedOn }}</dd>
+      <dt>Original due date</dt>
+      <dd>{{ loaded.initialDueDate }}</dd>
+      <dt>Lease</dt>
+      <dd><code>{{ loaded.rentAgreementId ?? '—' }}</code></dd>
+      <dt>Proposal</dt>
+      <dd><code>{{ loaded.proposedInvoiceId ?? '—' }}</code></dd>
+    </dl>
+
+    @if (!isCorrectable) {
+      <!--
+        Not a failure to report — a permanent property of the invoice. Anything raised before the
+        proposal pipeline has no proposal and never will, so there is nothing for the correction route
+        to address. Saying so here is cheaper and more honest than sending a request to nowhere.
+      -->
+      <div class="banner warn">
+        <strong>This invoice cannot be corrected.</strong>
+        <p>
+          It carries no proposal, which every invoice raised before the current billing pipeline does
+          not. Corrections are applied to the proposal behind an invoice, so there is nothing here to
+          apply one to.
+        </p>
+      </div>
+    }
+
+    <form [formGroup]="form" class="correction-form">
+      <div class="due-date-row">
+        <label for="correctedDueDate">Due date</label>
+        <!--
+          `[attr.disabled]`, not `[disabled]`: the latter on a control bound by a reactive directive is
+          the pattern Angular warns about, because it sets the DOM attribute behind the FormControl's
+          back and the two then disagree about the control's state.
+        -->
+        <input
+          id="correctedDueDate"
+          type="date"
+          formControlName="dueDate"
+          [attr.disabled]="isCorrectable ? null : ''"
+        />
+        <span class="field-hint">Left alone unless you change it.</span>
+      </div>
+
+      <h2>Line items</h2>
+      <p class="lines-hint">
+        Every line shown is submitted together — a line you remove here is removed from the invoice,
+        and a line you add is added to it. Amount is quantity × rate and is calculated for you.
+      </p>
+
+      <div class="lines-table" formArrayName="lines">
+        <div class="lines-header">
+          <span>Item type</span>
+          <span>Description</span>
+          <span>Quantity</span>
+          <span>Rate</span>
+          <span>Amount</span>
+          <span></span>
+        </div>
+
+        @for (group of lines.controls; track group) {
+          <div [formGroupName]="$index" class="line-row">
+            <input type="text" formControlName="itemType" placeholder="Rent" />
+            <input type="text" formControlName="description" placeholder="Description" />
+            <input type="number" formControlName="quantity" min="0.01" step="0.01" />
+            <input type="number" formControlName="rate" min="0.01" step="0.01" />
+            <span class="line-amount">{{ lineAmount($index) | currency }}</span>
+            <button
+              type="button"
+              class="remove-line-btn"
+              (click)="removeLine($index)"
+              aria-label="Remove line"
+            >
+              &times;
+            </button>
+          </div>
+          <!--
+            On screen because it is the identity the correction is addressed by: a row keeping its id is
+            revised, a row without one is added. "New line" is not a placeholder here — it is the whole
+            difference between the two.
+          -->
+          <div class="line-id-row">
+            <span class="line-id-label">Line ID</span>
+            <code class="line-id-value">{{ lines.at($index).get('lineId')!.value || 'new line' }}</code>
+          </div>
+        }
+      </div>
+
+      <div class="lines-footer">
+        <button type="button" class="link-btn" (click)="addLine()">+ Add line</button>
+        <span class="lines-total">Total {{ linesTotal | currency }}</span>
+      </div>
+
+      <div class="form-actions">
+        <button
+          type="button"
+          class="primary-btn"
+          (click)="submit()"
+          [disabled]="submitting() || !isCorrectable"
+        >
+          {{ submitting() ? 'Saving…' : 'Save Correction' }}
+        </button>
+      </div>
+    </form>
+
+    @if (submitNotice(); as message) {
+      <div class="banner warn">
+        <p>{{ message }}</p>
+      </div>
+    }
+
+    @if (submitError(); as message) {
+      <div class="banner error">
+        <strong>The correction was not saved.</strong>
+        <p>{{ message }}</p>
+      </div>
+    }
+
+    @if (updatedProposal(); as proposal) {
+      <section class="result-card">
+        <h2>Correction saved</h2>
+        <p class="result-note">
+          The form above has been re-seeded from this result, so another correction starts from what the
+          server now holds.
+        </p>
+        <dl>
+          <dt>Proposal</dt>
+          <dd><code>{{ proposal.id }}</code></dd>
+          <dt>Status</dt>
+          <dd>{{ proposal.status }}</dd>
+          <dt>Due date</dt>
+          <dd>{{ proposal.dueDate }}</dd>
+          <dt>Amount</dt>
+          <dd>{{ proposal.amount | currency }}</dd>
+          <dt>Billing</dt>
+          <dd>{{ proposal.isGroupProposal ? 'One group invoice' : 'Per tenant' }}</dd>
+        </dl>
+
+        <ul class="result-lines">
+          @for (line of proposal.lines; track line.lineId) {
+            <li>
+              <span>{{ line.description }}</span>
+              <span class="muted">{{ line.quantity }} × {{ line.rate | currency }}</span>
+              <span>{{ line.amount | currency }}</span>
+            </li>
+          }
+        </ul>
+
+        @if (proposal.payers.length > 0) {
+          <ul class="result-payers">
+            @for (payer of proposal.payers; track payer.tenantId) {
+              <li>
+                <code>{{ payer.tenantId }}</code>
+                <span>{{ payer.amount | currency }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  }
+</div>

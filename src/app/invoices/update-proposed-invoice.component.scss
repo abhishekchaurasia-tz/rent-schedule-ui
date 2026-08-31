@@ -1,0 +1,381 @@
+.invoice-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  color: #666;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  max-width: 75ch;
+}
+
+/* ---- lookup ---------------------------------------------------------------------------------- */
+
+.lookup-box {
+  max-width: 640px;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+  padding: 1.25rem;
+
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.4rem;
+  }
+}
+
+.lookup-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+
+  input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.9rem;
+
+    &:focus {
+      outline: 2px solid #1a56db;
+      outline-offset: -1px;
+      border-color: #1a56db;
+    }
+  }
+}
+
+.inline-error {
+  margin: 0.65rem 0 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.primary-btn {
+  flex: 0 0 auto;
+  padding: 0.55rem 1.4rem;
+  border: none;
+  border-radius: 3px;
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #1544ab;
+  }
+
+  &:disabled {
+    background: #9aabd4;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #0b2f7a;
+    outline-offset: 2px;
+  }
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.3rem 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* ---- banners --------------------------------------------------------------------------------- */
+
+.banner {
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+
+  p {
+    margin: 0.35rem 0 0;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &.error {
+    background: #fdecea;
+    border-color: #f2b8b5;
+    color: #7f1d1b;
+  }
+
+  &.warn {
+    background: #fff7e6;
+    border-color: #f0d9a8;
+    color: #6b4d09;
+  }
+}
+
+/* ---- the loaded invoice ---------------------------------------------------------------------- */
+
+.summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f2f4f6;
+  border-radius: 4px;
+  font-size: 0.88rem;
+}
+
+.invoice-number {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+}
+
+.summary-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pill {
+  background: #1a56db;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+}
+
+.invoice-facts,
+.result-card dl {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 0.3rem 0.75rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+
+  dt {
+    color: #777;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ---- the correction form --------------------------------------------------------------------- */
+
+.correction-form {
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  background: #fff;
+  padding: 1.25rem;
+}
+
+.due-date-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  label {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  input {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-size: 0.9rem;
+  }
+}
+
+.field-hint,
+.lines-hint {
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.lines-hint {
+  margin: 0 0 0.75rem;
+  max-width: 80ch;
+}
+
+.lines-table {
+  border: 1px solid #eee;
+  border-radius: 3px;
+}
+
+.lines-header,
+.line-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr 6rem 7rem 7rem 2rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+}
+
+.lines-header {
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+.line-row {
+  input {
+    width: 100%;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-size: 0.86rem;
+
+    &.ng-invalid.ng-touched {
+      border-color: #b3261e;
+      background: #fff8f7;
+    }
+  }
+}
+
+.line-amount {
+  font-size: 0.86rem;
+  text-align: right;
+}
+
+.remove-line-btn {
+  border: none;
+  background: none;
+  color: #b3261e;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: #7f1d1b;
+  }
+}
+
+.line-id-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0 0.65rem 0.55rem;
+  border-bottom: 1px solid #f4f4f4;
+}
+
+.line-id-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #999;
+}
+
+.line-id-value {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.72rem;
+  color: #777;
+  overflow-wrap: anywhere;
+}
+
+.lines-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.6rem;
+}
+
+.lines-total {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.form-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* ---- the saved correction -------------------------------------------------------------------- */
+
+.result-card {
+  border: 1px solid #cfe3cf;
+  background: #f6fbf6;
+  border-radius: 4px;
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.result-note {
+  margin: 0 0 0.9rem;
+  font-size: 0.83rem;
+  color: #555;
+  max-width: 80ch;
+}
+
+.result-lines,
+.result-payers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #dfeadf;
+
+  li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    font-size: 0.84rem;
+    border-bottom: 1px solid #e8f1e8;
+  }
+}
+
+.result-payers li {
+  grid-template-columns: 1fr auto;
+}
+
+.muted {
+  color: #888;
+}

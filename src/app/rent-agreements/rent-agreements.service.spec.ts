@@ -7,7 +7,8 @@ import {
   AddAdditionalChargeRequest,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
-  RentAgreementAdditionalChargeResponse
+  RentAgreementAdditionalChargeResponse,
+  UpdateProposedInvoiceRequest
 } from './rent-agreement.models';
 
 describe('RentAgreementsService', () => {
@@ -170,5 +171,30 @@ describe('RentAgreementsService', () => {
     req.flush(expectedResponse, { status: 201, statusText: 'Created' });
 
     expect(actualResponse).toEqual(expectedResponse);
+  });
+
+  it('updateProposedInvoice() PATCHes the agreement-scoped proposal route', () => {
+    const agreementId = '11111111-1111-1111-1111-111111111111';
+    const proposedInvoiceId = '22222222-2222-2222-2222-222222222222';
+    const request: UpdateProposedInvoiceRequest = {
+      dueDate: '2026-09-05',
+      lines: [
+        {
+          lineId: '33333333-3333-3333-3333-333333333333',
+          itemType: 'Rent',
+          description: 'Rent — cycle 1',
+          quantity: 1,
+          rate: 1100
+        }
+      ]
+    };
+
+    service.updateProposedInvoice(agreementId, proposedInvoiceId, request).subscribe();
+
+    const req = httpMock.expectOne(`${baseUrl}/${agreementId}/proposed-invoices/${proposedInvoiceId}`);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(request);
+
+    req.flush({});
   });
 });
