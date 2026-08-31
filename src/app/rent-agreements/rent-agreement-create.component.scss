@@ -561,6 +561,9 @@ table {
   .tenant-name { font-size: 0.85rem; color: #444; word-break: break-all; }
   .tenant-share { margin-left: 0.4rem; color: #777; }
   .tenant-input { width: 100%; max-width: 9rem; }
+  // The same shrink .row-edit-date-field uses: the Material picker is the app's one date control, and a
+  // table cell is the one place it has to be narrower than a form field.
+  .tenant-date-field { width: 140px; &.mat-mdc-form-field { font-size: 0.85rem; } }
   .tenant-cancel-btn { font-size: 0.8rem; }
 }
 

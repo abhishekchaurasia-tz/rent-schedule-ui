@@ -2,8 +2,13 @@ import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { provideNativeDateAdapter } from '@angular/material/core';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { RouterLink } from '@angular/router';
 
+import { toIsoDate } from '../shared/date.util';
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { AdditionalChargePanelComponent } from '../rent-agreements/additional-charge-panel.component';
 import { RentAgreementsService } from '../rent-agreements/rent-agreements.service';
@@ -58,7 +63,16 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
 @Component({
   selector: 'app-invoice-list',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, AdditionalChargePanelComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterLink,
+    MatDatepickerModule,
+    MatFormFieldModule,
+    MatInputModule,
+    AdditionalChargePanelComponent
+  ],
+  providers: [provideNativeDateAdapter()],
   templateUrl: './invoice-list.component.html',
   styleUrl: './invoice-list.component.scss'
 })
@@ -132,8 +146,10 @@ export class InvoiceListComponent {
     this.filters = this.fb.group({
       propertyOwnerId: [''],
       invoiceNumber: [''],
-      dueDateFrom: [''],
-      dueDateTo: [''],
+      // Native `Date`s for the Material datepickers; `toIsoDate` converts them to the wire's
+      // "YYYY-MM-DD" in LOCAL time at query-build time.
+      dueDateFrom: [null as Date | null],
+      dueDateTo: [null as Date | null],
       outstandingOnly: [false],
       includeDeleted: [false],
       pageSize: [50]
@@ -246,8 +262,8 @@ export class InvoiceListComponent {
       page: this.page,
       pageSize: Number(value.pageSize) || 50,
       invoiceNumber: blankToUndefined(value.invoiceNumber),
-      dueDateFrom: blankToUndefined(value.dueDateFrom),
-      dueDateTo: blankToUndefined(value.dueDateTo),
+      dueDateFrom: toIsoDate(value.dueDateFrom) ?? undefined,
+      dueDateTo: toIsoDate(value.dueDateTo) ?? undefined,
       outstandingOnly: !!value.outstandingOnly,
       includeDeleted: !!value.includeDeleted,
       status: [...this.selectedStatuses()]

@@ -4,6 +4,12 @@ import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testin
 import { RentSchedulePreviewComponent } from './rent-schedule-preview.component';
 import { CandidateDateResponse, PreviewRentScheduleResponse } from './rent-schedule.models';
 
+/** A local-time `Date`, matching how `parseIsoDate` builds one for the Material datepickers. */
+function localDate(iso: string): Date {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 describe('RentSchedulePreviewComponent', () => {
   let fixture: ComponentFixture<RentSchedulePreviewComponent>;
   let component: RentSchedulePreviewComponent;
@@ -42,8 +48,8 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       frequency: 'monthly',
       dueOnDay: 1
@@ -70,8 +76,8 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       frequency: 'custom'
     });
@@ -85,7 +91,7 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
+      startDate: localDate('2026-08-01'),
       leaseTermType: 'month_to_month',
       frequency: 'monthly',
       monthToMonthInvoiceCount: 6
@@ -104,27 +110,27 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       frequency: 'monthly',
       dueOnDay: 1,
-      firstRentalDueDate: '2026-09-15'
+      firstRentalDueDate: localDate('2026-09-15')
     });
     tick(300);
 
     const req = httpMock.expectOne(optionsUrl);
     req.flush({ dates: ['2026-08-01', '2026-09-01'] } as CandidateDateResponse);
 
-    expect(component.form.get('firstRentalDueDate')!.value).toBe('');
+    expect(component.form.get('firstRentalDueDate')!.value).toBeNull();
   }));
 
   it('clears candidate dates and stops loading when the options request fails', fakeAsync(() => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       frequency: 'monthly',
       dueOnDay: 1
@@ -151,13 +157,13 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       rent: 100,
       frequency: 'monthly',
       dueOnDay: 1,
-      firstRentalDueDate: '2026-08-01'
+      firstRentalDueDate: localDate('2026-08-01')
     });
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
@@ -182,13 +188,13 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       rent: 100,
       frequency: 'monthly',
       dueOnDay: 1,
-      firstRentalDueDate: '2026-08-01'
+      firstRentalDueDate: localDate('2026-08-01')
     });
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
@@ -209,13 +215,13 @@ describe('RentSchedulePreviewComponent', () => {
     fixture.detectChanges();
 
     component.form.patchValue({
-      startDate: '2026-08-01',
-      endDate: '2027-08-01',
+      startDate: localDate('2026-08-01'),
+      endDate: localDate('2027-08-01'),
       leaseTermType: 'fixed',
       rent: 100,
       frequency: 'monthly',
       dueOnDay: 1,
-      firstRentalDueDate: '2026-08-01'
+      firstRentalDueDate: localDate('2026-08-01')
     });
     tick(300);
     httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);

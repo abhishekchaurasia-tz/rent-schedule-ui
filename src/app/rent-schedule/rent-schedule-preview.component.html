@@ -17,16 +17,20 @@
         </label>
 
         <div class="date-row">
-          <label>
-            Start Date
-            <input type="date" formControlName="startDate" />
-          </label>
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Start Date</mat-label>
+            <input matInput [matDatepicker]="startDatePicker" formControlName="startDate" (click)="startDatePicker.open()" />
+            <mat-datepicker-toggle matIconSuffix [for]="startDatePicker"></mat-datepicker-toggle>
+            <mat-datepicker #startDatePicker></mat-datepicker>
+          </mat-form-field>
 
           @if (leaseTermType === 'fixed') {
-            <label>
-              End Date
-              <input type="date" formControlName="endDate" />
-            </label>
+            <mat-form-field appearance="outline" class="date-field">
+              <mat-label>End Date</mat-label>
+              <input matInput [matDatepicker]="endDatePicker" formControlName="endDate" (click)="endDatePicker.open()" />
+              <mat-datepicker-toggle matIconSuffix [for]="endDatePicker"></mat-datepicker-toggle>
+              <mat-datepicker #endDatePicker></mat-datepicker>
+            </mat-form-field>
           }
         </div>
 
@@ -36,10 +40,12 @@
             <input type="number" formControlName="monthToMonthInvoiceCount" />
           </label>
 
-          <label>
-            Next Lease Start Date (optional)
-            <input type="date" formControlName="nextLeaseStartDate" />
-          </label>
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Next Lease Start Date (optional)</mat-label>
+            <input matInput [matDatepicker]="nextLeasePicker" formControlName="nextLeaseStartDate" (click)="nextLeasePicker.open()" />
+            <mat-datepicker-toggle matIconSuffix [for]="nextLeasePicker"></mat-datepicker-toggle>
+            <mat-datepicker #nextLeasePicker></mat-datepicker>
+          </mat-form-field>
         }
       </div>
     </section>
@@ -132,7 +138,12 @@
             <div formArrayName="dueDates" class="custom-dates">
               @for (control of dueDates.controls; track $index) {
                 <div class="inline-fields">
-                  <input type="date" [formControl]="$any(control)" />
+                  <mat-form-field appearance="outline" class="date-field">
+                    <mat-label>Due Date</mat-label>
+                    <input matInput [matDatepicker]="customDuePicker" [formControl]="$any(control)" (click)="customDuePicker.open()" />
+                    <mat-datepicker-toggle matIconSuffix [for]="customDuePicker"></mat-datepicker-toggle>
+                    <mat-datepicker #customDuePicker></mat-datepicker>
+                  </mat-form-field>
                   <button type="button" (click)="removeDueDate($index)">Remove</button>
                 </div>
               }
@@ -162,7 +173,12 @@
               }
             </select>
           } @else {
-            <input type="date" formControlName="firstRentalDueDate" />
+            <mat-form-field appearance="outline" class="date-field">
+              <mat-label>First Rental Due Date</mat-label>
+              <input matInput [matDatepicker]="firstRentalPicker" formControlName="firstRentalDueDate" (click)="firstRentalPicker.open()" />
+              <mat-datepicker-toggle matIconSuffix [for]="firstRentalPicker"></mat-datepicker-toggle>
+              <mat-datepicker #firstRentalPicker></mat-datepicker>
+            </mat-form-field>
           }
         </label>
         <p class="helper-text">
@@ -176,14 +192,18 @@
       <legend>Manually-Adjusted Rows (Overrides) — optional</legend>
       @for (group of overrides.controls; track $index) {
         <div [formGroupName]="$index" class="override-entry">
-          <label>
-            Scheduled Date
-            <input type="date" formControlName="scheduledDate" />
-          </label>
-          <label>
-            New Due Date
-            <input type="date" formControlName="dueDate" />
-          </label>
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>Scheduled Date</mat-label>
+            <input matInput [matDatepicker]="overrideScheduledPicker" formControlName="scheduledDate" (click)="overrideScheduledPicker.open()" />
+            <mat-datepicker-toggle matIconSuffix [for]="overrideScheduledPicker"></mat-datepicker-toggle>
+            <mat-datepicker #overrideScheduledPicker></mat-datepicker>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="date-field">
+            <mat-label>New Due Date</mat-label>
+            <input matInput [matDatepicker]="overrideDuePicker" formControlName="dueDate" (click)="overrideDuePicker.open()" />
+            <mat-datepicker-toggle matIconSuffix [for]="overrideDuePicker"></mat-datepicker-toggle>
+            <mat-datepicker #overrideDuePicker></mat-datepicker>
+          </mat-form-field>
           <label>
             New Rent
             <input type="number" step="0.01" formControlName="rent" />

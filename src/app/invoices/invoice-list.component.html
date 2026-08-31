@@ -44,15 +44,31 @@
       />
     </label>
 
-    <label class="filter">
-      <span>Due from</span>
-      <input type="date" formControlName="dueDateFrom" (change)="onFilterChanged()" />
-    </label>
+    <mat-form-field appearance="outline" class="date-field">
+      <mat-label>Due from</mat-label>
+      <input
+        matInput
+        [matDatepicker]="dueFromPicker"
+        formControlName="dueDateFrom"
+        (dateChange)="onFilterChanged()"
+        (click)="dueFromPicker.open()"
+      />
+      <mat-datepicker-toggle matIconSuffix [for]="dueFromPicker"></mat-datepicker-toggle>
+      <mat-datepicker #dueFromPicker></mat-datepicker>
+    </mat-form-field>
 
-    <label class="filter">
-      <span>Due to</span>
-      <input type="date" formControlName="dueDateTo" (change)="onFilterChanged()" />
-    </label>
+    <mat-form-field appearance="outline" class="date-field">
+      <mat-label>Due to</mat-label>
+      <input
+        matInput
+        [matDatepicker]="dueToPicker"
+        formControlName="dueDateTo"
+        (dateChange)="onFilterChanged()"
+        (click)="dueToPicker.open()"
+      />
+      <mat-datepicker-toggle matIconSuffix [for]="dueToPicker"></mat-datepicker-toggle>
+      <mat-datepicker #dueToPicker></mat-datepicker>
+    </mat-form-field>
 
     <label class="filter narrow">
       <span>Page size</span>

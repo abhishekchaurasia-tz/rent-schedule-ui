@@ -633,6 +633,22 @@ export class RentAgreementCreateComponent {
     });
   }
 
+  /**
+   * Parses a stored `"YYYY-MM-DD"` into the local `Date` a Material datepicker binds.
+   *
+   * A template-facing wrapper over {@link parseIsoDate}: the per-tenant due dates are kept as ISO
+   * strings in a `Map` — the shape the save sends — while the picker works in `Date`s, so both
+   * conversions live at the one point the two meet.
+   */
+  asDate(iso: string | null | undefined): Date | null {
+    return parseIsoDate(iso);
+  }
+
+  /** Formats a picked `Date` back to the wire's `"YYYY-MM-DD"`, in local time. */
+  asIso(value: Date | null): string | null {
+    return toIsoDate(value);
+  }
+
   /** Records a hand-picked due date for one tenant on one cycle, or drops back to the cycle's own. */
   setTenantDueDate(scheduledDate: string, tenantId: string, dueDate: string | null): void {
     const key = this.tenantKey(scheduledDate, tenantId);

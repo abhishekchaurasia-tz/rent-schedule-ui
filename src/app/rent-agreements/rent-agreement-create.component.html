@@ -516,13 +516,21 @@
                           <td></td>
                         } @else {
                           <td>
-                            <input
-                              type="date"
-                              class="tenant-input"
-                              [value]="tenantDueDates().get(tenantKey(row.scheduledDate, tenant.tenantId)) ?? tenant.dueDate"
-                              (change)="setTenantDueDate(row.scheduledDate, tenant.tenantId, $any($event.target).value)"
-                              [attr.aria-label]="'Due date for this tenant on ' + row.scheduledDate"
-                            />
+                            <mat-form-field appearance="outline" class="tenant-date-field">
+                              <input
+                                matInput
+                                [matDatepicker]="tenantDuePicker"
+                                [value]="asDate(tenantDueDates().get(tenantKey(row.scheduledDate, tenant.tenantId)) ?? tenant.dueDate)"
+                                (dateChange)="setTenantDueDate(row.scheduledDate, tenant.tenantId, asIso($event.value))"
+                                (click)="tenantDuePicker.open()"
+                                [attr.aria-label]="'Due date for this tenant on ' + row.scheduledDate"
+                              />
+                              <mat-datepicker-toggle
+                                matIconSuffix
+                                [for]="tenantDuePicker"
+                              ></mat-datepicker-toggle>
+                              <mat-datepicker #tenantDuePicker></mat-datepicker>
+                            </mat-form-field>
                           </td>
                           <td>
                             <!--

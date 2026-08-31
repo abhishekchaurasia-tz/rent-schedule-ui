@@ -463,3 +463,9 @@ h1 {
 .pager-position {
   color: #666;
 }
+
+// The filter bar's two date pickers. Narrower than the forms' 220px because the bar packs several
+// controls onto one line.
+.date-field {
+  width: 170px;
+}

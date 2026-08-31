@@ -264,3 +264,9 @@ table {
   font-size: 0.9rem;
   margin: 0;
 }
+
+// Every date on this form is picked with the app's Material datepicker, matching the lease form and
+// the fee panel — there is no second calendar anywhere.
+.date-field {
+  width: 220px;
+}
