@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v3 | 2026-08-31 | **Picking a line item seeds the row's description with that item's name, only when it is still empty.** Same rule as the fee panel (spec `02` v3), and it matters more here: nearly every row on this screen is an **existing** invoice line that already carries an authored description, so the guard is what lets an item-type correction be made without rewriting the line a tenant reads on the invoice. New FR 17. | [2026-08-31T2100-line-item-seeds-description](../../plans/rent-agreements/2026-08-31T2100-line-item-seeds-description.md) |
 | v2 | 2026-08-31 | **Two input controls replaced with the ones the rest of the app already uses, on user feedback that v1's form "sahi nahi hai".** (1) **Item type is now the ADD ADDITIONAL FEE panel's catalog picker** — the same "Select Type" button and floating menu, fed by the same `GET /api/v1/line-items`, scoped `DepositOnly` for a deposit invoice and `AllExcludingCredit` otherwise (matching that panel's `depositOnly` mode) — instead of a free-text `itemType` box. Picking sets **both** `lineItemId` and `itemType`, because the endpoint asks them separately: `itemType` is parsed into the `InvoiceItemType` enum and checked against the deposit allowlist, while `lineItemId` names the catalog row and is *required* on every line of a deposit proposal. **The panel's "+ Add Item Type" row is deliberately not carried over**: that panel's endpoint get-or-creates a catalog entry from free text, whereas this one answers `invoice.unrecognized_charge_item_type` for any name outside the enum, so an invented type could only ever be refused. A line with no `lineItemId` — which is what a *rent* line is — labels its button with its stored `itemType` rather than "Select Type", so a perfectly well-typed line does not read as unset. (2) **Due date is now the Material datepicker** the lease form and the fee panel use, so the control holds a native `Date` converted by the existing `toIsoDate`/`parseIsoDate` — never `Date#toISOString`, which shifts to UTC and lands on the previous day west of Greenwich. New FR 14–16. | [2026-08-31T1600-03-update-proposed-invoice-ui](../../plans/rent-agreements/2026-08-31T1600-03-update-proposed-invoice-ui.md) |
 | v1 | 2026-08-31 | **Initial spec: a standalone "Update Invoice" page.** Paste an **invoice** id, the page reads it with `GET /invoices/{id}`, renders its due date and line items as an editable table, and submits the correction to `PATCH /rent/agreements/{rentAgreementId}/proposed-invoices/{proposedInvoiceId}` — the two ids taken from the invoice the GET returned, never typed. A true read-modify-write: each line's `lineId` round-trips, so an untouched line stays the same line, an edited one is revised, a removed one is soft-deleted and a new one is added. Depends on backend `02-invoicing.md` **v36**, which added `proposedInvoiceId` to the invoice read for exactly this. | [2026-08-31T1600-03-update-proposed-invoice-ui](../../plans/rent-agreements/2026-08-31T1600-03-update-proposed-invoice-ui.md) |
 
@@ -85,6 +86,10 @@ proposal come back.
     is not presented as an untyped one.
 16. **v2** — The due date shall be picked with the same Material datepicker the lease form and the fee
     panel use, and converted to the wire's `YYYY-MM-DD` in **local** time.
+17. **v3** — Choosing a catalog item shall copy that item's name into the row's description **only
+    when the description is empty or whitespace**. Most rows here are existing invoice lines with an
+    authored description, so this is what lets an item-type correction leave the tenant-facing text
+    alone.
 
 ## Constraints
 

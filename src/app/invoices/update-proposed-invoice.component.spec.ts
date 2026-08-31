@@ -461,6 +461,42 @@ describe('UpdateProposedInvoiceComponent', () => {
     request.flush(correctedProposal);
   });
 
+  it('seeds an empty description from the picked item name', () => {
+    loadInvoice();
+
+    component.addLine();
+    expect(component.lines.at(2).get('description')!.value).toBe('');
+
+    component.selectLineItem(2, lateFeeCatalogItem);
+
+    expect(component.lines.at(2).get('description')!.value).toBe('Late Fee');
+  });
+
+  it('never overwrites a description that already says something — the tenant reads that line', () => {
+    loadInvoice();
+
+    // Row 0 came back from the server carrying its own description.
+    expect(component.lines.at(0).get('description')!.value).toBe('Rent — cycle 1');
+
+    component.selectLineItem(0, lateFeeCatalogItem);
+
+    expect(component.lines.at(0).get('itemType')!.value)
+      .withContext('the type correction still applies')
+      .toBe('LateFee');
+    expect(component.lines.at(0).get('description')!.value)
+      .withContext('but the authored description survives it')
+      .toBe('Rent — cycle 1');
+  });
+
+  it('treats a whitespace-only description as empty', () => {
+    loadInvoice();
+
+    component.lines.at(0).get('description')!.setValue('   ');
+    component.selectLineItem(0, lateFeeCatalogItem);
+
+    expect(component.lines.at(0).get('description')!.value).toBe('Late Fee');
+  });
+
   it('labels a row by its catalog name, falling back to the item type when it has no catalog id', () => {
     loadInvoice();
 

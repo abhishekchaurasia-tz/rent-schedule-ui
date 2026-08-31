@@ -58,11 +58,11 @@ h1 {
     color: #666;
   }
 
-  input {
-    padding: 0.45rem 0.6rem;
+  // Direct child only: a .filter may instead wrap the .date-input box, whose own <input> draws no
+  // border of its own — the box around it does.
+  > input {
     border: 1px solid #c4c4c4;
     border-radius: 3px;
-    font-size: 0.86rem;
     min-width: 150px;
 
     &:focus {
@@ -72,14 +72,21 @@ h1 {
     }
   }
 
-  &.owner input {
+  &.owner > input {
     min-width: 320px;
     font-family: ui-monospace, Consolas, monospace;
   }
 
-  &.narrow input {
+  &.narrow > input {
     min-width: 90px;
   }
+}
+
+.filter > input,
+.date-input input {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.86rem;
+  font-family: inherit;
 }
 
 .filter-check {
@@ -170,13 +177,6 @@ h1 {
 
 // ---- the "add invoice" first step
 
-.panel-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 100;
-}
-
 .agreement-panel {
   position: fixed;
   top: 0;
@@ -204,15 +204,6 @@ h1 {
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-}
-
-.close-btn {
-  border: none;
-  background: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  color: #666;
-  cursor: pointer;
 }
 
 .agreement-panel-body {
@@ -302,21 +293,6 @@ h1 {
   font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
-}
-
-.link-btn {
-  border: none;
-  background: none;
-  color: #1a56db;
-  font-size: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: none;
-
-  &:hover {
-    text-decoration: underline;
-  }
 }
 
 // ---- table
@@ -464,8 +440,46 @@ h1 {
   color: #666;
 }
 
-// The filter bar's two date pickers. Narrower than the forms' 220px because the bar packs several
-// controls onto one line.
-.date-field {
-  width: 170px;
+// The filter bar's two date pickers.
+//
+// **No `mat-form-field` here, on purpose.** The calendar is still the Material one — `[matDatepicker]`
+// is a directive on the input and needs no form field — but the form field itself is a full-height
+// control with a floating label and a reserved subscript line, and next to this bar's compact inputs
+// it was half again as tall and visibly out of line. Dropping it lets the input be styled exactly like
+// its neighbours while the picker it opens stays identical to every other date control in the app.
+.date-input {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  border: 1px solid #c4c4c4;
+  border-radius: 3px;
+  background: #fff;
+  padding-right: 0.15rem;
+
+  // `readonly`, so the caret never appears and the whole box reads as a button onto the calendar.
+  input {
+    width: 110px;
+    border: none;
+    outline: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  &:focus-within {
+    border-color: #1a56db;
+    box-shadow: 0 0 0 1px #1a56db;
+  }
+
+  // The toggle is a Material icon button; shrink it to the height of the box it now sits inside.
+  .mat-datepicker-toggle .mat-mdc-icon-button.mat-mdc-button-base {
+    width: 28px;
+    height: 28px;
+    padding: 4px;
+    --mdc-icon-button-state-layer-size: 28px;
+
+    svg {
+      width: 17px;
+      height: 17px;
+    }
+  }
 }

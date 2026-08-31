@@ -6,12 +6,7 @@
     sans-serif;
 }
 
-.panel-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 100;
-}
+
 
 .side-panel {
   position: fixed;
@@ -42,19 +37,7 @@
   }
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-  color: #555;
-  padding: 0;
 
-  &:hover {
-    color: #000;
-  }
-}
 
 .panel-body {
   flex: 1;

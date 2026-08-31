@@ -114,3 +114,46 @@ html {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 }
+
+/*
+ * Side-panel chrome and the inline text button.
+ *
+ * Global for the same reason `.banner` is: each of these had been written out identically in two or
+ * three components, and the duplication was what pushed two of them past the 6 kB per-component
+ * budget. A dimmed overlay behind a panel, the × that closes it, and a borderless text button are
+ * app-wide patterns, not any one screen's.
+ */
+.panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+}
+
+.close-btn {
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #666;
+  cursor: pointer;
+
+  &:hover {
+    color: #222;
+  }
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}

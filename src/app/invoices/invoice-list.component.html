@@ -44,31 +44,39 @@
       />
     </label>
 
-    <mat-form-field appearance="outline" class="date-field">
-      <mat-label>Due from</mat-label>
-      <input
-        matInput
-        [matDatepicker]="dueFromPicker"
-        formControlName="dueDateFrom"
-        (dateChange)="onFilterChanged()"
-        (click)="dueFromPicker.open()"
-      />
-      <mat-datepicker-toggle matIconSuffix [for]="dueFromPicker"></mat-datepicker-toggle>
-      <mat-datepicker #dueFromPicker></mat-datepicker>
-    </mat-form-field>
+    <div class="filter">
+      <span>Due from</span>
+      <div class="date-input">
+        <input
+          type="text"
+          [matDatepicker]="dueFromPicker"
+          formControlName="dueDateFrom"
+          (dateChange)="onFilterChanged()"
+          (click)="dueFromPicker.open()"
+          placeholder="Any"
+          readonly
+        />
+        <mat-datepicker-toggle [for]="dueFromPicker"></mat-datepicker-toggle>
+        <mat-datepicker #dueFromPicker></mat-datepicker>
+      </div>
+    </div>
 
-    <mat-form-field appearance="outline" class="date-field">
-      <mat-label>Due to</mat-label>
-      <input
-        matInput
-        [matDatepicker]="dueToPicker"
-        formControlName="dueDateTo"
-        (dateChange)="onFilterChanged()"
-        (click)="dueToPicker.open()"
-      />
-      <mat-datepicker-toggle matIconSuffix [for]="dueToPicker"></mat-datepicker-toggle>
-      <mat-datepicker #dueToPicker></mat-datepicker>
-    </mat-form-field>
+    <div class="filter">
+      <span>Due to</span>
+      <div class="date-input">
+        <input
+          type="text"
+          [matDatepicker]="dueToPicker"
+          formControlName="dueDateTo"
+          (dateChange)="onFilterChanged()"
+          (click)="dueToPicker.open()"
+          placeholder="Any"
+          readonly
+        />
+        <mat-datepicker-toggle [for]="dueToPicker"></mat-datepicker-toggle>
+        <mat-datepicker #dueToPicker></mat-datepicker>
+      </div>
+    </div>
 
     <label class="filter narrow">
       <span>Page size</span>

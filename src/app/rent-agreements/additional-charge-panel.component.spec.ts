@@ -375,6 +375,62 @@ describe('AdditionalChargePanelComponent', () => {
     expect(component.items.at(0).get('newItemType')!.value).toBe('');
   });
 
+  it('seeds an empty description from the picked catalog item name', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    expect(component.items.at(0).get('description')!.value).toBe('');
+
+    component.selectExistingItem(0, parkingItem.id);
+
+    expect(component.items.at(0).get('description')!.value).toBe('Parking');
+  });
+
+  it('seeds an empty description from a typed new item type too', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.startAddingNewItemType();
+    component.newItemTypeDraft.set('Snow Removal');
+    component.confirmNewItemType(0);
+
+    expect(component.items.at(0).get('description')!.value).toBe('Snow Removal');
+  });
+
+  it('never overwrites a description the user already wrote', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem, petFeeItem]);
+
+    component.items.at(0).patchValue({ description: 'Reserved bay, north gate' });
+    component.selectExistingItem(0, parkingItem.id);
+    expect(component.items.at(0).get('description')!.value).toBe('Reserved bay, north gate');
+
+    // Nor when the item is later corrected to a different one — the description is the line the tenant
+    // reads on the invoice, and a type correction must not rewrite it.
+    component.selectExistingItem(0, petFeeItem.id);
+    expect(component.items.at(0).get('lineItemId')!.value).toBe(petFeeItem.id);
+    expect(component.items.at(0).get('description')!.value).toBe('Reserved bay, north gate');
+  });
+
+  it('treats a whitespace-only description as empty', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.items.at(0).patchValue({ description: '   ' });
+    component.selectExistingItem(0, parkingItem.id);
+
+    expect(component.items.at(0).get('description')!.value).toBe('Parking');
+  });
+
+  it('leaves the description alone when the picked id matches no fetched catalog entry', () => {
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.selectExistingItem(0, '99999999-9999-9999-9999-999999999999');
+
+    expect(component.items.at(0).get('description')!.value).toBe('');
+  });
+
   it('emits a charge with lineItemId omitted and itemType set to the typed name for a new item type', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);

@@ -488,12 +488,37 @@ export class AdditionalChargePanelComponent implements OnInit {
       return;
     }
     this.items.at(index).patchValue({ lineItemId: '', newItemType: name });
+    this.defaultDescriptionTo(index, name);
     this.closeItemPicker();
   }
 
   selectExistingItem(index: number, lineItemId: string): void {
     this.items.at(index).patchValue({ lineItemId, newItemType: '' });
+    this.defaultDescriptionTo(index, this.findLineItem(lineItemId)?.name ?? '');
     this.closeItemPicker();
+  }
+
+  /**
+   * Seeds row `index`'s description from the item just picked — but **only when it is still empty**.
+   *
+   * Picking an item is nearly always followed by typing that same word into the description, so filling
+   * it in saves the common keystroke. Filling it in *unconditionally* would be a data loss on the other
+   * path: re-opening a saved charge to correct its item type would silently overwrite whatever the
+   * property owner had actually written there, and the description is the line the tenant reads on the
+   * invoice.
+   *
+   * "Still empty" is the whole rule, and it settles both cases without having to know which one it is
+   * in — a fresh row has nothing to lose, and an edited row that already says something keeps saying it.
+   */
+  private defaultDescriptionTo(index: number, name: string): void {
+    if (!name) {
+      return;
+    }
+
+    const description = this.items.at(index).get('description')!;
+    if (!String(description.value ?? '').trim()) {
+      description.setValue(name);
+    }
   }
 
   recalculateAmount(index: number): void {

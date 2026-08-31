@@ -48,6 +48,9 @@ Per component:
 | 3 | The per-tenant cell's stored shape | Still ISO strings in the `Map`; convert at the template boundary | Store `Date`s in the map | The map's contents are what `saveEdit` sends. Changing its element type to satisfy a widget would push the conversion into the save path, which is the one place a date-format mistake is silent and permanent |
 | 4 | Mixed-type `firstRentalDueDate` | Left as `Date | string`, read through `toIsoDate` | Normalise to one type | The control genuinely holds two shapes — an ISO string when picked from the candidate `<select>`, a `Date` when the free-form picker is shown instead. `toIsoDate` already passes strings through, so no branch is needed; the candidate comparison is done in ISO for the same reason |
 | 5 | `addOneYear` | Rewritten in local `Date`s | Keep the ISO round-trip and convert at the edges | It was already a latent UTC bug: `new Date("2026-08-01T00:00:00")` is local, `toISOString()` is UTC, so the derived end date was a day early west of Greenwich. Converting the signature fixed it rather than preserving it |
+| 6 | **Follow-up** — the filter bar's two pickers | `[matDatepicker]` on a **plain** input in a bordered box, no `mat-form-field` | Keep the form field and compact it with density overrides and `subscriptSizing="dynamic"` | Reported by the user with a screenshot: the fields towered over the bar's other controls. A form field is a full-height control with a floating label and a reserved subscript line, and fighting all three with overrides is a losing battle in a compact bar. `[matDatepicker]` is a directive on the input — the form field is optional — so dropping it keeps the identical calendar while the input is styled exactly like its neighbours |
+| 7 | **Follow-up** — the filter input | `readonly` | Editable, with the picker as an extra affordance | The value is a `Date` the picker owns; letting someone type into it would need a parser and a per-locale format guess for no gain. `readonly` also removes the caret, so the box reads as one button onto the calendar |
+| 8 | **Follow-up** — `.panel-overlay`, `.close-btn`, `.link-btn` | Extracted to `src/styles.scss` | Leave the copies; raise the per-component budget | Each was written out identically in two or three components — the same reason `.banner` moved earlier — and that duplication was what had `invoice-list.component.scss` over the 6 kB budget. Raising the budget would have hidden the cause |
 
 ## Data Model & Schema Changes
 
@@ -68,6 +71,25 @@ time on paths that previously did not.
       `Date`s via a `localDate` helper; the candidate-clear assertion now expects `null`.
 - [x] `grep -rn 'type="date"' src/app --include=*.html` returns nothing.
 - [x] `npx ng test --watch=false --browsers=ChromeHeadless` (224 passing) and `npx ng build` clean.
+
+**Follow-up — the filter bar's two pickers looked wrong (user screenshot):**
+
+- [x] `invoice-list.component.html` — the two date filters drop `mat-form-field`/`matInput` for a plain
+      `readonly` input carrying `[matDatepicker]`, inside the same `.filter` label-above wrapper as the
+      other controls, with the toggle beside it in a `.date-input` box.
+- [x] `invoice-list.component.ts` — `MatFormFieldModule`/`MatInputModule` dropped; only
+      `MatDatepickerModule` is still needed.
+- [x] `invoice-list.component.scss` — `.date-input` styled to match the neighbouring inputs;
+      `.filter > input` scoped to a direct child so it cannot border the input inside that box; the
+      shared text metrics of both shapes merged into one rule.
+- [x] `src/styles.scss` — `.panel-overlay`, `.close-btn` and `.link-btn` extracted from the components
+      that duplicated them; removed from `invoice-list` and `additional-charge-panel`.
+- [x] `rent-agreement-create.component.scss` — the row-edit and per-tenant in-table pickers merged into
+      one rule rather than two identical ones.
+- [x] Budgets: `invoice-list.component.scss` is back under 6 kB and
+      `additional-charge-panel.component.scss`'s pre-existing overage shrank from 394 to 189 bytes.
+      `rent-agreement-create.component.scss` remains over — it was already, and this pass leaves it
+      ~57 bytes worse for the one selector the per-tenant picker needs.
 
 ## Test Plan
 

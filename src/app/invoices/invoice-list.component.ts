@@ -4,8 +4,6 @@ import { Component, computed, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatFormFieldModule } from '@angular/material/form-field';
-import { MatInputModule } from '@angular/material/input';
 import { RouterLink } from '@angular/router';
 
 import { toIsoDate } from '../shared/date.util';
@@ -68,8 +66,6 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
     ReactiveFormsModule,
     RouterLink,
     MatDatepickerModule,
-    MatFormFieldModule,
-    MatInputModule,
     AdditionalChargePanelComponent
   ],
   providers: [provideNativeDateAdapter()],

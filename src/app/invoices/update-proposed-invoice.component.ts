@@ -284,7 +284,19 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * name could only ever be refused.
    */
   selectLineItem(index: number, lineItem: LineItemResponse): void {
-    this.lines.at(index).patchValue({ lineItemId: lineItem.id, itemType: lineItem.itemType });
+    const group = this.lines.at(index);
+    group.patchValue({ lineItemId: lineItem.id, itemType: lineItem.itemType });
+
+    // The picked item's name seeds the description, but **only when it is still empty**. Picking an
+    // item is nearly always followed by typing that same word, so this saves the common keystroke —
+    // while an existing line, which is what most of this screen's rows are, keeps the description the
+    // property owner actually wrote. That is the line the tenant reads on the invoice, and overwriting
+    // it from a type correction would be a silent loss.
+    const description = group.get('description')!;
+    if (lineItem.name && !String(description.value ?? '').trim()) {
+      description.setValue(lineItem.name);
+    }
+
     this.submitNotice.set(null);
     this.closeItemPicker();
   }
