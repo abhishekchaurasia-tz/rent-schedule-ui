@@ -234,4 +234,40 @@ describe('RentSchedulePreviewComponent', () => {
       'Could not reach the API. Is it running and is CORS configured for this origin?'
     );
   }));
+
+  it('offers Semi-Annual for a fixed-term lease', () => {
+    component.form.get('leaseTermType')!.setValue('fixed');
+
+    expect(component.frequencies.map((o) => o.value)).toContain('semesterly');
+  });
+
+  it('drops Semi-Annual once the lease is month-to-month — the backend refuses that pair', () => {
+    component.form.get('leaseTermType')!.setValue('month_to_month');
+
+    expect(component.frequencies.map((o) => o.value)).toEqual([
+      'monthly',
+      'bi_monthly',
+      'weekly',
+      'bi_weekly',
+      'custom'
+    ]);
+  });
+
+  it('falls back to Monthly when the term switches away from under a Semi-Annual selection', () => {
+    component.form.get('frequency')!.setValue('semesterly');
+
+    component.form.get('leaseTermType')!.setValue('month_to_month');
+
+    // Otherwise the form would hold a pair the backend refuses, with the option no longer on screen
+    // to explain the eventual 400.
+    expect(component.form.get('frequency')!.value).toBe('monthly');
+  });
+
+  it('leaves an already-valid frequency alone when the term switches', () => {
+    component.form.get('frequency')!.setValue('weekly');
+
+    component.form.get('leaseTermType')!.setValue('month_to_month');
+
+    expect(component.form.get('frequency')!.value).toBe('weekly');
+  });
 });

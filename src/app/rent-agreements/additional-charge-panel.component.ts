@@ -19,6 +19,11 @@ import { debounceTime } from 'rxjs';
 import { RentScheduleService } from '../rent-schedule/rent-schedule.service';
 import { CandidateDateRequest, FrequencyConfig, LeaseTermType, RentFrequency } from '../rent-schedule/rent-schedule.models';
 import { buildFrequencyConfig, ordinal } from '../rent-schedule/frequency-config.util';
+import {
+  FrequencyOption,
+  frequenciesFor,
+  isFrequencyAllowed
+} from '../rent-schedule/frequency-options.util';
 import { toIsoDate } from '../shared/date.util';
 import { AdditionalChargeCreationRequest } from './rent-agreement.models';
 import { LineItemResponse, LineItemScope } from './line-item.models';
@@ -114,14 +119,25 @@ export class AdditionalChargePanelComponent implements OnInit {
   readonly recurringDueDateCandidates = signal<string[]>([]);
   readonly recurringDueDateCandidatesLoading = signal(false);
 
-  readonly frequencies: { value: RentFrequency; label: string }[] = [
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'bi_monthly', label: 'Bi-Monthly' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'bi_weekly', label: 'Bi-Weekly' },
-    { value: 'semesterly', label: 'Semi-Annual' },
-    { value: 'custom', label: 'Custom' }
-  ];
+  /**
+   * The lease's term type, derived the same way this panel's candidate-date request derives it: a
+   * lease with no end date is month-to-month.
+   */
+  get leaseTermType(): LeaseTermType {
+    return this.leaseEndDate ? 'fixed' : 'month_to_month';
+  }
+
+  /**
+   * The frequencies this panel may offer, narrowed by the lease it is authoring against.
+   *
+   * Semi-Annual disappears on a month-to-month lease. The charge's own cadence is resolved against
+   * that lease's window by the same candidate-date endpoint the lease form uses, and that endpoint
+   * refuses the pair outright — so offering it here would produce a `400` while the user was still
+   * filling the form in, with nothing on screen to explain it. See {@link frequenciesFor}.
+   */
+  get frequencies(): readonly FrequencyOption[] {
+    return frequenciesFor(this.leaseTermType);
+  }
 
   readonly weekdays = [
     { value: 0, label: 'Sunday' },
@@ -224,6 +240,15 @@ export class AdditionalChargePanelComponent implements OnInit {
     if (this.initialCharge) {
       this.applyInitialCharge(this.initialCharge);
     }
+
+    // After any prefill, not before: a saved charge may carry a frequency this lease can no longer
+    // use — a Semi-Annual fee on a lease since reopened as month-to-month — and that value would
+    // otherwise sit in a control whose option list no longer contains it, showing blank and failing on
+    // save with a message about a field the user cannot see.
+    if (!isFrequencyAllowed(this.frequency, this.leaseTermType)) {
+      this.form.get('frequency')!.setValue('monthly');
+    }
+
     this.loadLineItems();
     this.refreshRecurringDueDateCandidates();
   }

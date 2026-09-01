@@ -19,6 +19,7 @@ import {
   RentFrequency
 } from './rent-schedule.models';
 import { buildFrequencyConfig, ordinal } from './frequency-config.util';
+import { FrequencyOption, frequenciesFor, isFrequencyAllowed } from './frequency-options.util';
 
 @Component({
   selector: 'app-rent-schedule-preview',
@@ -29,14 +30,16 @@ import { buildFrequencyConfig, ordinal } from './frequency-config.util';
   styleUrl: './rent-schedule-preview.component.scss'
 })
 export class RentSchedulePreviewComponent {
-  readonly frequencies: { value: RentFrequency; label: string }[] = [
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'bi_monthly', label: 'Bi-Monthly' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'bi_weekly', label: 'Bi-Weekly' },
-    { value: 'semesterly', label: 'Semi-Annual' },
-    { value: 'custom', label: 'Custom' }
-  ];
+  /**
+   * The frequencies this form may offer, narrowed by the lease term.
+   *
+   * Semi-Annual disappears for a month-to-month lease, because the backend refuses that pair — see
+   * {@link frequenciesFor}. A getter rather than a field so it re-reads on every change detection,
+   * which is what makes the option vanish the moment the term type flips.
+   */
+  get frequencies(): readonly FrequencyOption[] {
+    return frequenciesFor(this.leaseTermType);
+  }
 
   readonly leaseTermTypes: { value: LeaseTermType; label: string }[] = [
     { value: 'fixed', label: 'Fixed Term' },
@@ -102,6 +105,18 @@ export class RentSchedulePreviewComponent {
       .subscribe((startDate: Date | null) => {
         if (startDate && this.form.get('leaseTermType')!.value === 'fixed') {
           this.form.get('endDate')!.setValue(RentSchedulePreviewComponent.addOneYear(startDate));
+        }
+      });
+
+    // Switching to month-to-month while Semi-Annual is picked would leave the form holding a pair the
+    // backend refuses, with the option no longer even visible to explain it. Fall back to Monthly —
+    // the default — rather than clearing, so the form stays submittable.
+    this.form
+      .get('leaseTermType')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((leaseTermType: LeaseTermType) => {
+        if (!isFrequencyAllowed(this.frequency, leaseTermType)) {
+          this.form.get('frequency')!.setValue('monthly');
         }
       });
 
