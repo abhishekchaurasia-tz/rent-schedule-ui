@@ -97,8 +97,7 @@
       <p class="lines-hint">
         Every line shown is submitted together — a line you remove here is removed from the invoice,
         and a line you add is added to it. Amount is quantity × rate and is calculated for you. Item
-        type is picked from your catalog: unlike the additional-fee screen, a new type cannot be
-        invented here, because this endpoint only accepts types it already recognises.
+        type is picked from your catalog, and a new one can be added from the picker.
       </p>
 
       <div class="lines-table" formArrayName="lines">
@@ -221,9 +220,8 @@
   }
 
   <!--
-    The same catalog picker the ADD ADDITIONAL FEE panel uses, minus its "+ Add Item Type" row: that
-    panel's endpoint get-or-creates a catalog entry from free text, whereas this one parses `itemType`
-    into a fixed enum and refuses anything else, so an invented name could only ever come back a 422.
+    The same catalog picker the ADD ADDITIONAL FEE panel uses, add form included — both resolve a real
+    catalog entry through `POST /line-items` and then carry its id on the line.
 
     Rendered here, outside the form, because it is `position: fixed` — an ancestor with `overflow` would
     clip it once the line table scrolled.
@@ -232,51 +230,10 @@
     <div class="item-picker-overlay" (click)="closeItemPicker()"></div>
     <div class="item-picker-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
       @if (addingNewItemType()) {
-        <!--
-          A custom item here is a custom NAME filed under an existing classification — which is what
-          the catalog models. This endpoint parses `itemType` into a fixed enum, so unlike the fee
-          panel it cannot take an invented type on the line itself; it takes the catalog id instead.
-        -->
-        <div class="item-picker-new">
-          <label>
-            Name
-            <input
-              type="text"
-              placeholder="e.g. Rooftop parking"
-              [value]="newItemTypeName()"
-              (input)="newItemTypeName.set($any($event.target).value)"
-              (keydown.enter)="createItemType(openItemPickerIndex()!)"
-            />
-          </label>
-
-          <label>
-            Kind of charge
-            <select
-              [value]="newItemTypeClassification()"
-              (change)="newItemTypeClassification.set($any($event.target).value)"
-            >
-              @for (option of itemTypeOptions; track option.value) {
-                <option [value]="option.value">{{ option.label }}</option>
-              }
-            </select>
-          </label>
-
-          @if (newItemTypeError(); as message) {
-            <p class="item-picker-error">{{ message }}</p>
-          }
-
-          <div class="item-picker-new-actions">
-            <button type="button" class="ghost-btn" (click)="cancelAddingNewItemType()">Cancel</button>
-            <button
-              type="button"
-              class="primary-btn"
-              (click)="createItemType(openItemPickerIndex()!)"
-              [disabled]="creatingItemType()"
-            >
-              {{ creatingItemType() ? 'Adding…' : 'Add' }}
-            </button>
-          </div>
-        </div>
+        <app-new-item-type-form
+          [propertyOwnerId]="invoice()?.propertyOwnerId ?? null"
+          (created)="onItemTypeCreated(openItemPickerIndex()!, $event)"
+        />
       } @else {
         @if (canAddItemType) {
           <button type="button" class="item-picker-add-btn" (click)="startAddingNewItemType()">

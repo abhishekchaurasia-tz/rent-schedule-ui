@@ -427,38 +427,57 @@ describe('UpdateProposedInvoiceComponent', () => {
 
     const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
 
-    // Both, because the backend admits HOAFee only when the two are true together — either alone
-    // leaves the list exactly as it was.
     expect(catalogRequest.request.params.get('isFromIncomeList')).toBe('true');
-    expect(catalogRequest.request.params.get('isHOATerm')).toBe('true');
+
+    // And **only** that. `isHOATerm` is a claim about the lease's terms that this screen cannot make,
+    // so it is not sent — whether HOA items come back is then the backend's rule, not a guess made here.
+    expect(catalogRequest.request.params.has('isHOATerm')).toBeFalse();
 
     catalogRequest.flush(lineItems);
   });
 
-  it('creates a custom item type and selects it on the row', () => {
+  it('renders "+ Add Item Type" in the open picker, and the add form once it is pressed', () => {
+    loadInvoice();
+
+    component.toggleItemPicker(0, {
+      currentTarget: { getBoundingClientRect: () => ({ bottom: 100, left: 20 }) }
+    } as unknown as MouseEvent);
+    fixture.detectChanges();
+
+    const addButton: HTMLButtonElement = fixture.nativeElement.querySelector('.item-picker-add-btn');
+    expect(addButton).withContext('the affordance is in the DOM, not just in the component').toBeTruthy();
+    expect(addButton.textContent).toContain('Add Item Type');
+
+    addButton.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-new-item-type-form')).toBeTruthy();
+
+    // The same one-field row the fee panel shows — a name box and Add, nothing more.
+    const nameBox: HTMLInputElement = fixture.nativeElement.querySelector(
+      'app-new-item-type-form .item-picker-new-row input'
+    );
+    expect(nameBox).toBeTruthy();
+    expect(nameBox.getAttribute('placeholder')).toBe('New item type name');
+    expect(fixture.nativeElement.querySelector('app-new-item-type-form select'))
+      .withContext('no classification picker — the fee screen does not ask for one either')
+      .toBeNull();
+  });
+
+  it('adopts the entry the shared add form resolved and selects it on the row', () => {
     loadInvoice();
 
     component.addLine();
-    component.startAddingNewItemType();
-    component.newItemTypeName.set('  Rooftop parking  ');
-    component.newItemTypeClassification.set('Parking');
-    component.createItemType(2);
 
-    const post = httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST');
-    expect(post.request.body.propertyOwnerId).toBe(invoice.propertyOwnerId);
-    expect(post.request.body.name).withContext('trimmed').toBe('Rooftop parking');
-
-    // snake_case: this field binds to a C# enum, so the API's snake_case converter reads it — unlike
-    // the PascalCase itemType the same catalog hands back.
-    expect(post.request.body.itemType).toBe('parking');
-
+    // The POST itself belongs to NewItemTypeFormComponent and is covered by its own spec; what this
+    // page owns is what it does with the entry that comes back.
     const created: LineItemResponse = {
       id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
       name: 'Rooftop parking',
       itemType: 'Parking',
       isDepositType: false
     };
-    post.flush(created);
+    component.onItemTypeCreated(2, created);
     fixture.detectChanges();
 
     expect(component.lineItems()).toContain(created);
@@ -470,64 +489,25 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.openItemPickerIndex()).toBeNull();
   });
 
-  it('sends the created item back in a shape the correction endpoint accepts', () => {
+  it('sends a created item back in a shape the correction endpoint accepts', () => {
     loadInvoice();
 
-    component.startAddingNewItemType();
-    component.newItemTypeName.set('Rooftop parking');
-    component.newItemTypeClassification.set('Parking');
-    component.createItemType(0);
-
-    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush({
+    component.onItemTypeCreated(0, {
       id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
       name: 'Rooftop parking',
       itemType: 'Parking',
       isDepositType: false
-    } as LineItemResponse);
+    });
 
     component.submit();
 
     const patch = httpMock.expectOne(patchUrl);
-    // PascalCase on the way out, which is what `Enum.TryParse(ignoreCase: true)` accepts — the
-    // snake_case form is only for the catalog's own create body.
+    // PascalCase on the way out, which is what  accepts — the
+    // snake_case form is only ever the catalog create body's.
     expect(patch.request.body.lines[0].itemType).toBe('Parking');
     expect(patch.request.body.lines[0].lineItemId).toBe('ffffffff-ffff-ffff-ffff-ffffffffffff');
 
     patch.flush(correctedProposal);
-  });
-
-  it('refuses an unnamed item type without calling the API', () => {
-    loadInvoice();
-
-    component.startAddingNewItemType();
-    component.newItemTypeName.set('   ');
-    component.createItemType(0);
-
-    expect(component.newItemTypeError()).toContain('name');
-    httpMock.expectNone((r) => r.url === lineItemsUrl && r.method === 'POST');
-    expect(component.addingNewItemType()).toBeTrue();
-  });
-
-  it('renders a failed creation and keeps the add form open', () => {
-    loadInvoice();
-
-    component.startAddingNewItemType();
-    component.newItemTypeName.set('Rooftop parking');
-    component.createItemType(0);
-
-    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush(
-      {
-        type: 'about:blank',
-        title: 'Bad Request',
-        status: 400,
-        detail: 'A deposit item type must be system defined.'
-      },
-      { status: 400, statusText: 'Bad Request' }
-    );
-
-    expect(component.newItemTypeError()).toBe('A deposit item type must be system defined.');
-    expect(component.addingNewItemType()).toBeTrue();
-    expect(component.creatingItemType()).toBeFalse();
   });
 
   it('never offers a new item type on a deposit invoice', () => {
@@ -539,22 +519,6 @@ describe('UpdateProposedInvoiceComponent', () => {
     // Guarded in the component too, not only hidden in the template.
     component.startAddingNewItemType();
     expect(component.addingNewItemType()).toBeFalse();
-  });
-
-  it('does not create twice while one request is in flight', () => {
-    loadInvoice();
-
-    component.startAddingNewItemType();
-    component.newItemTypeName.set('Rooftop parking');
-    component.createItemType(0);
-    component.createItemType(0);
-
-    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush({
-      id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
-      name: 'Rooftop parking',
-      itemType: 'Parking',
-      isDepositType: false
-    } as LineItemResponse);
   });
 
   it('asks for deposit-only items when the invoice is a deposit invoice', () => {

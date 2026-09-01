@@ -41,7 +41,13 @@ import { LineItemsService } from './line-items.service';
 @Component({
   selector: 'app-additional-charge-panel',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MatDatepickerModule, MatFormFieldModule, MatInputModule],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatDatepickerModule,
+    MatFormFieldModule,
+    MatInputModule
+  ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './additional-charge-panel.component.html',
   styleUrl: './additional-charge-panel.component.scss'
@@ -507,6 +513,15 @@ export class AdditionalChargePanelComponent implements OnInit {
     this.addingNewItemType.set(true);
   }
 
+  /**
+   * Files the typed name on row `index` as a brand-new item type.
+   *
+   * **Free text is correct here**, unlike on the invoice-correction screen: this panel's endpoint
+   * get-or-creates a catalog entry server-side from `itemType`/`description` whenever `lineItemId` is
+   * absent, so the row needs nothing but the name. The correction endpoint instead parses `itemType`
+   * into a fixed enum, which is why *that* screen has to resolve a catalog entry up front. The two
+   * flows differ because the two endpoints do.
+   */
   confirmNewItemType(index: number): void {
     const name = this.newItemTypeDraft().trim();
     if (!name) {

@@ -109,34 +109,7 @@
 
 
 
-.item-picker-new-row {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.6rem;
 
-  input {
-    flex: 1;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 0.85rem;
-  }
-
-  button {
-    background: #1a56db;
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-
-    &:hover {
-      background: #1544ab;
-    }
-  }
-}
 
 .remove-item-btn {
   background: none;

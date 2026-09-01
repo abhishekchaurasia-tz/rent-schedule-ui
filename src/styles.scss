@@ -276,3 +276,44 @@ html {
   font-size: 0.8rem;
   color: #888;
 }
+
+/*
+ * The picker's "add a new item type" row — one name box and an Add button. Global because two
+ * screens show it: the fee panel inline, and the invoice-correction page through
+ * NewItemTypeFormComponent. Lifted verbatim from the panel so its appearance is unchanged.
+ */
+.item-picker-new-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.6rem;
+
+  input {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  button {
+    background: #1a56db;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      background: #1544ab;
+    }
+  }
+}
+
+.item-picker-error {
+  margin: 0;
+  padding: 0 0.6rem 0.6rem;
+  color: #b3261e;
+  font-size: 0.78rem;
+}

@@ -359,6 +359,8 @@ describe('AdditionalChargePanelComponent', () => {
     component.newItemTypeDraft.set('Snow Removal');
     component.confirmNewItemType(0);
 
+    // Free text with no `lineItemId` is correct for this endpoint: it get-or-creates the catalog entry
+    // server-side from `itemType`/`description` at save time.
     expect(component.items.at(0).get('lineItemId')!.value).toBe('');
     expect(component.items.at(0).get('newItemType')!.value).toBe('Snow Removal');
     expect(component.openItemPickerIndex()).toBeNull();

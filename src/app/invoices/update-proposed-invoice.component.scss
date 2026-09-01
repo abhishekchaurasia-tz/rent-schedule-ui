@@ -350,57 +350,6 @@ h2 {
 
 // The add form. A name plus a classification, because this endpoint takes a catalog id and a known
 // item type — it cannot take an invented type on the line the way the fee panel's endpoint can.
-.item-picker-new {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.75rem 0.85rem;
-
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #666;
-  }
-
-  input,
-  select {
-    padding: 0.4rem 0.5rem;
-    border: 1px solid #c4c4c4;
-    border-radius: 3px;
-    font-size: 0.85rem;
-    font-family: inherit;
-  }
-}
-
-.item-picker-error {
-  margin: 0;
-  color: #b3261e;
-  font-size: 0.78rem;
-}
-
-.item-picker-new-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-
-  .primary-btn,
-  .ghost-btn {
-    padding: 0.35rem 0.85rem;
-    font-size: 0.82rem;
-  }
-
-  .ghost-btn {
-    border: 1px solid #c9d3e0;
-    border-radius: 3px;
-    background: #fff;
-    cursor: pointer;
-  }
-}
 
 // In a table cell, so a size smaller than the shared picker button.
 .line-row .item-picker-btn {

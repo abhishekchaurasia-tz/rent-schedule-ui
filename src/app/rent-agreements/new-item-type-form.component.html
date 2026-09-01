@@ -1,0 +1,20 @@
+<!--
+  One name box and an Add button — the same row the ADD ADDITIONAL FEE panel shows. `.item-picker-new-row`
+  is global, so the two are styled by one rule rather than two that can drift.
+-->
+<div class="item-picker-new-row">
+  <input
+    type="text"
+    placeholder="New item type name"
+    [value]="name()"
+    (input)="name.set($any($event.target).value)"
+    (keydown.enter)="submit()"
+  />
+  <button type="button" (click)="submit()" [disabled]="submitting()">
+    {{ submitting() ? 'Adding…' : 'Add' }}
+  </button>
+</div>
+
+@if (error(); as message) {
+  <p class="item-picker-error">{{ message }}</p>
+}
