@@ -231,24 +231,77 @@
   @if (openItemPickerIndex() !== null && itemPickerPosition(); as pos) {
     <div class="item-picker-overlay" (click)="closeItemPicker()"></div>
     <div class="item-picker-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
-      <div class="item-picker-list">
-        @for (lineItem of lineItems(); track lineItem.id) {
-          <button
-            type="button"
-            class="item-picker-option"
-            (click)="selectLineItem(openItemPickerIndex()!, lineItem)"
-          >
-            <span
-              class="item-picker-checkbox"
-              [class.checked]="lines.at(openItemPickerIndex()!).get('lineItemId')!.value === lineItem.id"
-            ></span>
-            {{ lineItem.name }}
+      @if (addingNewItemType()) {
+        <!--
+          A custom item here is a custom NAME filed under an existing classification — which is what
+          the catalog models. This endpoint parses `itemType` into a fixed enum, so unlike the fee
+          panel it cannot take an invented type on the line itself; it takes the catalog id instead.
+        -->
+        <div class="item-picker-new">
+          <label>
+            Name
+            <input
+              type="text"
+              placeholder="e.g. Rooftop parking"
+              [value]="newItemTypeName()"
+              (input)="newItemTypeName.set($any($event.target).value)"
+              (keydown.enter)="createItemType(openItemPickerIndex()!)"
+            />
+          </label>
+
+          <label>
+            Kind of charge
+            <select
+              [value]="newItemTypeClassification()"
+              (change)="newItemTypeClassification.set($any($event.target).value)"
+            >
+              @for (option of itemTypeOptions; track option.value) {
+                <option [value]="option.value">{{ option.label }}</option>
+              }
+            </select>
+          </label>
+
+          @if (newItemTypeError(); as message) {
+            <p class="item-picker-error">{{ message }}</p>
+          }
+
+          <div class="item-picker-new-actions">
+            <button type="button" class="ghost-btn" (click)="cancelAddingNewItemType()">Cancel</button>
+            <button
+              type="button"
+              class="primary-btn"
+              (click)="createItemType(openItemPickerIndex()!)"
+              [disabled]="creatingItemType()"
+            >
+              {{ creatingItemType() ? 'Adding…' : 'Add' }}
+            </button>
+          </div>
+        </div>
+      } @else {
+        @if (canAddItemType) {
+          <button type="button" class="item-picker-add-btn" (click)="startAddingNewItemType()">
+            + Add Item Type
           </button>
         }
-        @if (lineItems().length === 0) {
-          <p class="item-picker-empty">No catalog items available for this invoice.</p>
-        }
-      </div>
+        <div class="item-picker-list">
+          @for (lineItem of lineItems(); track lineItem.id) {
+            <button
+              type="button"
+              class="item-picker-option"
+              (click)="selectLineItem(openItemPickerIndex()!, lineItem)"
+            >
+              <span
+                class="item-picker-checkbox"
+                [class.checked]="lines.at(openItemPickerIndex()!).get('lineItemId')!.value === lineItem.id"
+              ></span>
+              {{ lineItem.name }}
+            </button>
+          }
+          @if (lineItems().length === 0) {
+            <p class="item-picker-empty">No catalog items available for this invoice.</p>
+          }
+        </div>
+      }
     </div>
   }
 </div>

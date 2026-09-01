@@ -157,3 +157,122 @@ html {
     text-decoration: underline;
   }
 }
+
+/*
+ * The line-item picker: a "Select Type" button, and the floating menu it opens.
+ *
+ * Global because two screens now offer the same control — the ADD ADDITIONAL FEE panel and the invoice
+ * correction page — and an item should look and behave identically wherever it is chosen. Each screen
+ * keeps only what genuinely differs: the fee panel's inline "new item type" row, which its endpoint can
+ * take as free text, and the correction page's name + classification form, which creates a real catalog
+ * entry because its endpoint only accepts a known type.
+ *
+ * The menu is `position: fixed` and rendered as a sibling of the scrolling area it belongs to, not a
+ * child of the row: an ancestor's `overflow` clips a descendant's paint, fixed positioning included,
+ * so a menu nested inside a scrollable panel or table gets cut off.
+ */
+.item-picker-btn {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  width: 100%;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: #333;
+
+  &.placeholder {
+    color: #888;
+  }
+
+  &:hover {
+    border-color: #1a56db;
+  }
+}
+
+.item-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: transparent;
+}
+
+.item-picker-menu {
+  position: fixed;
+  z-index: 111;
+  background: #fff;
+  border: 1px solid #d5dde5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 220px;
+  max-width: 280px;
+  overflow: hidden;
+}
+
+.item-picker-add-btn {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1a56db;
+  cursor: pointer;
+
+  &:hover {
+    background: #eaf2fb;
+  }
+}
+
+.item-picker-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.item-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f2f2f2;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+  color: #333;
+  cursor: pointer;
+
+  &:hover {
+    background: #eaf2fb;
+  }
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.item-picker-checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1px solid #999;
+  border-radius: 3px;
+  display: inline-block;
+
+  &.checked {
+    background: #1a56db;
+    border-color: #1a56db;
+  }
+}
+
+.item-picker-empty {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.8rem;
+  color: #888;
+}

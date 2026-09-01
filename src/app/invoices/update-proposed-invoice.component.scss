@@ -250,94 +250,6 @@ h2 {
 
 /* ---- the catalog item picker, matching the ADD ADDITIONAL FEE panel -------------------------- */
 
-.item-picker-btn {
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #c4c4c4;
-  border-radius: 3px;
-  font-size: 0.86rem;
-  width: 100%;
-  background: #fff;
-  text-align: left;
-  cursor: pointer;
-  color: #333;
-
-  &.placeholder {
-    color: #888;
-  }
-
-  &:hover {
-    border-color: #1a56db;
-  }
-}
-
-.item-picker-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 110;
-  background: transparent;
-}
-
-.item-picker-menu {
-  position: fixed;
-  z-index: 111;
-  background: #fff;
-  border: 1px solid #d5dde5;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  min-width: 220px;
-  max-width: 280px;
-  overflow: hidden;
-}
-
-.item-picker-list {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.item-picker-option {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  width: 100%;
-  background: none;
-  border: none;
-  border-bottom: 1px solid #f2f2f2;
-  text-align: left;
-  padding: 0.6rem 0.85rem;
-  font-size: 0.85rem;
-  color: #333;
-  cursor: pointer;
-
-  &:hover {
-    background: #eaf2fb;
-  }
-
-  &:last-child {
-    border-bottom: none;
-  }
-}
-
-.item-picker-checkbox {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  border: 1px solid #999;
-  border-radius: 3px;
-  display: inline-block;
-
-  &.checked {
-    background: #1a56db;
-    border-color: #1a56db;
-  }
-}
-
-.item-picker-empty {
-  margin: 0;
-  padding: 0.75rem 0.85rem;
-  font-size: 0.8rem;
-  color: #888;
-}
-
 .remove-line-btn {
   border: none;
   background: none;
@@ -432,4 +344,68 @@ h2 {
 
 .muted {
   color: #888;
+}
+
+// The picker's "+ Add Item Type" affordance, matching the fee panel's.
+
+// The add form. A name plus a classification, because this endpoint takes a catalog id and a known
+// item type — it cannot take an invented type on the line the way the fee panel's endpoint can.
+.item-picker-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #666;
+  }
+
+  input,
+  select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+}
+
+.item-picker-error {
+  margin: 0;
+  color: #b3261e;
+  font-size: 0.78rem;
+}
+
+.item-picker-new-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+
+  .primary-btn,
+  .ghost-btn {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.82rem;
+  }
+
+  .ghost-btn {
+    border: 1px solid #c9d3e0;
+    border-radius: 3px;
+    background: #fff;
+    cursor: pointer;
+  }
+}
+
+// In a table cell, so a size smaller than the shared picker button.
+.line-row .item-picker-btn {
+  padding: 0.4rem 0.5rem;
+  border-color: #c4c4c4;
+  border-radius: 3px;
+  font-size: 0.86rem;
 }

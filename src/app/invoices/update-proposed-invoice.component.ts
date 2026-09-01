@@ -9,7 +9,12 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
 import { toIsoDate, parseIsoDate } from '../shared/date.util';
-import { LineItemResponse, LineItemScope } from '../rent-agreements/line-item.models';
+import {
+  ItemTypeOption,
+  LineItemResponse,
+  LineItemScope,
+  PICKABLE_ITEM_TYPES
+} from '../rent-agreements/line-item.models';
 import { LineItemsService } from '../rent-agreements/line-items.service';
 import { RentAgreementsService } from '../rent-agreements/rent-agreements.service';
 import {
@@ -99,6 +104,21 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * menu nested inside a scrollable table gets cut off.
    */
   readonly itemPickerPosition = signal<{ top: number; left: number } | null>(null);
+
+  /** Whether the open picker is showing its "add a new item type" form instead of the catalog list. */
+  readonly addingNewItemType = signal(false);
+
+  /** The name being typed for a new catalog entry. */
+  readonly newItemTypeName = signal('');
+
+  /** The classification the new entry will be filed under. Defaults to the commonest one. */
+  readonly newItemTypeClassification = signal<string>('Maintenance');
+
+  readonly creatingItemType = signal(false);
+  readonly newItemTypeError = signal<string | null>(null);
+
+  /** The classifications a new catalog entry may be filed under. */
+  readonly itemTypeOptions: readonly ItemTypeOption[] = PICKABLE_ITEM_TYPES;
 
   readonly form: FormGroup;
 
@@ -215,13 +235,40 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * the menu says for itself.
    */
   private loadLineItems(invoice: InvoiceDetailResponse): void {
-    const scope: LineItemScope =
-      invoice.category?.toLowerCase() === 'deposit' ? 'DepositOnly' : 'AllExcludingCredit';
+    const scope: LineItemScope = this.isDepositInvoice ? 'DepositOnly' : 'AllExcludingCredit';
 
-    this.lineItemsService.list(invoice.propertyOwnerId, scope).subscribe({
-      next: (items) => this.lineItems.set(items),
-      error: () => this.lineItems.set([])
-    });
+    // The **income-list** payload. `isFromIncomeList` is consulted only under `AllExcludingCredit`,
+    // and it admits `HOAFee` only when `isHOATerm` is true as well — so the pair is what actually
+    // widens the catalog; either alone leaves the list exactly as it was. On a deposit invoice both are
+    // ignored by the backend, which is why they are sent unconditionally rather than branched on.
+    this.lineItemsService
+      .list(invoice.propertyOwnerId, scope, { isFromIncomeList: true, isHOATerm: true })
+      .subscribe({
+        next: (items) => this.lineItems.set(items),
+        error: () => this.lineItems.set([])
+      });
+  }
+
+  /**
+   * Whether this invoice bills a deposit, which decides both the catalog scope and whether a new item
+   * type may be created at all.
+   *
+   * Compared case-insensitively: `category` is a smart enum's `Name` on the backend, so it stays
+   * PascalCase while its enum-valued neighbours arrive snake_case.
+   */
+  get isDepositInvoice(): boolean {
+    return this.invoice()?.category?.toLowerCase() === 'deposit';
+  }
+
+  /**
+   * Whether the picker offers "+ Add Item Type".
+   *
+   * Never on a deposit invoice: a deposit catalog row must be system-defined
+   * (`DepositItemMustBeSystemDefined`), so the affordance could only ever be refused. Same rule the fee
+   * panel applies in its `depositOnly` mode.
+   */
+  get canAddItemType(): boolean {
+    return !!this.invoice() && !this.isDepositInvoice;
   }
 
   /** Looks up a fetched catalog entry by id. */
@@ -268,6 +315,91 @@ export class UpdateProposedInvoiceComponent implements OnInit {
   closeItemPicker(): void {
     this.openItemPickerIndex.set(null);
     this.itemPickerPosition.set(null);
+    this.addingNewItemType.set(false);
+    this.newItemTypeName.set('');
+    this.newItemTypeError.set(null);
+  }
+
+  /** Switches the open picker to its "add a new item type" form. */
+  startAddingNewItemType(): void {
+    if (!this.canAddItemType) {
+      return;
+    }
+    this.newItemTypeName.set('');
+    this.newItemTypeError.set(null);
+    this.addingNewItemType.set(true);
+  }
+
+  /** Abandons the add form and returns to the catalog list, keeping the picker open. */
+  cancelAddingNewItemType(): void {
+    this.addingNewItemType.set(false);
+    this.newItemTypeName.set('');
+    this.newItemTypeError.set(null);
+  }
+
+  /**
+   * Creates the typed catalog entry and selects it on row `index`.
+   *
+   * **This is a real catalog entry, not free text on the line.** The fee panel can send an invented
+   * `itemType` because *its* endpoint get-or-creates a catalog row from whatever it is given; this
+   * endpoint instead parses `itemType` into the fixed `InvoiceItemType` enum and refuses anything else
+   * (`invoice.unrecognized_charge_item_type`). So a custom item here is a custom **name** filed under
+   * an existing classification — which is exactly what the catalog models — and the line then carries
+   * the resulting `lineItemId` plus that classification, both of which the endpoint accepts.
+   *
+   * `POST /line-items` is get-or-create, so typing a name that already exists selects the existing
+   * entry rather than failing — which makes this safe to press twice.
+   */
+  createItemType(index: number): void {
+    const invoice = this.invoice();
+    const name = this.newItemTypeName().trim();
+
+    if (!invoice || this.creatingItemType()) {
+      return;
+    }
+
+    if (!name) {
+      this.newItemTypeError.set('Give the new item type a name.');
+      return;
+    }
+
+    const classification = this.itemTypeOptions.find(
+      (option) => option.value === this.newItemTypeClassification()
+    );
+
+    if (!classification) {
+      this.newItemTypeError.set('Pick what kind of charge this is.');
+      return;
+    }
+
+    this.newItemTypeError.set(null);
+    this.creatingItemType.set(true);
+
+    this.lineItemsService
+      .create({
+        propertyOwnerId: invoice.propertyOwnerId,
+        name,
+        // The snake_case form: this field binds to a C# enum, so the API's snake_case converter reads
+        // it — unlike the PascalCase `itemType` the same catalog returns on the way back.
+        itemType: classification.wire
+      })
+      .subscribe({
+        next: (created) => {
+          this.creatingItemType.set(false);
+
+          // Into the local catalog first, so the row's label resolves by id like any other pick and the
+          // entry is available to the invoice's other lines without a refetch.
+          this.lineItems.update((items) =>
+            items.some((item) => item.id === created.id) ? items : [...items, created]
+          );
+
+          this.selectLineItem(index, created);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.creatingItemType.set(false);
+          this.newItemTypeError.set(UpdateProposedInvoiceComponent.describeError(err));
+        }
+      });
   }
 
   /**

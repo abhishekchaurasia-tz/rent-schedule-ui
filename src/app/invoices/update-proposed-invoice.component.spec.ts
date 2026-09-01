@@ -420,6 +420,143 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.lineItems().length).toBe(2);
   });
 
+  it('binds the catalog from the income-list payload', () => {
+    component.invoiceIdInput.setValue(invoiceId);
+    component.load();
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush(invoice);
+
+    const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
+
+    // Both, because the backend admits HOAFee only when the two are true together — either alone
+    // leaves the list exactly as it was.
+    expect(catalogRequest.request.params.get('isFromIncomeList')).toBe('true');
+    expect(catalogRequest.request.params.get('isHOATerm')).toBe('true');
+
+    catalogRequest.flush(lineItems);
+  });
+
+  it('creates a custom item type and selects it on the row', () => {
+    loadInvoice();
+
+    component.addLine();
+    component.startAddingNewItemType();
+    component.newItemTypeName.set('  Rooftop parking  ');
+    component.newItemTypeClassification.set('Parking');
+    component.createItemType(2);
+
+    const post = httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST');
+    expect(post.request.body.propertyOwnerId).toBe(invoice.propertyOwnerId);
+    expect(post.request.body.name).withContext('trimmed').toBe('Rooftop parking');
+
+    // snake_case: this field binds to a C# enum, so the API's snake_case converter reads it — unlike
+    // the PascalCase itemType the same catalog hands back.
+    expect(post.request.body.itemType).toBe('parking');
+
+    const created: LineItemResponse = {
+      id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+      name: 'Rooftop parking',
+      itemType: 'Parking',
+      isDepositType: false
+    };
+    post.flush(created);
+    fixture.detectChanges();
+
+    expect(component.lineItems()).toContain(created);
+    expect(component.lines.at(2).get('lineItemId')!.value).toBe(created.id);
+    expect(component.lines.at(2).get('itemType')!.value).toBe('Parking');
+    expect(component.lines.at(2).get('description')!.value)
+      .withContext('the new name seeds the empty description, as any pick does')
+      .toBe('Rooftop parking');
+    expect(component.openItemPickerIndex()).toBeNull();
+  });
+
+  it('sends the created item back in a shape the correction endpoint accepts', () => {
+    loadInvoice();
+
+    component.startAddingNewItemType();
+    component.newItemTypeName.set('Rooftop parking');
+    component.newItemTypeClassification.set('Parking');
+    component.createItemType(0);
+
+    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush({
+      id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+      name: 'Rooftop parking',
+      itemType: 'Parking',
+      isDepositType: false
+    } as LineItemResponse);
+
+    component.submit();
+
+    const patch = httpMock.expectOne(patchUrl);
+    // PascalCase on the way out, which is what `Enum.TryParse(ignoreCase: true)` accepts — the
+    // snake_case form is only for the catalog's own create body.
+    expect(patch.request.body.lines[0].itemType).toBe('Parking');
+    expect(patch.request.body.lines[0].lineItemId).toBe('ffffffff-ffff-ffff-ffff-ffffffffffff');
+
+    patch.flush(correctedProposal);
+  });
+
+  it('refuses an unnamed item type without calling the API', () => {
+    loadInvoice();
+
+    component.startAddingNewItemType();
+    component.newItemTypeName.set('   ');
+    component.createItemType(0);
+
+    expect(component.newItemTypeError()).toContain('name');
+    httpMock.expectNone((r) => r.url === lineItemsUrl && r.method === 'POST');
+    expect(component.addingNewItemType()).toBeTrue();
+  });
+
+  it('renders a failed creation and keeps the add form open', () => {
+    loadInvoice();
+
+    component.startAddingNewItemType();
+    component.newItemTypeName.set('Rooftop parking');
+    component.createItemType(0);
+
+    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush(
+      {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'A deposit item type must be system defined.'
+      },
+      { status: 400, statusText: 'Bad Request' }
+    );
+
+    expect(component.newItemTypeError()).toBe('A deposit item type must be system defined.');
+    expect(component.addingNewItemType()).toBeTrue();
+    expect(component.creatingItemType()).toBeFalse();
+  });
+
+  it('never offers a new item type on a deposit invoice', () => {
+    loadInvoice({ ...invoice, category: 'Deposit' }, []);
+
+    expect(component.isDepositInvoice).toBeTrue();
+    expect(component.canAddItemType).toBeFalse();
+
+    // Guarded in the component too, not only hidden in the template.
+    component.startAddingNewItemType();
+    expect(component.addingNewItemType()).toBeFalse();
+  });
+
+  it('does not create twice while one request is in flight', () => {
+    loadInvoice();
+
+    component.startAddingNewItemType();
+    component.newItemTypeName.set('Rooftop parking');
+    component.createItemType(0);
+    component.createItemType(0);
+
+    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush({
+      id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+      name: 'Rooftop parking',
+      itemType: 'Parking',
+      isDepositType: false
+    } as LineItemResponse);
+  });
+
   it('asks for deposit-only items when the invoice is a deposit invoice', () => {
     component.invoiceIdInput.setValue(invoiceId);
     component.load();

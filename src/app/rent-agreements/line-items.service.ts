@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { LineItemResponse, LineItemScope } from './line-item.models';
+import { CreateLineItemRequest, LineItemResponse, LineItemScope } from './line-item.models';
 
 /**
  * Options for {@link LineItemsService.list}, consulted only when `scope` is `'AllExcludingCredit'`
@@ -38,5 +38,20 @@ export class LineItemsService {
     }
 
     return this.http.get<LineItemResponse[]>(this.baseUrl, { params });
+  }
+
+  /**
+   * Resolves a catalog entry by name, creating one scoped to `propertyOwnerId` when no visible entry
+   * already carries that name.
+   *
+   * **Get-or-create, not create** — the backend is idempotent by design, so typing a name that already
+   * exists returns that entry rather than failing or duplicating it. That is what makes it safe to call
+   * straight from a picker without searching first.
+   *
+   * Answers `200` with the resolved item either way; `400` on business validation — a deposit-shaped
+   * `itemType`, which may only ever be system-defined, is the one a picker can realistically provoke.
+   */
+  create(request: CreateLineItemRequest): Observable<LineItemResponse> {
+    return this.http.post<LineItemResponse>(this.baseUrl, request);
   }
 }
