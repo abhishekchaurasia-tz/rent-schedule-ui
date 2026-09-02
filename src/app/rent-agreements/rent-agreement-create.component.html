@@ -29,9 +29,16 @@
       />
 
       @if (loadedAgreement(); as agreement) {
+        <!--
+          The two dates ride the same path as `status` (v2 FR 13 – FR 15): `onActivated` reloads the
+          agreement after any lifecycle call, and this re-passes all three from the one server read —
+          so the panel cannot disagree with the chip beside it.
+        -->
         <app-rent-agreement-lifecycle
           [agreementId]="agreementId()!"
           [status]="agreement.status"
+          [terminationEffectiveDate]="agreement.terminationEffectiveDate ?? null"
+          [archivedOn]="agreement.archivedOn ?? null"
           (changed)="onActivated()"
         />
       }

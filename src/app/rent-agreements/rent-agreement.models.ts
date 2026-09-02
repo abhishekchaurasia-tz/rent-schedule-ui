@@ -295,6 +295,20 @@ export interface RentAgreementDetailResponse {
   isFirstRentalDueDateEditable: boolean;
   /** `draft` before activation, then the lease's rental status. */
   status: string;
+  /**
+   * The day the lease ends early, or `null` when no termination is recorded (backend v76 FR-113).
+   *
+   * Optional as well as nullable, so a response from a backend older than FR-113 still type-checks —
+   * the same reason `RentAgreementLifecycleComponent` takes it as an optional input.
+   */
+  terminationEffectiveDate?: string | null;
+  /**
+   * When the lease was archived, or `null` when it has not been (backend v76 FR-113).
+   *
+   * Not an alternative to `terminationEffectiveDate`: a lease can carry both, and `status` then
+   * reports only `Archived` because the backend's FR-105 precedence is a labelling rule.
+   */
+  archivedOn?: string | null;
   /** The server's current UTC date — used to derive "overdue" without trusting the client's clock. */
   todayUtc: string;
   scheduleRows: RentAgreementScheduleRowResponse[];

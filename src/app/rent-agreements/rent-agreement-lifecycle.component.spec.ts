@@ -132,6 +132,98 @@ describe('RentAgreementLifecycleComponent', () => {
     expect(component.canArchive()).toBeTrue();
   });
 
+  // ---------- v2, FR 13 – FR 15: the recorded dates ----------
+
+  /**
+   * Sets the status and the two v2 date inputs together, so a test reads as the state the host would
+   * actually pass.
+   */
+  const withDates = (
+    status: string,
+    terminationEffectiveDate: string | null,
+    archivedOn: string | null
+  ): void => {
+    at(status);
+    fixture.componentRef.setInput('terminationEffectiveDate', terminationEffectiveDate);
+    fixture.componentRef.setInput('archivedOn', archivedOn);
+    fixture.detectChanges();
+  };
+
+  /** The rendered panel's text, or `''` when it is absent. */
+  const panelText = (): string =>
+    fixture.nativeElement.querySelector('.lifecycle-dates')?.textContent?.trim() ?? '';
+
+  it('shows the effective date when a termination is recorded', () => {
+    withDates('Terminating', '2026-09-30', null);
+
+    expect(component.hasEndDate()).toBeTrue();
+    expect(panelText()).toContain('Sep 30, 2026');
+  });
+
+  it('keeps the v1 note beside the date, because the two say different things', () => {
+    // The date answers "when does this end". The note answers "why is there no Terminate button".
+    // Replacing one with the other would drop half the message.
+    withDates('Terminating', '2026-09-30', null);
+
+    expect(component.isEnding()).toBeTrue();
+    expect(fixture.nativeElement.textContent).toContain('only archived');
+    expect(panelText()).toContain('Sep 30, 2026');
+  });
+
+  it('shows the archival date on an archived lease', () => {
+    withDates('Archived', null, '2026-09-02T11:14:59+00:00');
+
+    expect(component.hasArchivedDate()).toBeTrue();
+    expect(component.hasEndDate()).toBeFalse();
+    expect(panelText()).toContain('Sep 2, 2026');
+  });
+
+  it('shows both dates when the lease is archived and terminated', () => {
+    // FR 14. `status` reports only `Archived` — FR-105's precedence is a labelling rule — but the
+    // tenancy ended on the termination date and that is the fact a person needs. Rendering one and
+    // hiding the other would be this component re-deriving a backend reporting rule it has no
+    // business owning.
+    withDates('Archived', '2026-09-30', '2026-10-05T09:00:00+00:00');
+
+    expect(component.hasEndDate()).toBeTrue();
+    expect(component.hasArchivedDate()).toBeTrue();
+
+    const text = panelText();
+    expect(text).toContain('Sep 30, 2026');
+    expect(text).toContain('Oct 5, 2026');
+  });
+
+  it('falls back to the v1 note when the date is absent, with no empty row', () => {
+    // FR 15's fallback: a backend older than FR-113 sends neither field, and the component must read
+    // as it did in v1 rather than rendering a label with nothing after it.
+    withDates('Terminating', null, null);
+
+    expect(component.hasEndDate()).toBeFalse();
+    expect(panelText()).toBe('');
+    expect(fixture.nativeElement.textContent).toContain('only archived');
+  });
+
+  it('renders no date panel on a live lease', () => {
+    withDates('Active', null, null);
+
+    expect(panelText()).toBe('');
+  });
+
+  it('shows the date when the host re-passes it after a reload', () => {
+    // The shape that would have caught v1's caching defect, applied to the new inputs: every test
+    // above sets them once, and the requirement is specifically that the date survives a reload —
+    // which is the host re-passing, not an initial render.
+    withDates('Active', null, null);
+    expect(component.hasEndDate()).toBeFalse();
+
+    fixture.componentRef.setInput('status', 'Terminating');
+    fixture.componentRef.setInput('terminationEffectiveDate', '2026-09-30');
+    fixture.detectChanges();
+
+    expect(component.hasEndDate()).toBeTrue();
+    expect(panelText()).toContain('Sep 30, 2026');
+  });
+
   // ---------- FR 6, FR 8: terminating ----------
 
   it('posts the picked effective date and reports the outcome from the response', () => {

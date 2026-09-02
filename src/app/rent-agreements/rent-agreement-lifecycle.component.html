@@ -11,6 +11,42 @@
       showing a second one produced a literal duplicate — two "ARCHIVED" chips on the same row. This
       component says what the state *means* for the actions; the chip says what the state *is*.
     -->
+    <!--
+      v2, FR 13 – FR 15: the recorded dates, and surviving a reload is the whole requirement. Before
+      v2 the date reached the user only on the termination response, so it showed once in the success
+      banner below and was gone on the next page load — leaving the "only archived" note to carry the
+      message on its own.
+
+      Placed OUTSIDE the archived/else split on purpose. An archived lease takes the first branch, so
+      a panel inside the `@else` would never render for one — and FR 14 is specifically that an
+      archived lease still shows when the tenancy ended.
+
+      Rendered on the presence of each date rather than on `status`, which is what makes the
+      both-dates case need no branch: `status` reporting only `Archived` is the backend's labelling
+      rule (FR-105), not a statement that the termination date stopped mattering.
+
+      A quiet definition list, not a banner. A banner in this component means "something just
+      happened"; this is standing state.
+    -->
+    @if (hasLifecycleDates()) {
+      <dl class="lifecycle-dates">
+        @if (hasEndDate()) {
+          <dt>Ends</dt>
+          <dd>{{ terminationEffectiveDate() | date: 'mediumDate' }}</dd>
+        }
+        @if (hasArchivedDate()) {
+          <!--
+            "Archived on", not "Archived", and this was found by looking at it. The status chip beside
+            this row already reads ARCHIVED, so a bare label repeated the word and the row read as an
+            echo rather than as two facts. The chip says the state; this says the date, and a date
+            label should sound like one.
+          -->
+          <dt>Archived on</dt>
+          <dd>{{ archivedOn() | date: 'mediumDate' }}</dd>
+        }
+      </dl>
+    }
+
     @if (isArchived()) {
       <p class="note">This lease is closed for editing and billing. Archiving cannot be undone.</p>
     } @else {

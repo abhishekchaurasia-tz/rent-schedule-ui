@@ -50,6 +50,37 @@
   font-size: 0.8rem;
 }
 
+// v2, FR 13 – FR 15. Standing state, so it reads as a quiet label/value pair rather than a banner —
+// every banner in this component means "something just happened", and this outlives that.
+//
+// A two-column grid rather than flex, so a second row — an archived lease that was also terminated —
+// aligns its value under the first instead of wrapping ragged.
+.lifecycle-dates {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  margin: 0 0 0.5rem;
+
+  dt {
+    color: #6b7280;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  dd {
+    margin: 0;
+    color: #111827;
+    font-size: 0.85rem;
+    font-weight: 600;
+
+    // Digits in a column, so the two dates line up when both are shown.
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 .confirm {
   display: flex;
   flex-direction: column;

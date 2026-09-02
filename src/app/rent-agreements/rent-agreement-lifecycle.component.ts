@@ -67,6 +67,30 @@ export class RentAgreementLifecycleComponent {
   readonly status = input.required<string>();
 
   /**
+   * The day the lease ends early, or `null` when no termination is recorded (spec v2 FR 13; backend
+   * FR-113).
+   *
+   * **Optional, and that is deliberate.** FR 15 requires this component to stay correct against a
+   * backend that predates FR-113, which sends neither date. `input.required` would make it
+   * un-renderable against one, turning a missing line of text into a runtime error in the host
+   * template.
+   *
+   * Until v2 this value reached the user only on the *termination response*, so it showed once in the
+   * success banner and was gone on the next page load — leaving the "only archived" note to carry the
+   * whole message. That is the **what** without the **when**, on the screen whose subject is the when.
+   */
+  readonly terminationEffectiveDate = input<string | null>(null);
+
+  /**
+   * When the lease was archived, or `null` when it has not been (spec v2 FR 14; backend FR-113).
+   *
+   * Rendered as a date only. It is a `timestamptz` on the server, but the minute the record was
+   * written is audit detail — a lease screen answers "when did this end", not "when was the row
+   * saved".
+   */
+  readonly archivedOn = input<string | null>(null);
+
+  /**
    * Raised after any successful call — **including a repeat** — so the host re-reads the lease. The
    * status chip, the offered actions and the schedule then all come from one server read and cannot
    * disagree with each other.
@@ -116,6 +140,28 @@ export class RentAgreementLifecycleComponent {
    * action left. Worth naming, because a row that has silently lost a button needs to say why.
    */
   readonly isEnding = computed(() => ['Terminating', 'Terminated'].includes(this.status()));
+
+  /**
+   * `true` when there is a termination date to show (spec v2 FR 13).
+   *
+   * **Driven by the date's presence, not by `status`**, and that is what makes FR 14 fall out for
+   * free: an archived-and-terminated lease has both dates, so both render, without this component
+   * re-deriving the backend's FR-105 precedence — which decides only which single word `status`
+   * reports and is not this component's rule to own.
+   *
+   * It is also FR 15's fallback: absent means "render v1's wording", never "render a label with
+   * nothing after it".
+   */
+  readonly hasEndDate = computed(() => !!this.terminationEffectiveDate());
+
+  /** `true` when there is an archival date to show (spec v2 FR 14). */
+  readonly hasArchivedDate = computed(() => !!this.archivedOn());
+
+  /**
+   * `true` when either date is known, and therefore whether the panel renders at all.
+   * A live lease has neither and gets no panel.
+   */
+  readonly hasLifecycleDates = computed(() => this.hasEndDate() || this.hasArchivedDate());
 
   constructor(private readonly rentAgreementsService: RentAgreementsService) {}
 

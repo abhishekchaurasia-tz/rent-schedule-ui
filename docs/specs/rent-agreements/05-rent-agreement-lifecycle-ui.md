@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v2 | 2026-09-02 | **The recorded end date is finally shown — v1's own table promised it and the backend could not supply it.** *Enabled by backend `01-rent-agreement.md` v76 FR-113, which added `terminationEffectiveDate` and `archivedOn` to the detail response.* v1's "What each status offers" table already said a `Terminating` or `Terminated` lease should show *"the recorded end date"*, and the component could not: the date existed only on the **termination response**, so a user saw it once in the success banner and lost it on the next page load. What survived a reload was a note saying a termination *"is already recorded"* — the **what** with no **when**, on the one screen where the when is the whole point. Requirements 13–15 add a persistent panel: the effective date for a termination, the archival date for an archive, and **both when both are recorded**, since FR-105's precedence is a reporting rule and an agreement can carry the two facts at once. **The date is rendered from the detail response and never computed** — the same rule requirement 8 already states for cycle counts, and for the same reason: a client-side "days remaining" would look authoritative and drift from the property's clock, which is the server's to keep. **Absent dates degrade to v1's wording** rather than rendering an empty row, so the component stays correct against a backend that predates FR-113. | [rent-agreement-lifecycle-dates-ui](../../plans/rent-agreements/2026-09-02T2000-05-rent-agreement-lifecycle-dates-ui.md) |
 | v1 | 2026-09-02 | **Initial spec: ending a lease early and withdrawing it, from the Edit Lease screen.** A new `RentAgreementLifecycleComponent` offers **Terminate** (with an effective date) and **Archive**, calling the backend's `POST …/{id}/terminate` and `POST …/{id}/archive` (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107). It sits beside the existing `ActivateLeaseComponent` and **gates on the lease's reported `status`** — which is only now possible: until backend v73 that field answered `InProcess` for every lease however long it had been active, so no screen could trust it. Archive is presented as irreversible, because it is: the backend exposes no un-archive (FR-107). | [2026-09-02T1800-05-rent-agreement-lifecycle-ui](../../plans/rent-agreements/2026-09-02T1800-05-rent-agreement-lifecycle-ui.md) |
 
 ## Overview
@@ -72,6 +73,25 @@ user discover it afterwards.
     backend's fence rejects only a version *below* what is stored — so a constant 1 passes after an
     activation that also sent 1.
 
+### Showing when the lease ends (v2)
+
+13. The system shall show the **recorded effective date** whenever a termination is on the lease, and
+    shall keep showing it across page loads. Until v2 the date reached the user only on the
+    termination response, so it appeared once in the success banner and was gone on the next load —
+    leaving the note "a termination is already recorded" to carry the whole message. That is the
+    *what* without the *when*, on the screen whose entire subject is the when.
+14. The system shall show the **archival date** when the lease is archived, and shall show **both**
+    dates when both facts are recorded. They are not alternatives: the backend's FR-105 precedence
+    decides only which single word `status` reports, so an archived lease that was also terminated
+    reports `Archived` and still carries its termination date. A person being told a lease is closed
+    is owed the date the tenancy actually ended as well as the date the record was withdrawn.
+15. The system shall render both dates **from the detail response**, never computing or deriving
+    them, and shall fall back to v1's wording when a date is absent rather than rendering an empty
+    row. The no-computation rule is requirement 8's, for the same reason: a client-side "12 days
+    remaining" would read as authoritative while drifting from the property's clock, which only the
+    server keeps. The fallback is what lets this component stay correct against a backend older than
+    FR-113.
+
 ## Constraints
 
 - **No new dependency.** Angular signals, `HttpClient` and the existing `RentAgreementsService`, as
@@ -140,6 +160,11 @@ export interface ArchiveRentAgreementResponse {
 ```ts
 @Input({ required: true }) agreementId!: string;
 @Input({ required: true }) status!: string;
+
+// v2, FR-113 — optional, so the component stays correct against a backend without them.
+@Input() terminationEffectiveDate: string | null = null;
+@Input() archivedOn: string | null = null;
+
 @Output() readonly changed = new EventEmitter<void>();
 ```
 
@@ -152,9 +177,9 @@ passes it and re-passes it after reloading, so the offered actions follow the le
 |---|---|---|---|
 | `InProcess` | — | — | "Activate this lease before ending it." |
 | `Future`, `Active`, `Expiring` | ✅ | ✅ | — |
-| `Terminating`, `Terminated` | — | ✅ | The recorded end date |
+| `Terminating`, `Terminated` | — | ✅ | **v2** — the recorded effective date (requirement 13) |
 | `Expired` | — | ✅ | — |
-| `Archived` | — | — | "Archived. This lease is closed." |
+| `Archived` | — | — | "Archived. This lease is closed." plus **v2** the archival date, and the termination date too when both are recorded (requirement 14) |
 
 ### Class Diagram
 
