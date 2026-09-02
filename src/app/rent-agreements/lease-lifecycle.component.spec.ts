@@ -38,10 +38,16 @@ describe('LeaseLifecycleComponent', () => {
     ...overrides
   });
 
-  /** Builds the component at a given lease status — the input every gating decision reads. */
+  /**
+   * Builds the component at a given lease status — the input every gating decision reads.
+   *
+   * `setInput`, not assignment: both inputs are signal inputs, which is what makes the `computed`
+   * gating actually react when the host re-passes a new status. See
+   * `reacts when the host re-passes a new status` below for the bug that forced this.
+   */
   const at = (status: string): void => {
-    component.agreementId = agreementId;
-    component.status = status;
+    fixture.componentRef.setInput('agreementId', agreementId);
+    fixture.componentRef.setInput('status', status);
     fixture.detectChanges();
   };
 
@@ -105,6 +111,25 @@ describe('LeaseLifecycleComponent', () => {
     expect(component.canTerminate()).toBeFalse();
     expect(component.canArchive()).toBeFalse();
     expect(component.isArchived()).toBeTrue();
+  });
+
+  it('reacts when the host re-passes a new status', () => {
+    // THE BUG THIS PINS. `status` was a plain @Input first, and the gating computeds read it — but a
+    // `computed` tracks signals, so handed a plain field it evaluated once and cached forever. The
+    // gating was right on the first render and never updated again: after terminating, the host
+    // reloaded, re-passed `Terminating`, and the Terminate button was still on offer.
+    //
+    // Every other test in this file sets the input once, which is exactly why none of them caught it —
+    // it was found by running the app. This one changes the input mid-life, which is the only shape
+    // that fails when the inputs are not signals.
+    at('Active');
+    expect(component.canTerminate()).toBeTrue();
+
+    fixture.componentRef.setInput('status', 'Terminating');
+    fixture.detectChanges();
+
+    expect(component.canTerminate()).toBeFalse();
+    expect(component.canArchive()).toBeTrue();
   });
 
   // ---------- FR 6, FR 8: terminating ----------

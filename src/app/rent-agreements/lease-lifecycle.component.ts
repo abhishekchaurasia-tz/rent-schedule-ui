@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Input, Output, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Output, computed, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import {
@@ -51,13 +51,20 @@ type PendingAction = 'terminate' | 'archive' | null;
 })
 export class LeaseLifecycleComponent {
   /** The lease to act on. */
-  @Input({ required: true }) agreementId!: string;
+  readonly agreementId = input.required<string>();
 
   /**
    * The lease's currently reported status, straight from `RentAgreementDetailResponse.status`. The
    * host re-passes it after reloading, so the offered actions follow the lease.
+   *
+   * **A signal input, not a plain `@Input`, and that is load-bearing.** `canTerminate` and friends are
+   * `computed()`, and a `computed` tracks *signals* — handed a plain field it evaluates once and
+   * caches forever. Written that way first, the gating was correct on the first render and then never
+   * updated: after terminating, the host reloaded and re-passed `Terminating`, and the Terminate
+   * button was still on offer. Caught by running the app, not by the tests, because the specs set the
+   * input once and never changed it.
    */
-  @Input({ required: true }) status!: string;
+  readonly status = input.required<string>();
 
   /**
    * Raised after any successful call — **including a repeat** — so the host re-reads the lease. The
@@ -85,20 +92,20 @@ export class LeaseLifecycleComponent {
    * is excluded because an unactivated draft has nothing to withdraw.
    */
   readonly canTerminate = computed(() =>
-    ['Future', 'Active', 'Expiring'].includes(this.status)
+    ['Future', 'Active', 'Expiring'].includes(this.status())
   );
 
   /**
    * Archive is offered wherever a lease exists to withdraw — including one already terminated or
    * expired, since `Archived` outranks both. Only a draft and an already-archived lease are excluded.
    */
-  readonly canArchive = computed(() => this.status !== 'InProcess' && this.status !== 'Archived');
+  readonly canArchive = computed(() => this.status() !== 'InProcess' && this.status() !== 'Archived');
 
   /** `true` once this lease is closed for good. */
-  readonly isArchived = computed(() => this.status === 'Archived');
+  readonly isArchived = computed(() => this.status() === 'Archived');
 
   /** `true` for an unactivated draft, which must be activated before it can be ended. */
-  readonly isDraft = computed(() => this.status === 'InProcess');
+  readonly isDraft = computed(() => this.status() === 'InProcess');
 
   constructor(private readonly rentAgreementsService: RentAgreementsService) {}
 
@@ -117,7 +124,7 @@ export class LeaseLifecycleComponent {
 
   /** Ends the lease on the picked date. */
   terminate(): void {
-    if (!this.agreementId || this.working()) {
+    if (this.working()) {
       return;
     }
 
@@ -125,7 +132,7 @@ export class LeaseLifecycleComponent {
     this.error.set(null);
 
     this.rentAgreementsService
-      .terminate(this.agreementId, {
+      .terminate(this.agreementId(), {
         effectiveDate: this.effectiveDate(),
         terminatedAt: new Date().toISOString(),
         // The ordering fence. The backend rejects only a version BELOW the stored one, and nothing
@@ -141,7 +148,7 @@ export class LeaseLifecycleComponent {
 
   /** Withdraws the lease as of today. */
   archive(): void {
-    if (!this.agreementId || this.working()) {
+    if (this.working()) {
       return;
     }
 
@@ -149,7 +156,7 @@ export class LeaseLifecycleComponent {
     this.error.set(null);
 
     this.rentAgreementsService
-      .archive(this.agreementId, {
+      .archive(this.agreementId(), {
         archivedAt: new Date().toISOString(),
         version: 1
       })
