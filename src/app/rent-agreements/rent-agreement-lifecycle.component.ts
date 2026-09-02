@@ -43,13 +43,13 @@ type PendingAction = 'terminate' | 'archive' | null;
  * | `Archived` | — | — (terminal; there is no un-archive) |
  */
 @Component({
-  selector: 'app-lease-lifecycle',
+  selector: 'app-rent-agreement-lifecycle',
   standalone: true,
   imports: [CommonModule, FormsModule],
-  templateUrl: './lease-lifecycle.component.html',
-  styleUrl: './lease-lifecycle.component.scss'
+  templateUrl: './rent-agreement-lifecycle.component.html',
+  styleUrl: './rent-agreement-lifecycle.component.scss'
 })
-export class LeaseLifecycleComponent {
+export class RentAgreementLifecycleComponent {
   /** The lease to act on. */
   readonly agreementId = input.required<string>();
 
@@ -77,7 +77,7 @@ export class LeaseLifecycleComponent {
   readonly pendingAction = signal<PendingAction>(null);
 
   /** The termination's effective date, `YYYY-MM-DD`, defaulting to today. */
-  readonly effectiveDate = signal(LeaseLifecycleComponent.today());
+  readonly effectiveDate = signal(RentAgreementLifecycleComponent.today());
 
   readonly working = signal(false);
 
@@ -202,7 +202,7 @@ export class LeaseLifecycleComponent {
 
   /** Leaves the confirmation open on failure, so the user can correct the date and retry. */
   private fail(err: HttpErrorResponse): void {
-    this.error.set(LeaseLifecycleComponent.describeError(err));
+    this.error.set(RentAgreementLifecycleComponent.describeError(err));
     this.working.set(false);
   }
 }

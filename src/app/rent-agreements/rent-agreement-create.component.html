@@ -21,7 +21,7 @@
       "unknown, offer anyway" so the button is never missing on a slow load, while the lifecycle
       control requires one and is guarded below.
     -->
-    <div class="lease-actions">
+    <div class="agreement-actions">
       <app-activate-lease
         [agreementId]="agreementId()!"
         [status]="loadedAgreement()?.status ?? null"
@@ -29,7 +29,7 @@
       />
 
       @if (loadedAgreement(); as agreement) {
-        <app-lease-lifecycle
+        <app-rent-agreement-lifecycle
           [agreementId]="agreementId()!"
           [status]="agreement.status"
           (changed)="onActivated()"

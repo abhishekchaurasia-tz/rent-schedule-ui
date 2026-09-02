@@ -2,11 +2,11 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
-| v1 | 2026-09-02 | **Initial spec: ending a lease early and withdrawing it, from the Edit Lease screen.** A new `LeaseLifecycleComponent` offers **Terminate** (with an effective date) and **Archive**, calling the backend's `POST …/{id}/terminate` and `POST …/{id}/archive` (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107). It sits beside the existing `ActivateLeaseComponent` and **gates on the lease's reported `status`** — which is only now possible: until backend v73 that field answered `InProcess` for every lease however long it had been active, so no screen could trust it. Archive is presented as irreversible, because it is: the backend exposes no un-archive (FR-107). | [2026-09-02T1800-05-lease-lifecycle-ui](../../plans/rent-agreements/2026-09-02T1800-05-lease-lifecycle-ui.md) |
+| v1 | 2026-09-02 | **Initial spec: ending a lease early and withdrawing it, from the Edit Lease screen.** A new `RentAgreementLifecycleComponent` offers **Terminate** (with an effective date) and **Archive**, calling the backend's `POST …/{id}/terminate` and `POST …/{id}/archive` (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107). It sits beside the existing `ActivateLeaseComponent` and **gates on the lease's reported `status`** — which is only now possible: until backend v73 that field answered `InProcess` for every lease however long it had been active, so no screen could trust it. Archive is presented as irreversible, because it is: the backend exposes no un-archive (FR-107). | [2026-09-02T1800-05-rent-agreement-lifecycle-ui](../../plans/rent-agreements/2026-09-02T1800-05-rent-agreement-lifecycle-ui.md) |
 
 ## Overview
 
-`LeaseLifecycleComponent` (`src/app/rent-agreements/lease-lifecycle.component.ts`) is the lease-level
+`RentAgreementLifecycleComponent` (`src/app/rent-agreements/rent-agreement-lifecycle.component.ts`) is the lease-level
 control for **ending** a lease. It offers two actions against an already-saved, already-activated
 lease:
 
@@ -160,7 +160,7 @@ passes it and re-passes it after reloading, so the offered actions follow the le
 
 ```mermaid
 classDiagram
-    class LeaseLifecycleComponent {
+    class RentAgreementLifecycleComponent {
         +string agreementId
         +string status
         +EventEmitter changed
@@ -180,8 +180,8 @@ classDiagram
     class RentAgreementCreateComponent {
         +onLifecycleChanged()
     }
-    RentAgreementCreateComponent --> LeaseLifecycleComponent : hosts
-    LeaseLifecycleComponent --> RentAgreementsService : calls
+    RentAgreementCreateComponent --> RentAgreementLifecycleComponent : hosts
+    RentAgreementLifecycleComponent --> RentAgreementsService : calls
 ```
 
 ### Data Model

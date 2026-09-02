@@ -1,15 +1,15 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { LeaseLifecycleComponent } from './lease-lifecycle.component';
+import { RentAgreementLifecycleComponent } from './rent-agreement-lifecycle.component';
 import {
   ArchiveRentAgreementResponse,
   TerminateRentAgreementResponse
 } from './rent-agreement.models';
 
-describe('LeaseLifecycleComponent', () => {
-  let fixture: ComponentFixture<LeaseLifecycleComponent>;
-  let component: LeaseLifecycleComponent;
+describe('RentAgreementLifecycleComponent', () => {
+  let fixture: ComponentFixture<RentAgreementLifecycleComponent>;
+  let component: RentAgreementLifecycleComponent;
   let httpMock: HttpTestingController;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000041';
@@ -53,10 +53,10 @@ describe('LeaseLifecycleComponent', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [LeaseLifecycleComponent, HttpClientTestingModule]
+      imports: [RentAgreementLifecycleComponent, HttpClientTestingModule]
     });
 
-    fixture = TestBed.createComponent(LeaseLifecycleComponent);
+    fixture = TestBed.createComponent(RentAgreementLifecycleComponent);
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
   });

@@ -1,4 +1,4 @@
-**Spec:** [`docs/specs/rent-agreements/05-lease-lifecycle-ui.md`](../../specs/rent-agreements/05-lease-lifecycle-ui.md) — v1
+**Spec:** [`docs/specs/rent-agreements/05-rent-agreement-lifecycle-ui.md`](../../specs/rent-agreements/05-rent-agreement-lifecycle-ui.md) — v1
 
 # Lease lifecycle UI — terminate and archive
 
@@ -22,7 +22,7 @@
 
 ### One component, two actions
 
-`LeaseLifecycleComponent` hosts both, because on the backend they are one operation with a different
+`RentAgreementLifecycleComponent` hosts both, because on the backend they are one operation with a different
 cutoff — terminate cuts at a stated date, archive cuts at today — and they share everything this
 component actually contains: the confirmation flow, the version, the idempotent-repeat rendering, and
 the `detail`-verbatim error handling. Two components would duplicate all of it to vary one request
@@ -80,7 +80,7 @@ with each other.
 
 | # | Decision | Chosen | Alternatives rejected | Why |
 |---|----------|--------|-----------------------|-----|
-| 1 | Component granularity | One `LeaseLifecycleComponent` for both actions | One per action; folding both into `ActivateLeaseComponent` | They share the confirm flow, the version, the repeat rendering and the error handling; only the request body differs. Folding in activation is worth doing but would make this change harder to review. |
+| 1 | Component granularity | One `RentAgreementLifecycleComponent` for both actions | One per action; folding both into `ActivateLeaseComponent` | They share the confirm flow, the version, the repeat rendering and the error handling; only the request body differs. Folding in activation is worth doing but would make this change harder to review. |
 | 2 | Gating on `status` | **Yes** — offer only what the status permits | Always offer both and let the backend refuse | Backend v73 made the field trustworthy; before it, this was impossible. A button that reliably `422`s is a worse experience than no button. |
 | 3 | `ActivateLeaseComponent`'s stale rationale | Corrected in this change; behaviour untouched | Left alone; changed to gate on status too | Its comment now argues the opposite of what its neighbour does, which is actively misleading. Changing its behaviour is a separate improvement. |
 | 4 | The effective date's type on the wire | Plain `YYYY-MM-DD` | An ISO instant | The backend treats it as a calendar date in the property's zone; sending an instant would let a timezone shift it by a day, which moves a cycle. |
@@ -104,19 +104,19 @@ backend's request and response shapes exactly; no existing interface changes.
 - [x] **2. Service.** In `src/app/rent-agreements/rent-agreements.service.ts`, add `terminate()` and
       `archive()` beside `activate()`, following its shape: `POST` to
       `${this.baseUrl}/${agreementId}/terminate` and `…/archive`.
-- [x] **3. Component.** New `src/app/rent-agreements/lease-lifecycle.component.ts` + `.html` + `.scss`:
+- [x] **3. Component.** New `src/app/rent-agreements/rent-agreement-lifecycle.component.ts` + `.html` + `.scss`:
       the two inputs, the `changed` output, the `pendingAction`/`effectiveDate`/`result`/`error`
       signals, the `canTerminate`/`canArchive` computeds implementing the status table, and the two
       calls. Reuse `ActivateLeaseComponent`'s `describeError` approach so a Problem Details `detail`
       reaches the user verbatim.
-- [x] **4. Host it.** In `rent-agreement-create.component.html`, place `<app-lease-lifecycle>` beside
+- [x] **4. Host it.** In `rent-agreement-create.component.html`, place `<app-rent-agreement-lifecycle>` beside
       `<app-activate-lease>` in the `isEditMode` block, passing the loaded lease's `status` and wiring
       `(changed)` to the existing reload. Import the component in
       `rent-agreement-create.component.ts`.
 - [x] **5. Correct the stale rationale.** In `activate-lease.component.ts`, rewrite the paragraph
       claiming `status` cannot be trusted — and the matching comment in
       `activate-lease.component.spec.ts` — since backend v73 fixed it. Behaviour unchanged.
-- [x] **6. Tests.** New `lease-lifecycle.component.spec.ts` covering: the status table's five rows, the
+- [x] **6. Tests.** New `rent-agreement-lifecycle.component.spec.ts` covering: the status table's five rows, the
       terminate happy path, an idempotent repeat rendering as information rather than success, a `422`
       rendering the backend's `detail`, and `changed` firing on both success and repeat. Use
       `HttpTestingController`, as the sibling specs do.
@@ -127,7 +127,7 @@ backend's request and response shapes exactly; no existing interface changes.
 
 | What is verified | Where | Expected |
 |---|---|---|
-| An unactivated draft offers nothing | `lease-lifecycle.component.spec.ts` — status `InProcess` | Neither button; the "activate first" message |
+| An unactivated draft offers nothing | `rent-agreement-lifecycle.component.spec.ts` — status `InProcess` | Neither button; the "activate first" message |
 | A live lease offers both | statuses `Active`, `Expiring`, `Future` | Both buttons |
 | A terminating lease offers archive only | statuses `Terminating`, `Terminated` | Archive only |
 | An archived lease offers nothing | status `Archived` | No buttons; the terminal message |
