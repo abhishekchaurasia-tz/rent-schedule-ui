@@ -43,6 +43,7 @@ import {
 } from './rent-agreement.models';
 import { ActivateLeaseComponent } from './activate-lease.component';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
+import { LeaseLifecycleComponent } from './lease-lifecycle.component';
 
 /**
  * The lease wizard's "Add Lease" save: previews a schedule, then persists the agreement with
@@ -62,7 +63,8 @@ import { AdditionalChargePanelComponent } from './additional-charge-panel.compon
     MatFormFieldModule,
     MatInputModule,
     AdditionalChargePanelComponent,
-    ActivateLeaseComponent
+    ActivateLeaseComponent,
+    LeaseLifecycleComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './rent-agreement-create.component.html',

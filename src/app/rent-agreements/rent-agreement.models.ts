@@ -457,6 +457,84 @@ export interface ActivateRentAgreementResponse {
   invoicesGenerated: number;
 }
 
+/**
+ * Ends a lease early (backend spec `01-rent-agreement.md` v74, FR-094 – FR-102).
+ *
+ * - **`effectiveDate` is the cutoff.** Cycles scheduled *after* it are withdrawn; everything on or
+ *   before it stands, because a cycle due on the effective date is a day the tenant occupied. The
+ *   cycle containing it keeps its **full** amount — the backend does not prorate (FR-101).
+ * - **It may be in the past or the future.** A retroactive termination is ordinary; a future one puts
+ *   the lease in `Terminating`, which is still billable, because notice given is not the tenant gone.
+ * - **It may not precede the lease's begin date** — that is a `422`.
+ * - **Sent as a plain `YYYY-MM-DD` date, never an instant.** The backend treats it as a calendar date
+ *   in the property's own time zone; converting through a timezone could shift it a day and move a
+ *   cycle with it.
+ */
+export interface TerminateRentAgreementRequest {
+  effectiveDate: string;
+  /** When the termination was recorded — now, as an ISO instant. Audit only; no gate reads it. */
+  terminatedAt: string;
+  /**
+   * The caller's ordering fence. The backend rejects only a version *below* the stored one, and
+   * nothing in this app issues versions, so this sends `1` exactly as activation does.
+   */
+  version: number;
+}
+
+/** What the termination did — enough to report the outcome without re-reading the lease. */
+export interface TerminateRentAgreementResponse {
+  agreementId: string;
+  /** The **stored** effective date, which on a repeat is the one the first call recorded. */
+  effectiveDate: string;
+  /** `Terminating` while the effective date is ahead, `Terminated` on and after it. */
+  status: string;
+  /**
+   * `true` when the same effective date was already recorded and this call changed nothing. Still a
+   * `200`: idempotency is judged on the effective date, so a retry is a success. A *different* date is
+   * a genuine correction of the term and comes back `false`.
+   */
+  alreadyTerminated: boolean;
+  /**
+   * How many schedule cycles this call withdrew — always `0` on a repeat. Counts withdrawn **intent**,
+   * not invoices: which invoices go is the backend recompute's business, and it protects anything
+   * carrying a payment or already past due.
+   */
+  cyclesCancelled: number;
+}
+
+/**
+ * Withdraws a lease (backend spec `01-rent-agreement.md` v74, FR-103 – FR-105).
+ *
+ * The same operation as a termination with **today** as the cutoff, which is why it carries no
+ * effective date. An archived lease is neither editable nor billable whatever its dates say, and
+ * `Archived` outranks a termination already recorded against it.
+ *
+ * **There is no un-archive** (FR-107): reversing one on the backend would restore the lease without
+ * the invoices it removed, so the capability does not exist rather than existing incorrectly.
+ */
+export interface ArchiveRentAgreementRequest {
+  /**
+   * When the archival was recorded — now. Also the source of the cutoff: the backend resolves it to a
+   * date in the property's own time zone and withdraws the cycles after it.
+   */
+  archivedAt: string;
+  /** The ordering fence — see `TerminateRentAgreementRequest.version`. */
+  version: number;
+}
+
+/** What the archival did. */
+export interface ArchiveRentAgreementResponse {
+  agreementId: string;
+  /** The **stored** instant; a repeat keeps the original rather than restamping it. */
+  archivedAt: string;
+  /** Always `Archived`. */
+  status: string;
+  /** `true` when the lease was already archived and this call changed nothing. Still a `200`. */
+  alreadyArchived: boolean;
+  /** Cycles this call withdrew — always `0` on a repeat. Counts intent, not invoices. */
+  cyclesCancelled: number;
+}
+
 export interface UpdateRentAgreementTermsRequest {
   endDate?: string | null;
   fullRent: number;

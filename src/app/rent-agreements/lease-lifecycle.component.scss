@@ -1,0 +1,170 @@
+.lease-lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Both actions withdraw money the lease would otherwise have billed, so neither is styled like the
+   green Activate button next door. Terminate is amber and archive is red: terminate is correctable
+   (a second call with a different date re-cuts the schedule), archive is not. */
+.terminate-btn,
+.archive-btn {
+  padding: 0.6rem 1.4rem;
+  border: 0;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.terminate-btn {
+  background: #b45309;
+
+  &:hover:not(:disabled) {
+    background: #92400e;
+  }
+}
+
+.archive-btn {
+  background: #991b1b;
+
+  &:hover:not(:disabled) {
+    background: #7f1d1d;
+  }
+}
+
+/* Shown in place of the buttons once the lease is closed for good. */
+.archived-chip {
+  align-self: flex-start;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.note {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 4px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 0.85rem;
+
+  p {
+    margin: 0;
+    color: #78350f;
+  }
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #78350f;
+
+  input {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.danger,
+.secondary {
+  padding: 0.45rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.danger {
+  border: 0;
+  background: #991b1b;
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    background: #7f1d1d;
+  }
+}
+
+.secondary {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+
+  &:hover:not(:disabled) {
+    background: #f9fafb;
+  }
+}
+
+.banner {
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+
+  p {
+    margin: 0.25rem 0 0;
+  }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+  }
+
+  &.success {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+  }
+
+  &.info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+  }
+
+  &.error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+}

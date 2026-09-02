@@ -1,0 +1,134 @@
+<div class="lease-lifecycle">
+  @if (isArchived()) {
+    <span class="archived-chip">Archived</span>
+    <p class="note">This lease is closed. Archiving cannot be undone.</p>
+  } @else if (isDraft()) {
+    <p class="note">Activate this lease before you can end it.</p>
+  } @else {
+    <div class="actions">
+      @if (canTerminate()) {
+        <button
+          type="button"
+          class="terminate-btn"
+          [disabled]="working()"
+          (click)="confirm('terminate')"
+        >
+          Terminate lease
+        </button>
+      }
+
+      @if (canArchive()) {
+        <button
+          type="button"
+          class="archive-btn"
+          [disabled]="working()"
+          (click)="confirm('archive')"
+        >
+          Archive lease
+        </button>
+      }
+    </div>
+  }
+
+  <!--
+    Terminate needs a date, so the confirmation is where it is entered. The copy states the two rules
+    a user is most likely to get wrong: the cutoff is exclusive, and the cycle containing the date
+    keeps its full amount because the backend does not prorate.
+  -->
+  @if (pendingAction() === 'terminate') {
+    <div class="confirm">
+      <strong>End this lease early?</strong>
+
+      <label class="date-field">
+        Last day of the lease
+        <input
+          type="date"
+          [ngModel]="effectiveDate()"
+          (ngModelChange)="effectiveDate.set($event)"
+          name="effectiveDate"
+        />
+      </label>
+
+      <p>
+        Cycles scheduled <em>after</em> this date are withdrawn. The cycle containing it keeps its full
+        amount — part-months are not prorated. Anything already paid or past due is left alone.
+      </p>
+
+      <div class="confirm-actions">
+        <button type="button" class="danger" [disabled]="working()" (click)="terminate()">
+          {{ working() ? 'Terminating…' : 'Terminate' }}
+        </button>
+        <button type="button" class="secondary" [disabled]="working()" (click)="cancel()">
+          Cancel
+        </button>
+      </div>
+    </div>
+  }
+
+  <!--
+    Archive says the word, because the backend has no un-archive: reversing one there would restore
+    the lease without the invoices it removed. Better to say so here than to let someone find out.
+  -->
+  @if (pendingAction() === 'archive') {
+    <div class="confirm">
+      <strong>Archive this lease?</strong>
+
+      <p>
+        It will be closed for editing and billing from today, whatever its dates say, and cycles
+        scheduled after today are withdrawn.
+        <strong>This cannot be undone.</strong>
+      </p>
+
+      <div class="confirm-actions">
+        <button type="button" class="danger" [disabled]="working()" (click)="archive()">
+          {{ working() ? 'Archiving…' : 'Archive' }}
+        </button>
+        <button type="button" class="secondary" [disabled]="working()" (click)="cancel()">
+          Cancel
+        </button>
+      </div>
+    </div>
+  }
+
+  <!--
+    A repeat is a success, not a failure — both endpoints are idempotent by contract. Saying so plainly
+    beats a green banner claiming cycles were withdrawn when none were.
+  -->
+  @if (terminateResult(); as result) {
+    <div class="banner" [class.success]="!result.alreadyTerminated" [class.info]="result.alreadyTerminated">
+      @if (result.alreadyTerminated) {
+        <strong>Already terminated.</strong>
+        <p>
+          This lease already ends {{ result.effectiveDate | date: 'mediumDate' }}. Nothing changed.
+        </p>
+      } @else {
+        <strong>Lease terminated.</strong>
+        <p>
+          Ends {{ result.effectiveDate | date: 'mediumDate' }} · status
+          <code>{{ result.status }}</code> · {{ result.cyclesCancelled }} cycle(s) withdrawn
+        </p>
+      }
+    </div>
+  }
+
+  @if (archiveResult(); as result) {
+    <div class="banner" [class.success]="!result.alreadyArchived" [class.info]="result.alreadyArchived">
+      @if (result.alreadyArchived) {
+        <strong>Already archived.</strong>
+        <p>
+          This lease was archived {{ result.archivedAt | date: 'medium' }}. Nothing changed.
+        </p>
+      } @else {
+        <strong>Lease archived.</strong>
+        <p>{{ result.cyclesCancelled }} cycle(s) withdrawn</p>
+      }
+    </div>
+  }
+
+  @if (error(); as message) {
+    <div class="banner error">
+      <strong>Could not change this lease.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+</div>

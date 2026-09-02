@@ -15,6 +15,23 @@
       [agreementId]="agreementId()!"
       (activated)="onActivated()"
     />
+
+    <!--
+      The other end of the same lifecycle: terminate on a chosen date, or archive as of today. It is
+      passed the lease's reported status and offers only what that status permits — possible only
+      since backend v73 made the field trustworthy. Shares the reload with activation, so the status
+      and the schedule always come from one server read.
+
+      Guarded on the loaded lease because the status is required: before the load there is nothing to
+      gate on, and guessing would offer actions the lease may not permit.
+    -->
+    @if (loadedAgreement(); as agreement) {
+      <app-lease-lifecycle
+        [agreementId]="agreementId()!"
+        [status]="agreement.status"
+        (changed)="onActivated()"
+      />
+    }
   } @else {
     <h1>Add Lease</h1>
     <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>

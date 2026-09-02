@@ -8,6 +8,8 @@ import {
   ActivateRentAgreementResponse,
   AddAdditionalChargeRequest,
   AgreementTenantsResponse,
+  ArchiveRentAgreementRequest,
+  ArchiveRentAgreementResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   ProposedInvoiceDetailResponse,
@@ -15,6 +17,8 @@ import {
   RentAgreementDetailResponse,
   SaveAgreementTenantsRequest,
   SaveAgreementTenantsResponse,
+  TerminateRentAgreementRequest,
+  TerminateRentAgreementResponse,
   UpdateProposedInvoiceRequest,
   UpdateRentAgreementTermsRequest
 } from './rent-agreement.models';
@@ -151,6 +155,50 @@ export class RentAgreementsService {
   ): Observable<ActivateRentAgreementResponse> {
     return this.http.post<ActivateRentAgreementResponse>(
       `${this.baseUrl}/${agreementId}/activate`,
+      request
+    );
+  }
+
+  /**
+   * Ends the lease early: records the termination, withdraws the cycles scheduled after its effective
+   * date, and rebuilds the lease's invoices — all in one transaction (backend spec v74 FR-094 – FR-102).
+   *
+   * **Money that has moved is never disturbed.** The backend's recompute removes an unissued invoice,
+   * corrects an issued-unpaid one forward, and protects anything carrying a payment or already past
+   * due — the same rule the legacy system applies.
+   *
+   * **Idempotent on the effective date** — the same date twice answers `200` with
+   * `alreadyTerminated: true`; a *different* date is a genuine correction and re-cuts the schedule.
+   * The failures worth rendering distinctly are `409` (a stale `version`, or the lease is already
+   * archived) and `422` (the effective date precedes the lease's begin date).
+   */
+  terminate(
+    agreementId: string,
+    request: TerminateRentAgreementRequest
+  ): Observable<TerminateRentAgreementResponse> {
+    return this.http.post<TerminateRentAgreementResponse>(
+      `${this.baseUrl}/${agreementId}/terminate`,
+      request
+    );
+  }
+
+  /**
+   * Withdraws the lease as of today (backend spec v74 FR-103 – FR-105).
+   *
+   * The same operation as {@link terminate} with today as the cutoff, which is why the body carries no
+   * date. Afterwards the lease is neither editable nor billable whatever its dates say, and
+   * **there is no un-archive** (FR-107).
+   *
+   * **Idempotent** — a repeat answers `200` with `alreadyArchived: true` and keeps the original
+   * instant. `409` is a stale `version`; `422` is a lease that was never activated, which has no
+   * invoices to withdraw.
+   */
+  archive(
+    agreementId: string,
+    request: ArchiveRentAgreementRequest
+  ): Observable<ArchiveRentAgreementResponse> {
+    return this.http.post<ArchiveRentAgreementResponse>(
+      `${this.baseUrl}/${agreementId}/archive`,
       request
     );
   }

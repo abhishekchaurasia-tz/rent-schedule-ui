@@ -14,20 +14,22 @@ import { ActivateRentAgreementResponse } from './rent-agreement.models';
  * idempotency handling and the same three-way error rendering, and would drift the first time one of
  * them was touched. Here there is one of each, and a page adds the action with a single tag.
  *
- * **The screen cannot know, before asking, whether a lease is already active.** `RentAgreement.Activate`
- * sets `IsActivated`/`LeaseId`/`ActivatedAt` and deliberately leaves `Status` alone, and the detail
- * endpoint exposes neither `isActivated` nor `leaseId` — only the derived `status`, which stays
- * `InProcess` on an activated lease. Verified against a running service on 2026-08-26: a lease that
- * answered `alreadyActive: true` still reported `"status":"InProcess"`.
+ * **This component does not gate on the lease's status, and the reason it originally could not has
+ * since been fixed.** It used to explain at length that `status` "stays `InProcess` on an activated
+ * lease, verified against a running service on 2026-08-26" — which was true: the detail response read
+ * that field from a stored column nothing ever wrote, so it answered `InProcess` for every lease
+ * however long it had been active. **Backend v73 dropped the column and computes the field**, so
+ * `status` now reports `Active`, `Expiring`, `Expired`, `Terminating`, `Terminated` and `Archived`
+ * correctly — and `LeaseLifecycleComponent` next door does gate on it.
  *
- * So this component does **not** pretend to gate on activation state. The button is offered until the
- * server has answered, and the answer is what states the truth — which is safe precisely because the
- * endpoint is idempotent: pressing it on an already-active lease raises nothing and returns
- * `alreadyActive: true`. Guessing from `status` would have produced a button that is wrong in both
- * directions, and a wrong guess here either hides a needed action or implies invoices were raised when
- * none were.
+ * This component's behaviour is nonetheless unchanged, and safely so: the button is offered until the
+ * server has answered, and the answer states the truth. That works because the endpoint is idempotent
+ * by contract — pressing it on an already-active lease raises nothing and returns
+ * `alreadyActive: true` — so the worst case is a redundant call, not a wrong outcome.
  *
- * If the detail response ever gains an `isActivated` flag, this is the one place that changes.
+ * **Worth doing, not done here:** now that `status` can be trusted, this control could hide itself for
+ * any lease past `InProcess`, and the three lifecycle actions could share one component. Recorded as
+ * out of scope in UI spec `05-lease-lifecycle-ui.md`.
  *
  * **What the API can answer, and what each answer means here:**
  *

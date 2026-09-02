@@ -39,9 +39,10 @@ describe('ActivateLeaseComponent', () => {
   });
 
   it('offers activation until the server has answered', () => {
-    // The screen cannot know activation state up front: the detail endpoint exposes no `isActivated`,
-    // and `status` stays `InProcess` on an activated lease. So the button starts available and the
-    // server's answer is what settles it — safe because the endpoint is idempotent.
+    // This component is not passed the lease's status, so the button starts available and the server's
+    // answer settles it — safe because the endpoint is idempotent. (This comment used to say `status`
+    // could not be trusted for the job; backend v73 fixed that, and LeaseLifecycleComponent gates on
+    // it. Hiding this button for a non-draft lease is a separate improvement, recorded in UI spec 05.)
     expect(component.canActivate()).toBeTrue();
   });
 
