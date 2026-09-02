@@ -4,7 +4,15 @@
       {{ activating() ? 'Activating…' : 'Activate lease' }}
     </button>
   } @else {
-    <span class="activated-chip">Active</span>
+    <!--
+      The lease's own status when the host passed one; a bare "Active" only when it did not. A screen
+      that knows the lease is Expiring or Terminated should say so rather than flatten every non-draft
+      state into one word.
+
+      Green reads as "all well", which is wrong for a lease that has ended — an archived one showed a
+      green ARCHIVED chip until this. `closed` turns it grey for the states where the lease is over.
+    -->
+    <span class="activated-chip" [class.closed]="isClosed()">{{ status() ?? 'Active' }}</span>
   }
 
   @if (activateResult(); as result) {

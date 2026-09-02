@@ -233,6 +233,7 @@
         <button type="button" class="cancel-btn" (click)="cancel()">&larr; Back</button>
         <app-activate-lease
           [agreementId]="agreementId"
+          [status]="loadedAgreement()?.status ?? null"
           (activated)="onActivated()"
         />
         <span class="footer-spacer"></span>

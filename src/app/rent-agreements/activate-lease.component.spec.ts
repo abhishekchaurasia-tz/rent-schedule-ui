@@ -39,11 +39,39 @@ describe('ActivateLeaseComponent', () => {
   });
 
   it('offers activation until the server has answered', () => {
-    // This component is not passed the lease's status, so the button starts available and the server's
-    // answer settles it — safe because the endpoint is idempotent. (This comment used to say `status`
-    // could not be trusted for the job; backend v73 fixed that, and LeaseLifecycleComponent gates on
-    // it. Hiding this button for a non-draft lease is a separate improvement, recorded in UI spec 05.)
+    // No status passed here, which the component reads as "unknown — offer anyway": a host that has
+    // not loaded the lease yet cannot gate on anything, and hiding the button then would remove the
+    // action from the very screen that needs it. Safe because the endpoint is idempotent.
     expect(component.canActivate()).toBeTrue();
+  });
+
+  it('offers activation for a draft when the host passes its status', () => {
+    fixture.componentRef.setInput('status', 'InProcess');
+
+    expect(component.canActivate()).toBeTrue();
+  });
+
+  (['Future', 'Active', 'Expiring', 'Expired', 'Terminating', 'Terminated', 'Archived'] as const)
+    .forEach((status) => {
+      it(`hides activation once the lease is past a draft (${status})`, () => {
+        // What backend v73 bought. Until then `status` answered InProcess for every lease however long
+        // it had been active, so this gate could not exist and all three lease actions had to be shown
+        // at once with two of them certain to be refused.
+        fixture.componentRef.setInput('status', status);
+
+        expect(component.canActivate()).toBeFalse();
+      });
+    });
+
+  it('reacts when the host re-passes a new status', () => {
+    // `status` is a signal input precisely so `canActivate` — a computed — tracks it. Handed a plain
+    // @Input it would evaluate once and cache, which is the defect the sibling component shipped.
+    fixture.componentRef.setInput('status', 'InProcess');
+    expect(component.canActivate()).toBeTrue();
+
+    fixture.componentRef.setInput('status', 'Active');
+
+    expect(component.canActivate()).toBeFalse();
   });
 
   it('stops offering activation once the lease is confirmed active', () => {

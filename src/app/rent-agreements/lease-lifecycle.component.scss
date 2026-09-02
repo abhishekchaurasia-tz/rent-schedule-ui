@@ -44,20 +44,6 @@
   }
 }
 
-/* Shown in place of the buttons once the lease is closed for good. */
-.archived-chip {
-  align-self: flex-start;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
-  color: #374151;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
 .note {
   margin: 0;
   color: #6b7280;

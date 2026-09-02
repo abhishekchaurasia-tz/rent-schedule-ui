@@ -577,3 +577,14 @@ table {
   font-size: 0.7rem;
   white-space: nowrap;
 }
+
+/* The lease-level lifecycle row: Activate, Terminate and Archive, whichever the lease's status
+   currently offers. A row rather than a stack because at most two ever show at once, and
+   `align-items: flex-start` keeps each control its natural width instead of stretching. */
+.lease-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}

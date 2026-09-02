@@ -8,30 +8,34 @@
     </p>
 
     <!--
-      Lease-level activation, beside the other lease-level actions. The same component the tenants
-      screen uses, so the idempotency and error handling exist once rather than twice.
-    -->
-    <app-activate-lease
-      [agreementId]="agreementId()!"
-      (activated)="onActivated()"
-    />
+      The lease's whole lifecycle, in one row, offered one state at a time: Activate for a draft,
+      Terminate/Archive for a live lease, Archive alone once a termination is recorded, and a chip once
+      it is archived. Both controls take the lease's reported status and gate on it — possible only
+      since backend v73 made that field trustworthy; before, all three actions had to be shown at once
+      with two of them certain to be refused.
 
-    <!--
-      The other end of the same lifecycle: terminate on a chosen date, or archive as of today. It is
-      passed the lease's reported status and offers only what that status permits — possible only
-      since backend v73 made the field trustworthy. Shares the reload with activation, so the status
-      and the schedule always come from one server read.
+      Both share the same reload, so the status, the offered actions and the schedule always come from
+      one server read and cannot disagree.
 
-      Guarded on the loaded lease because the status is required: before the load there is nothing to
-      gate on, and guessing would offer actions the lease may not permit.
+      The status is passed only once the lease has loaded. Activation treats an absent status as
+      "unknown, offer anyway" so the button is never missing on a slow load, while the lifecycle
+      control requires one and is guarded below.
     -->
-    @if (loadedAgreement(); as agreement) {
-      <app-lease-lifecycle
+    <div class="lease-actions">
+      <app-activate-lease
         [agreementId]="agreementId()!"
-        [status]="agreement.status"
-        (changed)="onActivated()"
+        [status]="loadedAgreement()?.status ?? null"
+        (activated)="onActivated()"
       />
-    }
+
+      @if (loadedAgreement(); as agreement) {
+        <app-lease-lifecycle
+          [agreementId]="agreementId()!"
+          [status]="agreement.status"
+          (changed)="onActivated()"
+        />
+      }
+    </div>
   } @else {
     <h1>Add Lease</h1>
     <p class="subtitle">Generate a rent schedule preview, then save it as a new draft rent agreement.</p>

@@ -104,8 +104,18 @@ export class LeaseLifecycleComponent {
   /** `true` once this lease is closed for good. */
   readonly isArchived = computed(() => this.status() === 'Archived');
 
-  /** `true` for an unactivated draft, which must be activated before it can be ended. */
+  /**
+   * `true` for an unactivated draft. The component renders **nothing** in that case: ending a lease is
+   * not an action that exists yet for one with nothing to withdraw, and the Activate control beside
+   * this one is the whole story at that point.
+   */
   readonly isDraft = computed(() => this.status() === 'InProcess');
+
+  /**
+   * `true` once a termination is recorded — the state where Terminate is gone and Archive is the only
+   * action left. Worth naming, because a row that has silently lost a button needs to say why.
+   */
+  readonly isEnding = computed(() => ['Terminating', 'Terminated'].includes(this.status()));
 
   constructor(private readonly rentAgreementsService: RentAgreementsService) {}
 

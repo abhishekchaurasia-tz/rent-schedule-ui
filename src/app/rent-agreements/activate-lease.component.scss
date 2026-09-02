@@ -2,6 +2,14 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* Without this the column flex stretched the button to the container's full width — which it did,
+     rendering as one green bar across the whole Edit Lease header. The banners below still want the
+     full width, so they opt back in with align-self rather than the container keeping the default. */
+  align-items: flex-start;
+}
+
+.banner {
+  align-self: stretch;
 }
 
 .activate-btn {
@@ -37,6 +45,14 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+
+  /* A lease that has ended is not a green outcome. Expired, Terminated and Archived go grey; Active,
+     Expiring, Future and Terminating stay green, because those leases are still live. */
+  &.closed {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #374151;
+  }
 }
 
 .banner {

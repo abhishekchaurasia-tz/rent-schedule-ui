@@ -1,33 +1,55 @@
 <div class="lease-lifecycle">
-  @if (isArchived()) {
-    <span class="archived-chip">Archived</span>
-    <p class="note">This lease is closed. Archiving cannot be undone.</p>
-  } @else if (isDraft()) {
-    <p class="note">Activate this lease before you can end it.</p>
-  } @else {
-    <div class="actions">
-      @if (canTerminate()) {
-        <button
-          type="button"
-          class="terminate-btn"
-          [disabled]="working()"
-          (click)="confirm('terminate')"
-        >
-          Terminate lease
-        </button>
-      }
+  <!--
+    A draft renders NOTHING at all — not a disabled button, not an explanatory line. Ending a lease is
+    not an action that exists yet for a lease with nothing to withdraw, and the Activate button beside
+    this one is the whole story at that point. An earlier cut showed a grey "activate this lease first"
+    note here, which read as a broken feature rather than an absent one.
+  -->
+  @if (!isDraft()) {
+    <!--
+      No status chip here: the Activate control beside this one already renders the lease's status, and
+      showing a second one produced a literal duplicate — two "ARCHIVED" chips on the same row. This
+      component says what the state *means* for the actions; the chip says what the state *is*.
+    -->
+    @if (isArchived()) {
+      <p class="note">This lease is closed for editing and billing. Archiving cannot be undone.</p>
+    } @else {
+      <div class="actions">
+        @if (canTerminate()) {
+          <button
+            type="button"
+            class="terminate-btn"
+            [disabled]="working()"
+            (click)="confirm('terminate')"
+          >
+            Terminate lease
+          </button>
+        }
 
-      @if (canArchive()) {
-        <button
-          type="button"
-          class="archive-btn"
-          [disabled]="working()"
-          (click)="confirm('archive')"
-        >
-          Archive lease
-        </button>
+        @if (canArchive()) {
+          <button
+            type="button"
+            class="archive-btn"
+            [disabled]="working()"
+            (click)="confirm('archive')"
+          >
+            Archive lease
+          </button>
+        }
+      </div>
+
+      <!--
+        Once a termination is recorded, Terminate is gone and only Archive is left — so without this the
+        row would look like an arbitrarily shorter menu. Saying which state the lease is in is what
+        explains the missing button.
+      -->
+      @if (isEnding()) {
+        <p class="note">
+          A termination is already recorded for this lease, so it can no longer be terminated again —
+          only archived.
+        </p>
       }
-    </div>
+    }
   }
 
   <!--
