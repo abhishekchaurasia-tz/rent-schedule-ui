@@ -91,6 +91,28 @@ export class InvoiceListComponent {
     deleted: { label: 'Deleted', className: 'muted' }
   };
 
+  /**
+   * The wire's snake_case `invoiceType` tokens, labelled the way the backend's own
+   * `InvoiceType.GetDisplayName()` reads (`Innago.Billing.Domain.Invoices.InvoiceTypeExtensions`) —
+   * this list shows what an invoice actually bills (Rent vs Security Deposit, and every other
+   * catalog type), which the field already carried on every response; it simply had no column.
+   */
+  private static readonly TypeLabels: Record<string, string> = {
+    rent: 'Rent',
+    deposit: 'Security Deposit',
+    maintenance_request: 'Maintenance Request',
+    others: 'Others',
+    miscellaneous: 'Miscellaneous',
+    payment_rejection_fee: 'Payment Rejection Fee',
+    reversal: 'Reversal',
+    application_fee: 'Tenant Screening Fee',
+    pet_deposit: 'Pet Deposit',
+    hoa_fee: 'HOA Fee',
+    custom_rent: 'Custom Rent',
+    credit_reporting_plan_invoice: 'Credit Reporting Plan Invoice',
+    innago_renter_insurance: 'Liability Waiver'
+  };
+
   /** The statuses offered as filter chips, in the order they read on screen. */
   readonly statusOptions: InvoiceStatus[] = [
     'not_received',
@@ -441,6 +463,11 @@ export class InvoiceListComponent {
     return InvoiceListComponent.StatusPresentations[status] ?? { label: status, className: 'muted' };
   }
 
+  /** How an invoice's `invoiceType` reads on screen — Rent, Security Deposit, and so on. */
+  typeLabel(invoiceType: string): string {
+    return InvoiceListComponent.TypeLabels[invoiceType] ?? invoiceType;
+  }
+
   /**
    * Who an invoice is shared by.
    *
@@ -501,15 +528,52 @@ export class InvoiceListComponent {
     return this.workingInvoiceId() === invoice.invoiceId;
   }
 
-  /** Opens the inline confirmation for one row's delete or void, clearing any previous row error. */
+  /** The row the open ⋮ menu belongs to, or `null` once it has left the current page (e.g. after a refresh). */
+  menuInvoice(): InvoiceSummaryResponse | null {
+    const id = this.openRowMenuInvoiceId();
+    return id ? (this.rows.find((invoice) => invoice.invoiceId === id) ?? null) : null;
+  }
+
+  /**
+   * Opens (or, on a repeat click, closes) `invoice`'s ⋮ menu, positioned from the clicked button's
+   * own bounding rect — see {@link rowMenuPosition}'s doc comment for why it renders as a `position:
+   * fixed` sibling of the table rather than a child of the row.
+   */
+  toggleRowMenu(invoice: InvoiceSummaryResponse, event: MouseEvent): void {
+    if (this.openRowMenuInvoiceId() === invoice.invoiceId) {
+      this.closeRowMenu();
+      return;
+    }
+
+    // Offset by the wider of the menu's two states (the 220px confirm step, not the narrower plain
+    // list) so the panel's right edge never runs past the button's — the confirm step overflowed the
+    // viewport when this used the list's own, narrower width.
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.rowMenuPosition.set({ top: rect.bottom, left: rect.right - 220 });
+    this.openRowMenuInvoiceId.set(invoice.invoiceId);
+    this.pendingRowAction.set(null);
+    this.actionError.set(null);
+  }
+
+  /** Closes the ⋮ menu and abandons any confirmation it was showing. */
+  closeRowMenu(): void {
+    this.openRowMenuInvoiceId.set(null);
+    this.rowMenuPosition.set(null);
+    this.pendingRowAction.set(null);
+  }
+
+  /**
+   * Swaps the open menu from its Correct/Delete/Void list to the confirmation for one action,
+   * clearing any previous row error. The menu itself stays open and anchored where it already is.
+   */
   beginRowAction(invoice: InvoiceSummaryResponse, action: 'delete' | 'void'): void {
     this.actionError.set(null);
     this.pendingRowAction.set({ invoiceId: invoice.invoiceId, action });
   }
 
-  /** Abandons the confirmation without calling anything. */
+  /** Abandons the confirmation and closes the menu without calling anything. */
   cancelRowAction(): void {
-    this.pendingRowAction.set(null);
+    this.closeRowMenu();
   }
 
   /**
@@ -539,7 +603,7 @@ export class InvoiceListComponent {
     request.subscribe({
       next: () => {
         this.workingInvoiceId.set(null);
-        this.pendingRowAction.set(null);
+        this.closeRowMenu();
         this.actionSuccess.set(
           pending.action === 'delete'
             ? `Invoice ${invoice.invoiceNumber} was deleted.`

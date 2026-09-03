@@ -206,6 +206,21 @@ describe('InvoiceListComponent', () => {
     expect(fixture.nativeElement.querySelector('.status-badge.overdue')).toBeTruthy();
   });
 
+  it('shows the invoice type, labelled the way the backend\'s own display names read (v6)', () => {
+    expect(component.typeLabel('rent')).toBe('Rent');
+    expect(component.typeLabel('deposit')).toBe('Security Deposit');
+    // An unrecognised token passes through rather than blanking the cell, same as statusPresentation.
+    expect(component.typeLabel('some_future_type')).toBe('some_future_type');
+
+    search(page([{ ...overdueRow, invoiceType: 'deposit' }]));
+    expect(fixture.nativeElement.textContent).toContain('Security Deposit');
+  });
+
+  it('no longer shows a Unit column (v6)', () => {
+    search();
+    expect(fixture.nativeElement.textContent).not.toContain('Unit');
+  });
+
   it('marks a row with a balance as outstanding, driven by the balance and not the status', () => {
     expect(component.isOutstanding(overdueRow)).toBeTrue();
     expect(component.isOutstanding(paidRow)).toBeFalse();
@@ -305,10 +320,18 @@ describe('InvoiceListComponent', () => {
     expect(component.loading()).toBeFalse();
   });
 
-  it('links each row to the correction page carrying its invoice id', () => {
-    search();
+  /** Clicks row `rowIndex`'s ⋮ button, opening its menu (Correct, and Delete/Void when offered). */
+  function openRowMenu(rowIndex: number): void {
+    const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+    (rows[rowIndex].querySelector('.row-menu-btn') as HTMLElement).click();
+    fixture.detectChanges();
+  }
 
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('tbody tr a');
+  it('links each row to the correction page carrying its invoice id, from its ⋮ menu', () => {
+    search();
+    openRowMenu(0);
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('.row-menu a');
     expect(link.getAttribute('href')).toBe(`/invoices/update?invoiceId=${paidRow.invoiceId}`);
   });
 
@@ -512,8 +535,9 @@ describe('InvoiceListComponent', () => {
     const votedRow: InvoiceSummaryResponse = { ...overdueRow, status: 'voided' };
     const deletedRow: InvoiceSummaryResponse = { ...paidRow, status: 'deleted' };
 
-    function rowActionCells(): NodeListOf<HTMLElement> {
-      return fixture.nativeElement.querySelectorAll('tbody tr td.row-actions');
+    /** The open ⋮ menu's panel, or `null` when none is open. */
+    function openMenuPanel(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.row-menu');
     }
 
     it('gates the actions in: offered on a live row', () => {
@@ -527,21 +551,26 @@ describe('InvoiceListComponent', () => {
 
       search(page([votedRow, deletedRow]));
 
-      const cells = rowActionCells();
-      expect(cells[0].textContent).not.toContain('Delete');
-      expect(cells[0].textContent).not.toContain('Void');
-      expect(cells[1].textContent).not.toContain('Delete');
-      expect(cells[1].textContent).not.toContain('Void');
+      openRowMenu(0);
+      let menu = openMenuPanel()!;
+      expect(menu.textContent).not.toContain('Delete');
+      expect(menu.textContent).not.toContain('Void');
       // Correct is unaffected by this gating.
-      expect(cells[0].querySelector('a')).toBeTruthy();
+      expect(menu.querySelector('a')).toBeTruthy();
+
+      openRowMenu(1);
+      menu = openMenuPanel()!;
+      expect(menu.textContent).not.toContain('Delete');
+      expect(menu.textContent).not.toContain('Void');
     });
 
-    it('renders Delete and Void on a manageable row', () => {
+    it('renders Delete and Void in a manageable row\'s ⋮ menu', () => {
       search(page([overdueRow]));
+      openRowMenu(0);
 
-      const cell = rowActionCells()[0];
-      expect(cell.textContent).toContain('Delete');
-      expect(cell.textContent).toContain('Void');
+      const menu = openMenuPanel()!;
+      expect(menu.textContent).toContain('Delete');
+      expect(menu.textContent).toContain('Void');
     });
 
     it('does not call the API until the inline confirmation is accepted', () => {
@@ -632,6 +661,7 @@ describe('InvoiceListComponent', () => {
     it('renders a 404 detail verbatim in the acting row, and does not refresh the list', () => {
       search(page([overdueRow]));
 
+      openRowMenu(0);
       component.beginRowAction(overdueRow, 'delete');
       component.confirmRowAction(overdueRow);
 

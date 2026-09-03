@@ -403,38 +403,93 @@ h1 {
   }
 }
 
-// ---- row-level delete / void
+// ---- row-level actions: one ⋮ menu per row (Correct / Delete / Void)
 
+// A single button now, not three stacked links — see `openRowMenuInvoiceId`'s doc comment for why.
 .row-actions {
   white-space: normal;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
 }
 
-// Red, unlike the neutral `.link-btn` "Correct" link above it — both actions are irreversible, and the
-// colour is the only signal in a table row this dense.
-.danger-link {
-  color: #b3261e;
+.row-menu-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: #555;
 
   &:hover {
-    color: #7f1d1b;
+    color: #000;
   }
 }
 
+.row-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: transparent;
+}
+
+.row-menu {
+  // Rendered as a sibling of `.table-scroll`, positioned from the clicked ⋮ button's
+  // `getBoundingClientRect()` (see `rowMenuPosition()`) — an ancestor's `overflow` clips any
+  // descendant's paint regardless of `position: fixed`, so nesting this inside the scrolling wrapper
+  // would cut it off for rows near its bottom or right edge.
+  position: fixed;
+  z-index: 11;
+  background: #fff;
+  border: 1px solid #d5dde5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  // Matches `.row-confirm`'s own width — the same panel swaps between the two, and a shared width
+  // keeps its right edge (anchored from the ⋮ button, see `toggleRowMenu`) from jumping between them.
+  min-width: 220px;
+  overflow: hidden;
+}
+
+.row-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  text-decoration: none;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #1a3d66;
+
+  &:hover {
+    background: #eaf2fb;
+  }
+}
+
+// Delete/Void, distinct from the confirm step's own `.danger` pill below — this is a full-width menu
+// row, not a small button, so it needs its own modifier rather than sharing that class.
+.row-menu-item-danger {
+  color: #c0392b;
+
+  &:hover {
+    background: #fde8e8;
+  }
+}
+
+// No border/radius of its own — it fills `.row-menu`'s box, which already carries both, and stacking
+// a second border/radius inside that one read as a box nested inside a box.
 .row-confirm {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: 4px;
+  padding: 0.65rem 0.8rem;
   background: #fffbeb;
-  border: 1px solid #fde68a;
   font-size: 0.78rem;
   color: #78350f;
   white-space: normal;
-  max-width: 220px;
+  width: 220px;
 }
 
 .row-confirm-actions {
