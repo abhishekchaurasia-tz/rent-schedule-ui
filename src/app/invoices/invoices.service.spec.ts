@@ -96,4 +96,58 @@ describe('InvoicesService', () => {
 
     expect(error).toBeTruthy();
   });
+
+  it('delete() sends DELETE /api/v1/invoices/{id} and resolves on 204', () => {
+    let completed = false;
+    service.delete(invoiceId).subscribe({ complete: () => (completed = true) });
+
+    const request = httpMock.expectOne(`${baseUrl}/${invoiceId}`);
+    expect(request.request.method).toBe('DELETE');
+
+    request.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(completed).toBeTrue();
+  });
+
+  it('delete() propagates a 422 (invoice.has_received_payment) to the caller', () => {
+    let error: unknown;
+    service.delete(invoiceId).subscribe({ error: (err) => (error = err) });
+
+    httpMock.expectOne(`${baseUrl}/${invoiceId}`).flush(
+      {
+        type: 'about:blank',
+        title: 'Unprocessable Entity',
+        status: 422,
+        detail: 'A payment has been applied to this invoice; it cannot be deleted.'
+      },
+      { status: 422, statusText: 'Unprocessable Entity' }
+    );
+
+    expect(error).toBeTruthy();
+  });
+
+  it('void() sends POST /api/v1/invoices/{id}/void with no body and resolves on 204', () => {
+    let completed = false;
+    service.void(invoiceId).subscribe({ complete: () => (completed = true) });
+
+    const request = httpMock.expectOne(`${baseUrl}/${invoiceId}/void`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toBeNull();
+
+    request.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(completed).toBeTrue();
+  });
+
+  it('void() propagates a 404 (invoice.not_found) to the caller', () => {
+    let error: unknown;
+    service.void(invoiceId).subscribe({ error: (err) => (error = err) });
+
+    httpMock.expectOne(`${baseUrl}/${invoiceId}/void`).flush(
+      { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Invoice not found.' },
+      { status: 404, statusText: 'Not Found' }
+    );
+
+    expect(error).toBeTruthy();
+  });
 });

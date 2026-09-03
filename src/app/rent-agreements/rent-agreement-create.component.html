@@ -40,6 +40,7 @@
           [terminationEffectiveDate]="agreement.terminationEffectiveDate ?? null"
           [archivedOn]="agreement.archivedOn ?? null"
           (changed)="onActivated()"
+          (cancelled)="onCancelled()"
         />
       }
     </div>

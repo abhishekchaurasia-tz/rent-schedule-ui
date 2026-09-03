@@ -21,6 +21,12 @@
     </div>
   }
 
+  @if (actionSuccess(); as message) {
+    <div class="banner success">
+      <strong>{{ message }}</strong>
+    </div>
+  }
+
   <form [formGroup]="filters" class="filter-bar">
     <label class="filter owner">
       <span>Property Owner ID</span>
@@ -194,7 +200,7 @@
                 <td class="numeric">{{ invoice.total | currency }}</td>
                 <td class="numeric">{{ invoice.amountPaid | currency }}</td>
                 <td class="numeric">{{ invoice.balance | currency }}</td>
-                <td>
+                <td class="row-actions">
                   <a
                     class="link-btn"
                     [routerLink]="['/invoices/update']"
@@ -202,6 +208,65 @@
                   >
                     Correct
                   </a>
+
+                  <!--
+                    Delete and void are offered only while the row is not already terminal (FR 21) —
+                    once one of those wire statuses is reached, this cell shrinks back to just Correct.
+                  -->
+                  @if (canManageInvoice(invoice)) {
+                    @if (pendingRowAction()?.invoiceId === invoice.invoiceId) {
+                      <div class="row-confirm">
+                        <span>
+                          {{
+                            pendingRowAction()!.action === 'delete'
+                              ? 'Delete this invoice? This cannot be undone.'
+                              : 'Void this invoice? This cannot be undone.'
+                          }}
+                        </span>
+                        <div class="row-confirm-actions">
+                          <button
+                            type="button"
+                            class="danger"
+                            [disabled]="isRowWorking(invoice)"
+                            (click)="confirmRowAction(invoice)"
+                          >
+                            {{
+                              isRowWorking(invoice)
+                                ? 'Working…'
+                                : pendingRowAction()!.action === 'delete'
+                                  ? 'Delete'
+                                  : 'Void'
+                            }}
+                          </button>
+                          <button
+                            type="button"
+                            class="secondary"
+                            [disabled]="isRowWorking(invoice)"
+                            (click)="cancelRowAction()"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    } @else {
+                      <button
+                        type="button"
+                        class="link-btn danger-link"
+                        (click)="beginRowAction(invoice, 'delete')"
+                      >
+                        Delete
+                      </button>
+                      <button type="button" class="link-btn danger-link" (click)="beginRowAction(invoice, 'void')">
+                        Void
+                      </button>
+                    }
+
+                    @if (actionError(); as rowError) {
+                      @if (rowError.invoiceId === invoice.invoiceId) {
+                        <p class="inline-error">{{ rowError.message }}</p>
+                      }
+                    }
+                  }
                 </td>
               </tr>
             }

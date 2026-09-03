@@ -1,10 +1,38 @@
 <div class="rent-agreement-lifecycle">
   <!--
-    A draft renders NOTHING at all — not a disabled button, not an explanatory line. Ending a lease is
-    not an action that exists yet for a lease with nothing to withdraw, and the Activate button beside
-    this one is the whole story at that point. An earlier cut showed a grey "activate this lease first"
-    note here, which read as a broken feature rather than an absent one.
+    A draft offers only Cancel — never Terminate/Archive, which act on a lease that was actually
+    activated. This used to render nothing at all for a draft; that read as a broken feature (an
+    earlier cut tried a grey "activate this lease first" note) rather than an absent one, and it left a
+    lease that fell through with no way to be disposed of short of deleting its rows one by one.
   -->
+  @if (isDraft()) {
+    @if (cancelResult(); as result) {
+      <div class="banner" [class.success]="!result.alreadyCancelled" [class.info]="result.alreadyCancelled">
+        @if (result.alreadyCancelled) {
+          <strong>Already cancelled.</strong>
+          <p>This draft was already cancelled. Nothing changed.</p>
+        } @else {
+          <strong>Draft cancelled.</strong>
+          <p>
+            {{ result.cyclesDeleted }} cycle(s), {{ result.chargesDeleted }} charge(s) and
+            {{ result.tenantsDeleted }} tenant(s) withdrawn.
+          </p>
+        }
+      </div>
+    } @else {
+      <div class="actions">
+        <button
+          type="button"
+          class="cancel-draft-btn"
+          [disabled]="working()"
+          (click)="confirm('cancelDraft')"
+        >
+          Cancel this draft
+        </button>
+      </div>
+    }
+  }
+
   @if (!isDraft()) {
     <!--
       No status chip here: the Activate control beside this one already renders the lease's status, and
@@ -143,6 +171,31 @@
         </button>
         <button type="button" class="secondary" [disabled]="working()" (click)="cancel()">
           Cancel
+        </button>
+      </div>
+    </div>
+  }
+
+  <!--
+    Cancel says the word too, for the same reason Archive does: there is no un-cancel, and the draft's
+    schedule, additional charges and tenant roster all go with it.
+  -->
+  @if (pendingAction() === 'cancelDraft') {
+    <div class="confirm">
+      <strong>Cancel this draft?</strong>
+
+      <p>
+        This draft was never activated, so nothing has been billed. Cancelling removes it — its
+        schedule, additional charges and tenant roster — for good.
+        <strong>This cannot be undone.</strong>
+      </p>
+
+      <div class="confirm-actions">
+        <button type="button" class="danger" [disabled]="working()" (click)="cancelAgreement()">
+          {{ working() ? 'Cancelling…' : 'Cancel draft' }}
+        </button>
+        <button type="button" class="secondary" [disabled]="working()" (click)="cancel()">
+          Keep draft
         </button>
       </div>
     </div>

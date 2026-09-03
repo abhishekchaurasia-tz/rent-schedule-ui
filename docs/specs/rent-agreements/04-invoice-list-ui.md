@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v5 | 2026-09-03 | **Per-row Delete and Void**, on the already-implemented `DELETE /api/v1/invoices/{id}` and `POST /api/v1/invoices/{id}/void`. New FR 21–25. Both actions render only while a row is not already `voided` or `deleted` (the reverse of the lifecycle component's `isDraft` gating), require an inline "this cannot be undone" confirmation in the row's own action cell, and a success re-runs the current search rather than patching the row locally — the fresh search already applies each verb's own visibility rule (a deleted invoice drops out of the list unless "Include deleted" is checked; a voided one always stays and now reads `voided`). Failures render the backend's RFC 9457 `detail` verbatim, scoped to the row that failed. | [2026-09-03T1400-04-invoice-delete-void-ui](../../plans/rent-agreements/2026-09-03T1400-04-invoice-delete-void-ui.md) |
 | v4 | 2026-08-31 | **Filter-bar fix: the two date controls no longer tower over the row.** v3 put them in `mat-form-field`s, which are full-height controls with a floating label and a reserved subscript line — beside this bar's compact inputs they were half again as tall, differently labelled, and visibly out of line (reported by the user with a screenshot). The **calendar is unchanged**: `[matDatepicker]` is a directive on the input and needs no form field, so the picker that opens is still the app's one Material calendar. What is dropped is the wrapper — the input now sits in a plain bordered box styled exactly like its neighbours, inside the same `.filter` label-above wrapper, and is `readonly` so the whole box reads as a button onto the calendar. Also moves `.panel-overlay`, `.close-btn` and `.link-btn` into `src/styles.scss`: each was written out identically in two or three components, and that duplication was what had this file over the 6 kB per-component budget. | [2026-08-31T2000-datepicker-consistency](../../plans/rent-agreements/2026-08-31T2000-datepicker-consistency.md) |
 | v3 | 2026-08-31 | **The two due-date filters use the Material datepicker.** They were the last native date inputs on this screen; their controls now hold `Date`s and `buildQuery` converts through `toIsoDate`, so the query string is unchanged and is now produced in LOCAL time rather than by the browser control. `(dateChange)` replaces `(change)` so the page-1 reset still fires. | [2026-08-31T2000-datepicker-consistency](../../plans/rent-agreements/2026-08-31T2000-datepicker-consistency.md) |
 | v2 | 2026-08-31 | **An "+ ADD INVOICE" button at the top of the list opens a two-step side panel: type a rent agreement id, then author the fee in the **existing** `AdditionalChargePanelComponent`; on success the list underneath refreshes.** New FR 16–20. **The lease is typed, not taken from a row** — corrected by the user mid-build (*"add new to kisi bhi agreement id ban jayega"*): this adds to **any** lease, including one with no invoices yet, which is precisely the lease that could never appear in an invoice list. Two steps rather than one form because the fee panel cannot render until the lease is loaded — it needs the owner id to fetch the item catalog and the lease dates to resolve a recurring fee's candidate dates. **The refresh is the reason to add from here at all**: on an activated lease a standalone one-off fee raises its own invoice in the same transaction, so the list behind the panel is stale the moment the POST returns. The fee is charged to **every active tenant** (no `tenantIds` sent); the panel says so and points at the Add Additional Fee screen for charging a subset. Also extracts the `.banner` notice styles — duplicated verbatim across three components — into `src/styles.scss`, which removed the duplication and the 6 kB per-component budget breach this page's new panel styles had introduced. | [2026-08-31T1900-04-invoice-list-ui](../../plans/rent-agreements/2026-08-31T1900-04-invoice-list-ui.md) |
@@ -83,6 +84,19 @@ click through to correct one.
 20. **v2** — On success the system shall close the panel, confirm what was added, and **re-run the
     current search** so the list reflects any invoice the fee raised — but only when a search has
     already been run, since a refresh without an owner scope would be rejected.
+21. **v5** — The system shall offer **Delete** and **Void** on any row whose status is neither `voided`
+    nor `deleted`, and shall hide both once either terminal status is reached.
+22. **v5** — Choosing either action shall show an inline confirmation, in that row's own action cell,
+    stating that the action cannot be undone, before calling `DELETE /api/v1/invoices/{id}` or
+    `POST /api/v1/invoices/{id}/void`; choosing "Cancel" shall abandon it without calling the API.
+23. **v5** — While a row's delete/void request is in flight, that row's confirm/cancel controls shall be
+    disabled; other rows shall remain fully interactive.
+24. **v5** — On a successful (`204`, including an idempotent repeat) delete or void, the system shall
+    show a confirmation banner naming the invoice and the action taken, then **re-run the current
+    search** rather than editing the row's status locally.
+25. **v5** — On a failed delete or void (`404` `invoice.not_found` or `422`
+    `invoice.has_received_payment`), the system shall render the backend's RFC 9457 `detail` verbatim in
+    that row's action cell, and shall leave the row's data unchanged.
 
 ## Constraints
 
@@ -103,6 +117,8 @@ click through to correct one.
 | Method | Route | Used for | Notable responses |
 |--------|-------|----------|-------------------|
 | `GET` | `/api/v1/invoices` | the filtered, paged list | `200` `PagedResult<InvoiceSummaryResponse>`; `400` validation (missing/empty owner, bad page size, unknown status token) |
+| `DELETE` | `/api/v1/invoices/{id}` | **v5** — soft-delete a row | `204` (idempotent repeat also `204`); `404` `invoice.not_found`; `422` `invoice.has_received_payment` |
+| `POST` | `/api/v1/invoices/{id}/void` | **v5** — void a row, leaving it listed | same response shape as `DELETE`, above |
 
 ### Input / Output models
 
@@ -128,6 +144,10 @@ Query parameters, all optional except `propertyOwnerId`:
 `dueDate`, `total`, `amountPaid`, `balance`, `propertyId`, `propertyUnitId?`, `tenantId?`,
 `rentAgreementId?`, `leaseId?`, and — new in backend v37 — `paidOn?` and `tenantIds`.
 
+**v5** — `DELETE /api/v1/invoices/{id}` and `POST /api/v1/invoices/{id}/void` take no body and return
+`204 No Content` with no body on success; on failure both return an RFC 9457 Problem Details body whose
+`detail` is rendered verbatim.
+
 ### Class Diagram
 
 ```mermaid
@@ -145,6 +165,8 @@ classDiagram
     class InvoicesService {
         +getById(invoiceId)
         +search(query)
+        +delete(invoiceId)
+        +void(invoiceId)
     }
     class UpdateProposedInvoiceComponent {
         +ngOnInit() reads ?invoiceId
@@ -157,9 +179,10 @@ The page persists nothing of its own, so this spec carries no Data Model or Tabl
 
 ## Out of Scope
 
-- **Recording payments, voiding, deleting.** The list shows the resulting state; the endpoints for
-  those exist but belong to their own screens.
+- **Recording payments.** The list shows the resulting state; the payment-recording endpoint exists but
+  belongs to its own screen. (Voiding and deleting moved **in** scope at v5 — see FR 21–25.)
 - **Property, unit and tenant names.** Not available in this bounded context — see Constraints.
 - **Column sorting and a "Processing" column.** FR 14 and FR 15 explain why each is absent rather than
   pending.
 - **Saved filter sets and CSV export.**
+- **Un-delete / un-void.** Neither endpoint offers a reversal, so this screen has no restore action.

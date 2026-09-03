@@ -53,6 +53,34 @@ export class InvoicesService {
   }
 
   /**
+   * Deletes one invoice, cascading the removal back through the billing plan to the lease's schedule.
+   * Returns `204` on success, `404` — `invoice.not_found` — when no invoice has that id, or `422` —
+   * `invoice.has_received_payment` — when a payment has ever applied to it.
+   *
+   * **Soft-deleted, not erased.** The invoice stays readable via `getById`, carrying `deletedAt` and
+   * `status: "deleted"`, and is excluded from {@link search} results unless `includeDeleted` is set.
+   *
+   * **Idempotent.** A repeat of a delete that already succeeded answers `204` again rather than
+   * `404` — a retried request is the ordinary case, not an error.
+   */
+  delete(invoiceId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/${invoiceId}`);
+  }
+
+  /**
+   * Voids one invoice — the same removal as {@link delete}, with the invoice left visible. Returns
+   * `204` on success, `404` — `invoice.not_found`, or `422` — `invoice.has_received_payment` — under
+   * the same conditions as {@link delete}.
+   *
+   * **The only difference from delete is what {@link search} does with the result**: a voided invoice
+   * is always returned and reports `status: "voided"`, where a deleted one is hidden unless asked for.
+   * Idempotent for the same reason `delete` is.
+   */
+  void(invoiceId: string): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/${invoiceId}/void`, null);
+  }
+
+  /**
    * Projects the criteria onto query parameters, **omitting every member that is absent or blank**.
    *
    * The omission is load-bearing, not tidiness: `invoiceNumber=""` is an exact-match filter for the

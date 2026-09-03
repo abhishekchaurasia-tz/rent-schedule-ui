@@ -549,6 +549,40 @@ export interface ArchiveRentAgreementResponse {
   cyclesCancelled: number;
 }
 
+/**
+ * Cancels a draft that never became a lease (backend spec `01-rent-agreement.md` v77, FR-114 – FR-118).
+ *
+ * **Not the opposite of `terminate` or `archive`.** Those end a lease that was activated; this disposes
+ * of one that never was, soft-deleting the agreement and every row beneath it. The backend refuses this
+ * call with `422` for an already-activated agreement — that case is a termination.
+ *
+ * **It carries no instant, unlike its two siblings.** A cancellation records no business date: nothing
+ * happened to a tenancy that never started. The version fence is the whole body.
+ */
+export interface CancelRentAgreementRequest {
+  /** The ordering fence — see `TerminateRentAgreementRequest.version`. */
+  version: number;
+}
+
+/**
+ * What the cancellation withdrew. The four counts are the receipt for a cascade the caller cannot
+ * otherwise see: a cancelled agreement answers `404` on the next `GET`, so there is no follow-up
+ * request that could confirm what happened.
+ */
+export interface CancelRentAgreementResponse {
+  agreementId: string;
+  /** `true` when the draft was already cancelled and this call changed nothing. Still a `200`. */
+  alreadyCancelled: boolean;
+  /** How many live schedule rows were withdrawn — always `0` on a repeat. */
+  cyclesDeleted: number;
+  /** How many live additional charges were withdrawn, with their items — always `0` on a repeat. */
+  chargesDeleted: number;
+  /** How many live proposed invoices were superseded — always `0` on a repeat. */
+  proposalsDeleted: number;
+  /** How many tenant splits were withdrawn — always `0` on a repeat. */
+  tenantsDeleted: number;
+}
+
 export interface UpdateRentAgreementTermsRequest {
   endDate?: string | null;
   fullRent: number;

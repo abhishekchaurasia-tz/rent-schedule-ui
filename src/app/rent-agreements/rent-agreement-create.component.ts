@@ -259,6 +259,16 @@ export class RentAgreementCreateComponent {
   }
 
   /**
+   * Routes away after a successful cancellation. Unlike {@link onActivated}, this never re-reads the
+   * lease: a cancelled draft answers `404` on the next `GET` (backend spec `01-rent-agreement.md` v77,
+   * FR-114), so this screen has nothing left to show for it and must send the user somewhere that
+   * still exists.
+   */
+  onCancelled(): void {
+    void this.router.navigate(['/rent-agreements', 'open']);
+  }
+
+  /**
    * Whether the loaded agreement actually has a deposit. Read from the loaded agreement rather than the
    * form, because the deposit controls may be disabled and a disabled control is omitted from
    * `form.value` — so the form cannot answer this question then.

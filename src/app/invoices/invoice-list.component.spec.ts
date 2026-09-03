@@ -507,4 +507,170 @@ describe('InvoiceListComponent', () => {
       expect(component.chargeAgreement()).toBeNull();
     });
   });
+
+  describe('row-level Delete and Void (spec v5, FR 21-25)', () => {
+    const votedRow: InvoiceSummaryResponse = { ...overdueRow, status: 'voided' };
+    const deletedRow: InvoiceSummaryResponse = { ...paidRow, status: 'deleted' };
+
+    function rowActionCells(): NodeListOf<HTMLElement> {
+      return fixture.nativeElement.querySelectorAll('tbody tr td.row-actions');
+    }
+
+    it('gates the actions in: offered on a live row', () => {
+      expect(component.canManageInvoice(overdueRow)).toBeTrue();
+      expect(component.canManageInvoice(paidRow)).toBeTrue();
+    });
+
+    it('gates the actions out once a row is already voided or deleted', () => {
+      expect(component.canManageInvoice(votedRow)).toBeFalse();
+      expect(component.canManageInvoice(deletedRow)).toBeFalse();
+
+      search(page([votedRow, deletedRow]));
+
+      const cells = rowActionCells();
+      expect(cells[0].textContent).not.toContain('Delete');
+      expect(cells[0].textContent).not.toContain('Void');
+      expect(cells[1].textContent).not.toContain('Delete');
+      expect(cells[1].textContent).not.toContain('Void');
+      // Correct is unaffected by this gating.
+      expect(cells[0].querySelector('a')).toBeTruthy();
+    });
+
+    it('renders Delete and Void on a manageable row', () => {
+      search(page([overdueRow]));
+
+      const cell = rowActionCells()[0];
+      expect(cell.textContent).toContain('Delete');
+      expect(cell.textContent).toContain('Void');
+    });
+
+    it('does not call the API until the inline confirmation is accepted', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'delete');
+      fixture.detectChanges();
+
+      expect(component.pendingRowAction()).toEqual({ invoiceId: overdueRow.invoiceId, action: 'delete' });
+      httpMock.expectNone(`${invoicesUrl}/${overdueRow.invoiceId}`);
+
+      component.cancelRowAction();
+      fixture.detectChanges();
+
+      expect(component.pendingRowAction()).toBeNull();
+      httpMock.expectNone(`${invoicesUrl}/${overdueRow.invoiceId}`);
+    });
+
+    it('confirming Delete calls DELETE, banners success, and re-runs the current search', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'delete');
+      component.confirmRowAction(overdueRow);
+
+      const request = httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}`);
+      expect(request.request.method).toBe('DELETE');
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      fixture.detectChanges();
+
+      expect(component.actionSuccess()).toContain(overdueRow.invoiceNumber);
+      expect(component.actionSuccess()).toContain('deleted');
+      expect(component.pendingRowAction()).toBeNull();
+      expect(component.workingInvoiceId()).toBeNull();
+
+      // The point of FR 24: the list is re-searched rather than the row patched locally.
+      const refresh = httpMock.expectOne((r) => r.url === invoicesUrl);
+      expect(refresh.request.params.get('propertyOwnerId')).toBe(ownerId);
+      refresh.flush(page([]));
+    });
+
+    it('confirming Void calls POST …/void, banners success, and re-runs the current search', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'void');
+      component.confirmRowAction(overdueRow);
+
+      const request = httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}/void`);
+      expect(request.request.method).toBe('POST');
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      fixture.detectChanges();
+
+      expect(component.actionSuccess()).toContain(overdueRow.invoiceNumber);
+      expect(component.actionSuccess()).toContain('voided');
+
+      const refresh = httpMock.expectOne((r) => r.url === invoicesUrl);
+      refresh.flush(page([{ ...overdueRow, status: 'voided' }]));
+    });
+
+    it('treats an idempotent repeat (204 again) as success, same as a first-time delete', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'delete');
+      component.confirmRowAction(overdueRow);
+      httpMock
+        .expectOne(`${invoicesUrl}/${overdueRow.invoiceId}`)
+        .flush(null, { status: 204, statusText: 'No Content' });
+      fixture.detectChanges();
+      httpMock.expectOne((r) => r.url === invoicesUrl).flush(page([]));
+
+      expect(component.actionSuccess()).toContain('deleted');
+    });
+
+    it('guards against a second confirm while one is already in flight for that row', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'delete');
+      component.confirmRowAction(overdueRow);
+      component.confirmRowAction(overdueRow);
+
+      // Exactly one DELETE was issued, not two — a second `expectOne` here would fail otherwise.
+      const request = httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}`);
+      request.flush(null, { status: 204, statusText: 'No Content' });
+      httpMock.expectOne((r) => r.url === invoicesUrl).flush(page([]));
+
+      expect(request.request.method).toBe('DELETE');
+    });
+
+    it('renders a 404 detail verbatim in the acting row, and does not refresh the list', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'delete');
+      component.confirmRowAction(overdueRow);
+
+      httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}`).flush(
+        { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Invoice not found.' },
+        { status: 404, statusText: 'Not Found' }
+      );
+      fixture.detectChanges();
+
+      expect(component.actionError()).toEqual({
+        invoiceId: overdueRow.invoiceId,
+        message: 'Invoice not found.'
+      });
+      expect(fixture.nativeElement.textContent).toContain('Invoice not found.');
+      expect(component.workingInvoiceId()).toBeNull();
+      httpMock.expectNone((r) => r.url === invoicesUrl);
+    });
+
+    it('renders a 422 (invoice.has_received_payment) detail verbatim on void', () => {
+      search(page([overdueRow]));
+
+      component.beginRowAction(overdueRow, 'void');
+      component.confirmRowAction(overdueRow);
+
+      httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}/void`).flush(
+        {
+          type: 'about:blank',
+          title: 'Unprocessable Entity',
+          status: 422,
+          detail: 'A payment has been applied to this invoice; it cannot be removed.'
+        },
+        { status: 422, statusText: 'Unprocessable Entity' }
+      );
+      fixture.detectChanges();
+
+      expect(component.actionError()?.message).toBe(
+        'A payment has been applied to this invoice; it cannot be removed.'
+      );
+      httpMock.expectNone((r) => r.url === invoicesUrl);
+    });
+  });
 });

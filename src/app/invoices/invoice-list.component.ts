@@ -57,6 +57,12 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
  * shown instead. Per-column sorting is absent for a third reason — the endpoint's order is fixed at
  * `dueDate` then `invoiceNumber` precisely so offset pagination stays stable, and controls that did
  * nothing would be worse than none.
+ *
+ * **v5** adds per-row **Delete** and **Void** (backend `DELETE /invoices/{id}` and
+ * `POST /invoices/{id}/void`, both already implemented). Both require an inline confirmation, are
+ * hidden once a row is already `voided` or `deleted`, and a success re-runs the current search rather
+ * than patching the row — the fresh search already applies the visibility rule each verb implies
+ * (deleted rows drop out unless "Include deleted" is checked; voided rows always stay and relabel).
  */
 @Component({
   selector: 'app-invoice-list',
@@ -125,6 +131,37 @@ export class InvoiceListComponent {
 
   /** What the last successful add did, for the confirmation line above the refreshed list. */
   readonly chargeSuccess = signal<string | null>(null);
+
+  /**
+   * The invoice whose row menu (⋮ Correct/Delete/Void) is open, or `null` when none is.
+   *
+   * A menu, not three stacked links: the table already carries ten dense columns, and Correct/
+   * Delete/Void sitting there as permanent text made every row look like a wall of blue-and-red
+   * links rather than a single deliberate action a user reaches for. One button per row, one menu at
+   * a time.
+   */
+  readonly openRowMenuInvoiceId = signal<string | null>(null);
+
+  /**
+   * Viewport coordinates for the open row menu, computed from the clicked ⋮ button's
+   * `getBoundingClientRect()` — the same technique `RentAgreementCreateComponent`'s schedule-row
+   * kebab menu uses, and for the same reason: `.table-scroll` scrolls horizontally, and an
+   * ancestor's `overflow` clips a descendant's paint regardless of `position: fixed`, so the menu
+   * renders as a sibling of the scrolling wrapper instead of a child of any row.
+   */
+  readonly rowMenuPosition = signal<{ top: number; left: number } | null>(null);
+
+  /** Which row's delete or void is awaiting confirmation, or `null` when none is (FR 21). */
+  readonly pendingRowAction = signal<{ invoiceId: string; action: 'delete' | 'void' } | null>(null);
+
+  /** The invoice id whose delete/void request is in flight, or `null` when none is — guards double-submit. */
+  readonly workingInvoiceId = signal<string | null>(null);
+
+  /** The last delete/void failure, scoped to the row it happened on, so it renders in that row only. */
+  readonly actionError = signal<{ invoiceId: string; message: string } | null>(null);
+
+  /** What the last successful delete/void did, for the confirmation banner above the list. */
+  readonly actionSuccess = signal<string | null>(null);
 
   /** The 1-based page to request next. Reset to 1 by any filter change. */
   private page = 1;
@@ -442,6 +479,79 @@ export class InvoiceListComponent {
   /** Whether a row still owes money — what drives the alert colouring, per the design. */
   isOutstanding(invoice: InvoiceSummaryResponse): boolean {
     return invoice.balance > 0;
+  }
+
+  // ---- row-level delete / void (FR 21–25) -----------------------------------------------------
+
+  /**
+   * Whether delete/void are offered on this row.
+   *
+   * Gated **out** once an invoice reaches either terminal wire status — the reverse of the lifecycle
+   * component's `isDraft` gating, but the same spirit: a button that reliably answers `422` (both
+   * verbs require a payment to have never applied, and a terminal invoice already ended some other
+   * way) is worse than no button, and a second delete/void on an already-terminal row has nothing left
+   * to confirm.
+   */
+  canManageInvoice(invoice: InvoiceSummaryResponse): boolean {
+    return invoice.status !== 'voided' && invoice.status !== 'deleted';
+  }
+
+  /** Whether `invoice`'s delete/void request is the one currently in flight. */
+  isRowWorking(invoice: InvoiceSummaryResponse): boolean {
+    return this.workingInvoiceId() === invoice.invoiceId;
+  }
+
+  /** Opens the inline confirmation for one row's delete or void, clearing any previous row error. */
+  beginRowAction(invoice: InvoiceSummaryResponse, action: 'delete' | 'void'): void {
+    this.actionError.set(null);
+    this.pendingRowAction.set({ invoiceId: invoice.invoiceId, action });
+  }
+
+  /** Abandons the confirmation without calling anything. */
+  cancelRowAction(): void {
+    this.pendingRowAction.set(null);
+  }
+
+  /**
+   * Runs the confirmed delete or void.
+   *
+   * **Success re-runs the current search rather than patching the row in place.** That is the correct
+   * answer for both verbs, not just the simpler one: a deleted invoice is excluded from the list unless
+   * "Include deleted" is checked, so it should disappear; a voided one is always returned and now
+   * reports `voided`. A fresh search already renders both outcomes correctly — patching the row locally
+   * would have to reimplement that same visibility rule and could drift from it.
+   *
+   * A repeat confirmation on an already-terminal row cannot reach here: {@link canManageInvoice} hides
+   * the action once the refreshed row reports `voided` or `deleted`.
+   */
+  confirmRowAction(invoice: InvoiceSummaryResponse): void {
+    const pending = this.pendingRowAction();
+    if (!pending || pending.invoiceId !== invoice.invoiceId || this.workingInvoiceId()) {
+      return;
+    }
+
+    this.workingInvoiceId.set(invoice.invoiceId);
+    this.actionError.set(null);
+
+    const request =
+      pending.action === 'delete' ? this.invoices.delete(invoice.invoiceId) : this.invoices.void(invoice.invoiceId);
+
+    request.subscribe({
+      next: () => {
+        this.workingInvoiceId.set(null);
+        this.pendingRowAction.set(null);
+        this.actionSuccess.set(
+          pending.action === 'delete'
+            ? `Invoice ${invoice.invoiceNumber} was deleted.`
+            : `Invoice ${invoice.invoiceNumber} was voided.`
+        );
+        this.refresh();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.workingInvoiceId.set(null);
+        this.actionError.set({ invoiceId: invoice.invoiceId, message: InvoiceListComponent.describeError(err) });
+      }
+    });
   }
 
   private static describeError(err: HttpErrorResponse): string {

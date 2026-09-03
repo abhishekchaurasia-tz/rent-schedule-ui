@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v3 | 2026-09-03 | **A draft finally has a way out.** *Enabled by backend `01-rent-agreement.md` v77 FR-114 – FR-118, already live, already covered by the Postman collection.* Until now an `InProcess` lease rendered no lifecycle UI at all — correct, since it has nothing to terminate or archive, but it left "a lease that was signed and then fell through" with no path off this screen except deleting its schedule row by row. Requirements 16–19 add a third, disjoint action — **Cancel** — offered only for a draft, calling `POST …/{id}/cancel`. It is folded into `RentAgreementLifecycleComponent` rather than a new component because it is still one status-gated lease-ending decision. **A cancelled draft answers `404` on its next `GET`** (FR-114), so the component emits a dedicated `cancelled` output — distinct from `changed` — telling the host to navigate away rather than reload a lease that no longer exists. | [rent-agreement-cancel-draft-ui](../../plans/rent-agreements/2026-09-03T1200-05-rent-agreement-cancel-draft-ui.md) |
 | v2 | 2026-09-02 | **The recorded end date is finally shown — v1's own table promised it and the backend could not supply it.** *Enabled by backend `01-rent-agreement.md` v76 FR-113, which added `terminationEffectiveDate` and `archivedOn` to the detail response.* v1's "What each status offers" table already said a `Terminating` or `Terminated` lease should show *"the recorded end date"*, and the component could not: the date existed only on the **termination response**, so a user saw it once in the success banner and lost it on the next page load. What survived a reload was a note saying a termination *"is already recorded"* — the **what** with no **when**, on the one screen where the when is the whole point. Requirements 13–15 add a persistent panel: the effective date for a termination, the archival date for an archive, and **both when both are recorded**, since FR-105's precedence is a reporting rule and an agreement can carry the two facts at once. **The date is rendered from the detail response and never computed** — the same rule requirement 8 already states for cycle counts, and for the same reason: a client-side "days remaining" would look authoritative and drift from the property's clock, which is the server's to keep. **Absent dates degrade to v1's wording** rather than rendering an empty row, so the component stays correct against a backend that predates FR-113. | [rent-agreement-lifecycle-dates-ui](../../plans/rent-agreements/2026-09-02T2000-05-rent-agreement-lifecycle-dates-ui.md) |
 | v1 | 2026-09-02 | **Initial spec: ending a lease early and withdrawing it, from the Edit Lease screen.** A new `RentAgreementLifecycleComponent` offers **Terminate** (with an effective date) and **Archive**, calling the backend's `POST …/{id}/terminate` and `POST …/{id}/archive` (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107). It sits beside the existing `ActivateLeaseComponent` and **gates on the lease's reported `status`** — which is only now possible: until backend v73 that field answered `InProcess` for every lease however long it had been active, so no screen could trust it. Archive is presented as irreversible, because it is: the backend exposes no un-archive (FR-107). | [2026-09-02T1800-05-rent-agreement-lifecycle-ui](../../plans/rent-agreements/2026-09-02T1800-05-rent-agreement-lifecycle-ui.md) |
 
@@ -92,6 +93,23 @@ user discover it afterwards.
     server keeps. The fallback is what lets this component stay correct against a backend older than
     FR-113.
 
+### Cancelling a draft (v3)
+
+16. The system shall offer **Cancel** when, and only when, the reported status is `InProcess` — a
+    draft that was never activated. It shall never be offered alongside Terminate or Archive, and
+    Terminate/Archive shall never be offered alongside it, matching the backend's own disjointness
+    rule (backend FR-114 – FR-118: an activated agreement is refused with `422`).
+17. The system shall confirm before cancelling, and the confirmation shall state that it cannot be
+    undone and that it removes the draft's schedule, additional charges and tenant roster.
+18. The system shall report, after a cancellation, how many cycles, charges and tenants the response
+    says were withdrawn — taken from the response, never computed client-side, for the same reason as
+    requirement 8.
+19. The system shall emit a **dedicated** change event on a successful cancellation, distinct from the
+    one Terminate/Archive raise. A cancelled draft answers `404` on its next `GET` (backend FR-114),
+    so the host must not attempt the same reload it performs after those two — it must navigate away
+    instead. A repeat (`alreadyCancelled: true`) is still a success and still raises this event, the
+    same as requirement 9 states for Terminate/Archive.
+
 ## Constraints
 
 - **No new dependency.** Angular signals, `HttpClient` and the existing `RentAgreementsService`, as
@@ -111,6 +129,7 @@ user discover it afterwards.
 |--------|-------|------|---------|---------|
 | `POST` | `/api/v1/rent/agreements/{id}/terminate` | `{ effectiveDate, terminatedAt, version }` | `200` — `TerminateRentAgreementResponse` | `404` unknown lease; `409` stale version or already archived; `422` effective date before the lease's begin date |
 | `POST` | `/api/v1/rent/agreements/{id}/archive` | `{ archivedAt, version }` | `200` — `ArchiveRentAgreementResponse` | `404`; `409` stale version; `422` lease never activated |
+| `POST` | `/api/v1/rent/agreements/{id}/cancel` | `{ version }` | `200` — `CancelRentAgreementResponse` | `404`; `409` stale version; `422` agreement already activated |
 
 ### Input / Output models
 
@@ -153,6 +172,22 @@ export interface ArchiveRentAgreementResponse {
   alreadyArchived: boolean;
   cyclesCancelled: number;
 }
+
+// v3 — disposes of a draft that was never activated (backend FR-114 – FR-118).
+export interface CancelRentAgreementRequest {
+  /** The ordering fence. See FR 12 for why this is always 1 here. */
+  version: number;
+}
+
+export interface CancelRentAgreementResponse {
+  agreementId: string;
+  /** `true` when the draft was already cancelled and nothing changed. Still a `200`. */
+  alreadyCancelled: boolean;
+  cyclesDeleted: number;
+  chargesDeleted: number;
+  proposalsDeleted: number;
+  tenantsDeleted: number;
+}
 ```
 
 ### Component contract
@@ -166,6 +201,10 @@ export interface ArchiveRentAgreementResponse {
 @Input() archivedOn: string | null = null;
 
 @Output() readonly changed = new EventEmitter<void>();
+
+// v3 — separate from `changed`: a cancelled draft 404s on its next GET, so the host must route away
+// rather than reload.
+@Output() readonly cancelled = new EventEmitter<void>();
 ```
 
 `status` is the lease's reported status, straight from `RentAgreementDetailResponse.status`. The host
@@ -173,13 +212,13 @@ passes it and re-passes it after reloading, so the offered actions follow the le
 
 ### What each status offers (FR 2 – FR 5)
 
-| Reported status | Terminate | Archive | Shown instead |
-|---|---|---|---|
-| `InProcess` | — | — | "Activate this lease before ending it." |
-| `Future`, `Active`, `Expiring` | ✅ | ✅ | — |
-| `Terminating`, `Terminated` | — | ✅ | **v2** — the recorded effective date (requirement 13) |
-| `Expired` | — | ✅ | — |
-| `Archived` | — | — | "Archived. This lease is closed." plus **v2** the archival date, and the termination date too when both are recorded (requirement 14) |
+| Reported status | Terminate | Archive | Cancel | Shown instead |
+|---|---|---|---|---|
+| `InProcess` | — | — | **v3** ✅ | — |
+| `Future`, `Active`, `Expiring` | ✅ | ✅ | — | — |
+| `Terminating`, `Terminated` | — | ✅ | — | **v2** — the recorded effective date (requirement 13) |
+| `Expired` | — | ✅ | — | — |
+| `Archived` | — | — | — | "Archived. This lease is closed." plus **v2** the archival date, and the termination date too when both are recorded (requirement 14) |
 
 ### Class Diagram
 
@@ -189,18 +228,22 @@ classDiagram
         +string agreementId
         +string status
         +EventEmitter changed
+        +EventEmitter cancelled
         +signal pendingAction
         +signal effectiveDate
         +signal result
         +signal error
         +computed canTerminate
         +computed canArchive
+        +computed isDraft
         +terminate()
         +archive()
+        +cancelAgreement()
     }
     class RentAgreementsService {
         +terminate(id, request)
         +archive(id, request)
+        +cancel(id, request)
     }
     class RentAgreementCreateComponent {
         +onLifecycleChanged()

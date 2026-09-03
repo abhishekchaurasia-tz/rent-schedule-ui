@@ -13,7 +13,8 @@
    green Activate button next door. Terminate is amber and archive is red: terminate is correctable
    (a second call with a different date re-cuts the schedule), archive is not. */
 .terminate-btn,
-.archive-btn {
+.archive-btn,
+.cancel-draft-btn {
   padding: 0.6rem 1.4rem;
   border: 0;
   border-radius: 4px;
@@ -36,7 +37,8 @@
   }
 }
 
-.archive-btn {
+.archive-btn,
+.cancel-draft-btn {
   background: #991b1b;
 
   &:hover:not(:disabled) {

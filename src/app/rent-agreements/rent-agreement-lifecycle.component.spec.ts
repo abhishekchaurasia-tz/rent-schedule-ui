@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RentAgreementLifecycleComponent } from './rent-agreement-lifecycle.component';
 import {
   ArchiveRentAgreementResponse,
+  CancelRentAgreementResponse,
   TerminateRentAgreementResponse
 } from './rent-agreement.models';
 
@@ -15,6 +16,7 @@ describe('RentAgreementLifecycleComponent', () => {
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000041';
   const terminateUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/terminate`;
   const archiveUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/archive`;
+  const cancelUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/cancel`;
 
   const terminated = (
     overrides: Partial<TerminateRentAgreementResponse> = {}
@@ -35,6 +37,18 @@ describe('RentAgreementLifecycleComponent', () => {
     status: 'Archived',
     alreadyArchived: false,
     cyclesCancelled: 3,
+    ...overrides
+  });
+
+  const cancelled = (
+    overrides: Partial<CancelRentAgreementResponse> = {}
+  ): CancelRentAgreementResponse => ({
+    agreementId,
+    alreadyCancelled: false,
+    cyclesDeleted: 2,
+    chargesDeleted: 1,
+    proposalsDeleted: 0,
+    tenantsDeleted: 2,
     ...overrides
   });
 
@@ -67,7 +81,7 @@ describe('RentAgreementLifecycleComponent', () => {
 
   // ---------- FR 2 – FR 5: the status table ----------
 
-  it('offers neither action on an unactivated draft', () => {
+  it('offers neither terminate nor archive on an unactivated draft', () => {
     // A draft has nothing to withdraw, and the backend refuses to archive one with a 422. Offering a
     // button that reliably fails is worse than offering none — which is only decidable at all because
     // backend v73 made `status` trustworthy.
@@ -76,6 +90,13 @@ describe('RentAgreementLifecycleComponent', () => {
     expect(component.canTerminate()).toBeFalse();
     expect(component.canArchive()).toBeFalse();
     expect(component.isDraft()).toBeTrue();
+  });
+
+  it('offers Cancel on an unactivated draft (backend spec v77 FR-114)', () => {
+    at('InProcess');
+
+    const button = fixture.nativeElement.querySelector('.cancel-draft-btn');
+    expect(button?.textContent).toContain('Cancel this draft');
   });
 
   (['Future', 'Active', 'Expiring'] as const).forEach((status) => {
@@ -357,5 +378,87 @@ describe('RentAgreementLifecycleComponent', () => {
 
     // One request, not two: the in-flight guard is what stops a double-click withdrawing twice.
     httpMock.expectOne(terminateUrl).flush(terminated());
+  });
+
+  // ---------- backend spec v77, FR-114 – FR-118: cancelling a draft ----------
+
+  it('posts the constant fence and reports the outcome from the response', () => {
+    at('InProcess');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+
+    const request = httpMock.expectOne(cancelUrl);
+    expect(request.request.method).toBe('POST');
+    // Same constant every other lifecycle call sends — nothing in this app issues versions, and the
+    // backend rejects only a version BELOW the stored one.
+    expect(request.request.body.version).toBe(1);
+    request.flush(cancelled());
+
+    expect(component.cancelResult()?.alreadyCancelled).toBeFalse();
+    expect(component.cancelResult()?.cyclesDeleted).toBe(2);
+    expect(component.cancelResult()?.tenantsDeleted).toBe(2);
+    expect(component.error()).toBeNull();
+  });
+
+  it('tells the host to route away, not reload, after a cancellation', () => {
+    // Distinct from `changed`: a cancelled draft answers 404 on the next GET, so the host must not try
+    // to reload it the way it does after a terminate/archive.
+    let cancellations = 0;
+    let reloads = 0;
+    at('InProcess');
+    component.cancelled.subscribe(() => cancellations++);
+    component.changed.subscribe(() => reloads++);
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    httpMock.expectOne(cancelUrl).flush(cancelled());
+
+    expect(cancellations).toBe(1);
+    expect(reloads).toBe(0);
+    expect(component.pendingAction()).toBeNull();
+    expect(component.working()).toBeFalse();
+  });
+
+  it('renders an idempotent cancel repeat as a repeat rather than a fresh cancellation', () => {
+    at('InProcess');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    httpMock
+      .expectOne(cancelUrl)
+      .flush(cancelled({ alreadyCancelled: true, cyclesDeleted: 0, chargesDeleted: 0, tenantsDeleted: 0 }));
+
+    const result = component.cancelResult();
+    expect(result?.alreadyCancelled).toBeTrue();
+    expect(result?.cyclesDeleted).toBe(0);
+  });
+
+  it('renders a cancellation refusal detail verbatim and leaves the confirmation open', () => {
+    // e.g. the agreement was already activated — that case is a termination, not a cancellation.
+    at('InProcess');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    httpMock.expectOne(cancelUrl).flush(
+      { detail: 'The agreement has already been activated and cannot be cancelled.' },
+      { status: 422, statusText: 'Unprocessable Entity' }
+    );
+
+    expect(component.error()).toBe(
+      'The agreement has already been activated and cannot be cancelled.'
+    );
+    expect(component.pendingAction()).toBe('cancelDraft');
+    expect(component.working()).toBeFalse();
+  });
+
+  it('does nothing when a cancellation is already in flight', () => {
+    at('InProcess');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    component.cancelAgreement();
+
+    httpMock.expectOne(cancelUrl).flush(cancelled());
   });
 });

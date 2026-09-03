@@ -10,6 +10,8 @@ import {
   AgreementTenantsResponse,
   ArchiveRentAgreementRequest,
   ArchiveRentAgreementResponse,
+  CancelRentAgreementRequest,
+  CancelRentAgreementResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   ProposedInvoiceDetailResponse,
@@ -199,6 +201,24 @@ export class RentAgreementsService {
   ): Observable<ArchiveRentAgreementResponse> {
     return this.http.post<ArchiveRentAgreementResponse>(
       `${this.baseUrl}/${agreementId}/archive`,
+      request
+    );
+  }
+
+  /**
+   * Disposes of a draft that never became a lease, soft-deleting the agreement and everything beneath
+   * it in one transaction (backend spec `01-rent-agreement.md` v77, FR-114 – FR-118).
+   *
+   * **Idempotent** — a repeat answers `200` with `alreadyCancelled: true`. `404` is an unknown
+   * agreement, `409` a stale `version`, and `422` an agreement that has already been activated — that
+   * case is a termination, not a cancellation.
+   */
+  cancel(
+    agreementId: string,
+    request: CancelRentAgreementRequest
+  ): Observable<CancelRentAgreementResponse> {
+    return this.http.post<CancelRentAgreementResponse>(
+      `${this.baseUrl}/${agreementId}/cancel`,
       request
     );
   }

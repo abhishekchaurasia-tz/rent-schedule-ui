@@ -5,16 +5,24 @@ import { FormsModule } from '@angular/forms';
 
 import {
   ArchiveRentAgreementResponse,
+  CancelRentAgreementResponse,
   TerminateRentAgreementResponse
 } from './rent-agreement.models';
 import { RentAgreementsService } from './rent-agreements.service';
 
 /** Which action the user is confirming, or `null` when neither. */
-type PendingAction = 'terminate' | 'archive' | null;
+type PendingAction = 'terminate' | 'archive' | 'cancelDraft' | null;
 
 /**
  * The **end** of a lease: **Terminate** it on a chosen date, or **Archive** it as of today
- * (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107).
+ * (backend spec `01-rent-agreement.md` v74, FR-094 – FR-107) — or, for a draft that never became a
+ * lease, **Cancel** it outright (backend spec `01-rent-agreement.md` v77, FR-114 – FR-118).
+ *
+ * **Cancel is the third door, disjoint from the other two.** A draft is cancelled and never
+ * terminated or archived; an activated lease is terminated or archived and never cancelled — the
+ * backend enforces this with a `422` in either wrong direction. It is folded into this component
+ * rather than a sibling because it is still one lease-level "end this" decision, gated on the same
+ * `status` input.
  *
  * **Why one component for two actions.** On the backend they are one operation with a different
  * cutoff — terminate cuts at a stated date, archive cuts at today — and they share everything this
@@ -97,6 +105,14 @@ export class RentAgreementLifecycleComponent {
    */
   @Output() readonly changed = new EventEmitter<void>();
 
+  /**
+   * Raised after a successful cancellation — **including a repeat**. Separate from {@link changed}
+   * because a cancelled draft answers `404` on the next `GET` (FR-114): the host cannot reload it, it
+   * must route away, and conflating the two would leave the host guessing which response shape to
+   * expect from a reload it should never attempt.
+   */
+  @Output() readonly cancelled = new EventEmitter<void>();
+
   /** Which action is being confirmed, if any. */
   readonly pendingAction = signal<PendingAction>(null);
 
@@ -108,6 +124,8 @@ export class RentAgreementLifecycleComponent {
   readonly terminateResult = signal<TerminateRentAgreementResponse | null>(null);
 
   readonly archiveResult = signal<ArchiveRentAgreementResponse | null>(null);
+
+  readonly cancelResult = signal<CancelRentAgreementResponse | null>(null);
 
   readonly error = signal<string | null>(null);
 
@@ -129,9 +147,10 @@ export class RentAgreementLifecycleComponent {
   readonly isArchived = computed(() => this.status() === 'Archived');
 
   /**
-   * `true` for an unactivated draft. The component renders **nothing** in that case: ending a lease is
-   * not an action that exists yet for one with nothing to withdraw, and the Activate control beside
-   * this one is the whole story at that point.
+   * `true` for an unactivated draft. Ending a lease (terminate/archive) is not offered here — a draft
+   * has nothing to withdraw — but cancelling the draft itself is (backend spec `01-rent-agreement.md`
+   * v77, FR-114): a lease that is signed and then falls through has no other way to be disposed of
+   * short of deleting it row by row.
    */
   readonly isDraft = computed(() => this.status() === 'InProcess');
 
@@ -171,6 +190,7 @@ export class RentAgreementLifecycleComponent {
     this.error.set(null);
     this.terminateResult.set(null);
     this.archiveResult.set(null);
+    this.cancelResult.set(null);
   }
 
   /** Abandons the confirmation without calling anything. */
@@ -218,6 +238,32 @@ export class RentAgreementLifecycleComponent {
       })
       .subscribe({
         next: (response) => this.settle(() => this.archiveResult.set(response)),
+        error: (err: HttpErrorResponse) => this.fail(err)
+      });
+  }
+
+  /**
+   * Disposes of a draft that was never activated (backend spec `01-rent-agreement.md` v77, FR-114 –
+   * FR-118). Unlike {@link terminate} and {@link archive}, a success does not tell the host to reload —
+   * the agreement is gone and a `GET` for it now answers `404` — it tells the host to route away.
+   */
+  cancelAgreement(): void {
+    if (this.working()) {
+      return;
+    }
+
+    this.working.set(true);
+    this.error.set(null);
+
+    this.rentAgreementsService
+      .cancel(this.agreementId(), { version: 1 })
+      .subscribe({
+        next: (response) => {
+          this.cancelResult.set(response);
+          this.working.set(false);
+          this.pendingAction.set(null);
+          this.cancelled.emit();
+        },
         error: (err: HttpErrorResponse) => this.fail(err)
       });
   }
