@@ -313,6 +313,50 @@ export interface RentAgreementDetailResponse {
   todayUtc: string;
   scheduleRows: RentAgreementScheduleRowResponse[];
   additionalCharges: RentAgreementAdditionalChargeResponse[];
+  /**
+   * What the save asked for and the server would not do (backend spec 01 FR-124, in FR-103's shape).
+   *
+   * **A terms save is a filter, not an all-or-nothing request.** The server applies every other change
+   * and reports the ones it declined here, rather than rejecting the whole submission because one row
+   * is paid — the alternative makes the property owner find the offending row by hand. So a `200` does
+   * **not** mean everything asked for happened, and this array is the only place that difference is
+   * stated. A client that ignores it turns a refusal into a silent no-op, which is exactly how this
+   * was reported: *"jab maine invoice bana diya to schedule row deletion failed ho raha silently"*.
+   *
+   * Optional and nullable so a response from a backend that does not send it still type-checks.
+   */
+  blockedRemovals?: BlockedRemovalResponse[] | null;
+}
+
+/**
+ * One thing a save asked to remove and the server declined (backend spec 01 FR-124 / FR-103, and
+ * `06-unified-invoice-generation.md` FR 105 for the remedy it names).
+ */
+export interface BlockedRemovalResponse {
+  /** What was declined — `schedule_row` today. */
+  kind: string;
+  /** The declined thing's own id. */
+  id: string;
+  /** The schedule row's immutable anchor, which is how this screen finds the row it belongs to. */
+  scheduledDate: string;
+  /**
+   * The invoice standing in the way, and therefore **the remedy**: removing it removes the cycle.
+   * Backend v45 added this field for exactly that purpose — *"so a client can offer to remove the
+   * invoice rather than leaving the owner stuck at a refusal with no next step"*.
+   *
+   * Nullable, because a refusal can name a cycle whose invoice could not be resolved. The screen then
+   * shows the reason without a control, rather than a button that would do nothing.
+   */
+  invoiceId?: string | null;
+  /** A stable code — `cycle_is_billed` today — for anything that must branch rather than display. */
+  reason: string;
+  /**
+   * The sentence to show the user, composed by the server.
+   *
+   * Displayed **verbatim**. The wording belongs to whoever owns the rule, and a client that
+   * paraphrases it drifts from that rule the moment the rule changes.
+   */
+  message: string;
 }
 
 /**

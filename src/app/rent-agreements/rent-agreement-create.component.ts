@@ -32,6 +32,7 @@ import { parseIsoDate, toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
   AdditionalChargeCreationRequest,
+  BlockedRemovalResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
   RentAgreementDetailResponse,
@@ -114,6 +115,15 @@ export class RentAgreementCreateComponent {
   readonly saveResult = signal<CreateRentAgreementResponse | null>(null);
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
+
+  /**
+   * What the last save asked for and the server declined (backend spec 01 FR-124).
+   *
+   * **Not an error signal.** `saveError` means the save failed; this means it succeeded and did less
+   * than it was asked to, which is FR-103's deliberate shape — every other change applies and the
+   * refusals are reported. The two are shown differently and can never both be set by one response.
+   */
+  readonly blockedRemovals = signal<BlockedRemovalResponse[]>([]);
 
   readonly additionalCharges = signal<AdditionalChargeCreationRequest[]>([]);
 
@@ -1343,6 +1353,20 @@ export class RentAgreementCreateComponent {
           additionalCharges: agreement.additionalCharges
         });
         this.saving.set(false);
+
+        // FR-124's client clause. The server answers `200` and reports what it declined rather than
+        // rejecting the whole submission (FR-103), so a success is not the same as "everything you
+        // asked for happened". Read it before deciding whether to leave the page.
+        this.blockedRemovals.set(agreement.blockedRemovals ?? []);
+
+        if (this.blockedRemovals().length > 0) {
+          // Held here on purpose. Navigating away rendered the refusal onto a screen the user never
+          // saw, which is what made a declined deletion indistinguishable from a save that did
+          // nothing -- the defect as it was reported. Staying puts the row, the reason and the
+          // invoice it names in front of them at once.
+          return;
+        }
+
         // Same as a fresh create: move straight into the renter set. "Manage Tenants"/the tenants
         // screen's own Cancel button are the way back here without saving again.
         void this.router.navigate(['/rent-agreements', agreementId, 'tenants']);
