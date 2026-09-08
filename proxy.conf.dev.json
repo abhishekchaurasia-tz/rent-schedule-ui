@@ -1,0 +1,8 @@
+{
+  "/billing": {
+    "target": "https://api-dev-my.innago.com",
+    "secure": true,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  }
+}
