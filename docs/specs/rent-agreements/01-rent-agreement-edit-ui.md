@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v19 | 2026-09-08 | **A refused row deletion looked exactly like a save that did nothing, because this application threw the server's explanation away.** New **requirement 10**. *Reported 2026-09-08: "jab maine invoice bana diya to schedule row deletion failed ho raha silently".* **It never failed.** `PUT …/terms` answered `200`, applied every other change, and named the refusal in `blockedRemovals` — a message written for display, plus the id of the invoice standing in the way, which the backend added at its v45 expressly *"so a client can offer to remove the invoice rather than leaving the owner stuck at a refusal with no next step"*. **`blockedRemovals` appeared nowhere in this repository**: no model field, no component code, no template branch. A terms save is a filter rather than an all-or-nothing request (backend FR-103), so a `200` does not mean everything asked for happened — and this was the only place that difference could have been shown. **Holding the navigation is the half that makes it a fix.** The save moved straight to the tenants screen on success, so a banner rendered here would have been rendered onto a page the user never saw; the page now stays while anything is refused, putting the row, the reason and the invoice together. The happy path is untouched. **Three deliberate limits, recorded rather than left to be discovered:** the server's `message` is shown verbatim because the wording belongs to whoever owns the rule; the invoice is **named, not acted on**, since removing one is destructive and `04-invoice-list-ui.md` already owns that confirm flow; and the invoice id is shown raw, because a filtered link needs a route contract `/invoices` does not have. | [2026-09-08T2100-01-surface-blocked-removals](../../plans/rent-agreements/2026-09-08T2100-01-surface-blocked-removals.md) |
 | v18 | 2026-09-01 | **Semi-Annual is no longer offered on a month-to-month lease.** The backend refuses that pair outright — `PreviewRentScheduleQueryValidator` and `FirstRentalDueDateOptionsQueryValidator` both answer *"Semi-annual frequency is not supported for month-to-month leases."* — so the option could only ever end in a `400` the user had no way to see coming. The six-entry frequency list, previously copied into three components, moves to one shared `frequency-options.util.ts`, and each picker reads `frequenciesFor(leaseTermType)`. **Hiding the option is only half of it**: a form already sitting on Semi-Annual when the term switches would keep an invalid value in a control whose list no longer contains it — blank on screen, failing on save for a field the user cannot see — so the lease form and the preview reset to Monthly on that switch, and the fee panel does the same at open time *after* its prefill, since a saved charge can itself carry Semi-Annual on a lease since reopened as month-to-month. **Custom is deliberately still offered** for month-to-month: the backend rule names Semesterly and nothing else. | [2026-09-01T1000-month-to-month-frequency-options](../../plans/rent-agreements/2026-09-01T1000-month-to-month-frequency-options.md) |
 | v17 | 2026-08-31 | **The per-tenant due-date cell uses the Material datepicker, like every other date in the app.** It was the one native `<input type="date">` left on this screen — an oversight, since the component already wired `MatDatepickerModule` and `provideNativeDateAdapter()` for its other pickers. The cell is not a form control but a `[value]`/`(change)` pair over the ISO-string `tenantDueDates` map, so two template-facing wrappers (`asDate`/`asIso`) convert at that boundary and the map keeps the exact shape `saveEdit` sends. No wire change. | [2026-08-31T2000-datepicker-consistency](../../plans/rent-agreements/2026-08-31T2000-datepicker-consistency.md) |
 | v16 | 2026-08-20 | **Bug fix, found while the user verified v15 live: the first-rental-due-date `<select>` was already blank on a fresh edit-page load of a draft lease, before any field was touched at all.** v15's `isFirstRentalDueDateEditable` exemption only covers `Active`/`Expiring` leases; a draft is correctly NOT exempt from it, but that rule was never meant to also cover this case — `loadAgreement()`'s own, very first `refreshCandidateDates()` call, made immediately after patching the form, before the user can have changed anything. The candidate endpoint enumerates dates purely from the recurrence's cadence, so an already-saved, freely-picked anchor (the domain's `GenerationWindow.AnchorDate` "verbatim first row") routinely isn't in it — with zero edit having happened. **Fix**: `refreshCandidateDates` gains an `isInitialLoad` parameter, `true` only on `loadAgreement()`'s own call; the auto-clear now also requires `!isInitialLoad`, so the very first fetch after load never clears the field in **any** status — v15's status-gated rule resumes governing every fetch after that, once a real edit happens. | [2026-08-20T2200-01-rent-agreement-edit-ui-first-rental-due-date-initial-load-preserve](../../plans/rent-agreements/2026-08-20T2200-01-rent-agreement-edit-ui-first-rental-due-date-initial-load-preserve.md) |
@@ -72,6 +73,30 @@ resurrect a row the user acted on.
    `leaseTermType`/`frequency`), so it arrives as `"Planned"`/`"Cancelled"`, not `"planned"`/
    `"cancelled"` (v3).
 
+10. The system shall **surface every entry in `blockedRemovals`** after an edit save, and shall **not
+    navigate away** while any is present — the save succeeded and did less than it was asked to, which
+    is a state the user has to be shown rather than one to leave behind (backend spec 01 FR-124, in
+    FR-103's filter shape). Each entry is rendered with the server's own `message`, verbatim, and with
+    the `invoiceId` it names when it has one. The refused row shows as **not** cancelled, because the
+    response re-seeds the rows and the server kept it planned.
+    **Reported from the running application 2026-09-08** — *"jab maine invoice bana diya to schedule
+    row deletion failed ho raha silently"*. It never failed: `PUT …/terms` answered `200`, applied
+    every other change, and named the refusal with a ready-to-display message and the invoice standing
+    in the way. **`blockedRemovals` appeared nowhere in this application** — no model field, no
+    component code, no template branch — so the report was received and discarded, and the row simply
+    reappeared planned with no explanation.
+    **Holding the navigation is the part that makes this a fix.** The save moved straight to the
+    tenants screen on success, so a report rendered here was rendered onto a page the user never saw.
+    Staying puts the row, the reason and the invoice in front of them together. When nothing is
+    refused, the navigation is unchanged.
+    **The message is not composed here.** The wording belongs to whoever owns the rule, and a client
+    that paraphrases it drifts from the rule the moment the rule changes — the backend added
+    `invoiceId` for this purpose at its v45, *"so a client can offer to remove the invoice rather than
+    leaving the owner stuck at a refusal with no next step"*.
+    **The invoice is named, not acted on.** Removing an invoice is destructive and belongs behind the
+    confirm flow `04-invoice-list-ui.md` already has, not behind a small button on this screen. That
+    leaves the owner one navigation short of the remedy, which is a deliberate trade recorded here so
+    it is not mistaken for an oversight.
 ## Constraints
 
 - The preview endpoint (`POST /rent-schedule/preview`) is stateless — it never receives back a

@@ -436,4 +436,76 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(component.loadingAgreement()).toBeFalse();
     httpMock.expectNone(optionsUrl);
   });
+
+  it('FR124_SaveReportsBlockedRemoval_HoldsTheNavigationAndSurfacesTheMessage', () => {
+    load();
+
+    component.deleteRow('2026-02-01');
+    component.save();
+
+    // The server applies everything else and reports what it declined -- a 200 that does not mean
+    // "everything you asked for happened" (FR-103's filter shape).
+    httpMock.expectOne(termsUrl).flush({
+      ...detail(),
+      blockedRemovals: [
+        {
+          kind: 'schedule_row',
+          id: 'r2',
+          scheduledDate: '2026-02-01',
+          invoiceId: '01a08090-a988-7e91-8706-381c82ea0608',
+          reason: 'cycle_is_billed',
+          message: 'This cycle is already billed and cannot be removed here — delete or void its invoice instead.'
+        }
+      ]
+    } as RentAgreementDetailResponse);
+
+    expect(component.blockedRemovals().length).toBe(1);
+    expect(component.blockedRemovals()[0].message).toContain('delete or void its invoice instead');
+
+    // Why this is the fix rather than decoration: the save navigated straight to the tenants screen,
+    // so any report was rendered onto a page the user never saw. A declined instruction keeps them
+    // here, where the row and the explanation are both in front of them.
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.saving()).toBeFalse();
+  });
+
+  it('FR124_SaveReportsNoBlockedRemoval_NavigatesAsBefore', () => {
+    load();
+
+    component.save();
+
+    httpMock.expectOne(termsUrl).flush(detail());
+
+    expect(component.blockedRemovals()).toEqual([]);
+    // Nothing declined, so the unchanged behaviour stands: straight into the renter set.
+    expect(router.navigate).toHaveBeenCalledWith(['/rent-agreements', agreementId, 'tenants']);
+  });
+
+  it('FR124_SaveReportsBlockedRemoval_LeavesTheRefusedRowVisiblyNotCancelled', () => {
+    load();
+
+    component.deleteRow('2026-02-01');
+    expect(component.isRowCancelled('2026-02-01')).toBeTrue();
+
+    component.save();
+
+    httpMock.expectOne(termsUrl).flush({
+      ...detail(),
+      blockedRemovals: [
+        {
+          kind: 'schedule_row',
+          id: 'r2',
+          scheduledDate: '2026-02-01',
+          invoiceId: null,
+          reason: 'cycle_is_billed',
+          message: 'This cycle is already billed and cannot be removed here.'
+        }
+      ]
+    } as RentAgreementDetailResponse);
+
+    // The response re-seeds every row from the server, and the server kept this one Planned. The
+    // deletion the user asked for must therefore stop showing as done: a row that still looked
+    // cancelled would be the same silent failure, now wearing a banner.
+    expect(component.isRowCancelled('2026-02-01')).toBeFalse();
+  });
 });

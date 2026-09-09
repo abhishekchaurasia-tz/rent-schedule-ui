@@ -636,6 +636,41 @@
             <div class="banner error">{{ saveError() }}</div>
           }
 
+          <!--
+            The save succeeded and did less than it was asked to (backend FR-124/FR-103). A warning
+            rather than an error, because every other change did apply — and never rendered at the same
+            time as saveError, which means the save itself failed.
+
+            The message is the server's, shown verbatim: the wording belongs to whoever owns the rule.
+          -->
+          @if (blockedRemovals().length > 0) {
+            <div class="banner warn">
+              <p>
+                <strong
+                  >{{ blockedRemovals().length }}
+                  {{ blockedRemovals().length === 1 ? 'change was' : 'changes were' }} not applied.</strong
+                >
+                Everything else in this save was.
+              </p>
+              <ul>
+                @for (blocked of blockedRemovals(); track blocked.id) {
+                  <li>
+                    <strong>{{ blocked.scheduledDate }}</strong> — {{ blocked.message }}
+                    @if (blocked.invoiceId) {
+                      <!--
+                        The invoice named as the remedy, shown rather than acted on: removing an invoice
+                        is destructive and belongs behind the confirm flow the invoice list already has,
+                        not behind a small button on this screen.
+                      -->
+                      <br />
+                      <small>Invoice: {{ blocked.invoiceId }}</small>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+
           @if (saveResult(); as savedRes) {
             <div class="banner success">
               Saved as agreement <strong>{{ savedRes.agreementId }}</strong> ({{ savedRes.status }})
