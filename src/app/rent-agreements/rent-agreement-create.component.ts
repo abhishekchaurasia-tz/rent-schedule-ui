@@ -17,8 +17,10 @@ import {
   ExistingScheduleRowInput,
   LeaseTermType,
   PendingTenantRowInput,
+  PreviewBlockedRowResponse,
   PreviewRentScheduleRequest,
   PreviewRentScheduleResponse,
+  PreviewWarningResponse,
   RentFrequency,
   TenantSplitInput
 } from '../rent-schedule/rent-schedule.models';
@@ -108,6 +110,22 @@ export class RentAgreementCreateComponent {
   readonly previewResult = signal<PreviewRentScheduleResponse | null>(null);
   readonly previewLoading = signal(false);
   readonly previewError = signal<string | null>(null);
+
+  /**
+   * What the previewed change will cost, from the server — **not** an error signal: `previewError`
+   * means the preview failed, these mean it succeeded and the change has a consequence worth seeing.
+   *
+   * These are the only signals in this application that arrive **before** a save rather than after
+   * one, which is what makes them worth rendering: `blockedRemovals` explains a refusal afterwards,
+   * while `previewBlocked` names the same rows while the user can still change their mind.
+   *
+   * Both are replaced on every preview, never merged, so a warning can never outlive the change that
+   * produced it.
+   */
+  readonly previewWarnings = signal<PreviewWarningResponse[]>([]);
+
+  /** The removals this change asks for that the save will decline (see {@link previewWarnings}). */
+  readonly previewBlocked = signal<PreviewBlockedRowResponse[]>([]);
 
   readonly candidateDates = signal<string[]>([]);
   readonly candidateDatesLoading = signal(false);
@@ -887,6 +905,8 @@ export class RentAgreementCreateComponent {
     this.previewLoading.set(true);
     this.previewError.set(null);
     this.previewResult.set(null);
+    this.previewWarnings.set([]);
+    this.previewBlocked.set([]);
     this.saveResult.set(null);
 
     const value = this.form.value;
@@ -920,6 +940,12 @@ export class RentAgreementCreateComponent {
           // correlation of its own — it reads the status it was given. That is the whole point of the
           // v46/v47 move: no date-matching, position-matching, or row-count reasoning lives here.
           this.previewResult.set(response);
+
+          // Replaced wholesale on every preview: these describe *this* computed change, so carrying an
+          // earlier call's warning forward would describe a change the user has already backed out of.
+          this.previewWarnings.set(response.warnings ?? []);
+          this.previewBlocked.set(response.blocked ?? []);
+
           this.lastPreviewSignature = this.scheduleSignature();
           this.previewLoading.set(false);
           // A hand-edited row's amount is deliberately NOT preserved — any schedule-affecting change

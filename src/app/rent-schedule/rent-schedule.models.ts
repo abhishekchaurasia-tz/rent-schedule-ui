@@ -153,10 +153,47 @@ export interface ProblemDetails {
   instance?: string;
 }
 
+/**
+ * One stored row the previewed change would remove but that the save will decline, because its
+ * invoice is frozen — a payment recorded, or a due date passed (backend spec 01 FR-022 / FR-124).
+ *
+ * **Advisory, and the save is authoritative:** a preview and the save it predicts can straddle a
+ * change to what the lease has been billed. Its value is that it says so *before* the save.
+ */
+export interface PreviewBlockedRowResponse {
+  scheduledDate: string;
+  invoiceStatus?: string | null;
+  reason: string;
+}
+
+/**
+ * A non-blocking consequence of the previewed change that the user must see **before** saving
+ * (backend spec 01 FR-023 / FR-024).
+ *
+ * `code` is stable and machine-readable — `frequency_change_loses_row_identity` today; `message` is
+ * written for display and is rendered verbatim. `scheduledDate` is present only when the warning is
+ * about one row.
+ */
+export interface PreviewWarningResponse {
+  code: string;
+  message: string;
+  scheduledDate?: string | null;
+}
+
 export interface PreviewRentScheduleResponse {
   rows: ScheduleRow[];
   totalInvoices: number;
   totalAmount: number;
+  /**
+   * The removals this change asks for that the save will decline. Empty on a create-time preview and
+   * whenever nothing is blocked; optional and nullable for backward compatibility.
+   */
+  blocked?: PreviewBlockedRowResponse[] | null;
+  /**
+   * What the change will cost that no error will mention — the only signal in this application that
+   * arrives *before* a save rather than after it.
+   */
+  warnings?: PreviewWarningResponse[] | null;
 }
 
 export interface CandidateDateRequest {
