@@ -5,8 +5,8 @@
 The user reported the same defect twice more after v9, and restated the requirement plainly:
 
 > *"when i change the end date then preview api reset my value. showing deleted row is schedule way"*
-> *"mai phir se bol raha mujhe UI pe logic nhi chahiye, preview api batayega kon sa row deleted hai"*
-> *"edit ke case me … jub preview ki api response de raha tab usme delete ka koi flag nhi hai"*
+> *"I am saying again that I do not want logic in the UI — the preview API will say which row is deleted"*
+> *"on an edit … when the preview API responds there is no delete flag in it at all"*
 
 v9 had moved the *decision* to the API but kept two client sets (`deletedRowDates` for this session's
 deletes, `cancelledRowDates` for server-confirmed ones) plus attribution logic to sort a returned

@@ -4,9 +4,9 @@
 
 After the v8 fix (extending ordinal-position remapping to server-confirmed cancelled rows) still left
 the same visible bug reachable, the user gave a direct instruction: the decision of which row is
-cancelled — and the totals that follow from it — belongs in the API, not the UI. *"mujhe UI pe iska
-complexity nahi daalna, API ko decision lena padega ki kaun cancel hai kaun nahi, aur total invoices
-aur total amount kitna hoga cancel aur edited rows ke according."*
+cancelled — and the totals that follow from it — belongs in the API, not the UI. *"I do not want this
+complexity in the UI — the API has to decide which are cancelled and which are not, and what the
+total invoices and total amount are given the cancelled and edited rows."*
 
 This is the companion to `innago-rent-accounting` spec `01-rent-agreement.md` v46, which finishes
 wiring a mechanism that already existed but was never fully used: `PreviewRentScheduleQuery.ExistingRows`
