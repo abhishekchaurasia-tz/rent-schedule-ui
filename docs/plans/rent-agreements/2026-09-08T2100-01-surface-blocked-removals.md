@@ -11,7 +11,7 @@ the refusal in `blockedRemovals` — with a message written for display and the 
 standing in the way. This application had no `blockedRemovals` anywhere in it: not in the response
 model, not in the component, not in the template. The report was received and discarded.
 
-Reported 2026-09-08: *"jab maine invoice bana diya to schedule row deletion failed ho raha silently"*.
+Reported 2026-09-08: *"once I had created the invoice, deleting the schedule row started failing silently"*.
 
 ---
 
