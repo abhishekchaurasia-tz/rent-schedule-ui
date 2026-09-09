@@ -7,6 +7,7 @@ import {
   ActivateRentAgreementRequest,
   ActivateRentAgreementResponse,
   AddAdditionalChargeRequest,
+  AddAdditionalChargeResponse,
   AgreementTenantsResponse,
   ArchiveRentAgreementRequest,
   ArchiveRentAgreementResponse,
@@ -131,12 +132,15 @@ export class RentAgreementsService {
    * The response is the persisted charge with its real ids — `201` when created, `200` when the
    * request replayed an `id` the lease already held. Both resolve here identically, because the body
    * is the same charge either way and this app never sends an `id` to replay with.
+   *
+   * It also carries `unbilledLines` — the lines this save could bill nowhere. A success, so it is
+   * reported rather than thrown; see {@link AddAdditionalChargeResponse}.
    */
   addAdditionalCharge(
     agreementId: string,
     request: AddAdditionalChargeRequest
-  ): Observable<RentAgreementAdditionalChargeResponse> {
-    return this.http.post<RentAgreementAdditionalChargeResponse>(
+  ): Observable<AddAdditionalChargeResponse> {
+    return this.http.post<AddAdditionalChargeResponse>(
       `${this.baseUrl}/${agreementId}/additional-charges`,
       request
     );

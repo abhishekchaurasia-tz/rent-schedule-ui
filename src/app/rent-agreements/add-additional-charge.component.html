@@ -185,6 +185,30 @@
                 </li>
               }
             </ul>
+
+            <!--
+              Inside the charge card, not as a page-level banner: the disclosure belongs to this fee and
+              stays true as more fees are added. The fee was saved — what these lines cannot do is reach
+              an invoice, because every candidate has already taken money.
+            -->
+            @if (unbilledFor(charge.id).length > 0) {
+              <div class="banner warn">
+                <p>
+                  <strong
+                    >{{ unbilledFor(charge.id).length }}
+                    {{ unbilledFor(charge.id).length === 1 ? 'line was' : 'lines were' }} recorded but
+                    could not be billed.</strong
+                  >
+                  Every invoice they could have gone on has already taken a payment, and a paid invoice
+                  is corrected with a credit or a void rather than an edit. The fee itself is saved.
+                </p>
+                <ul>
+                  @for (line of unbilledFor(charge.id); track line.description) {
+                    <li><strong>{{ line.description }}</strong> — {{ line.amount | currency }}</li>
+                  }
+                </ul>
+              </div>
+            }
           </article>
         }
       </section>

@@ -251,6 +251,36 @@ export interface RentAgreementAdditionalChargeResponse {
   isApplied: boolean;
 }
 
+/**
+ * One line a charge recorded but that nothing could bill, because every candidate invoice has already
+ * taken money — a paid invoice is corrected with a credit or a void, never an edit (backend spec 06
+ * FR 101, spec 04 v8 FR 41).
+ *
+ * **A disclosure, not an error.** The line exists on the charge and stays there; what it cannot do is
+ * reach an invoice. The backend added this expressly because the defect was the silence, not the
+ * refusal — so a client that receives it and says nothing reproduces the original defect.
+ */
+export interface UnbilledLineResponse {
+  description: string;
+  amount: number;
+}
+
+/**
+ * `POST /rent-agreements/{id}/additional-charges` — the saved charge's own fields at the root, plus
+ * the lines this save could bill nowhere.
+ *
+ * The wire shape is **flat**: the server writes the charge's properties at the root and appends
+ * `unbilledLines` beside them, which is why this extends the shared charge response rather than
+ * wrapping it. It is a **per-save** concept and deliberately absent from the charge as echoed by
+ * `GET …/{id}` and by create, so it is not on {@link RentAgreementAdditionalChargeResponse}.
+ *
+ * Optional and nullable here only for defensive reading — the server documents it as always present
+ * and never null.
+ */
+export interface AddAdditionalChargeResponse extends RentAgreementAdditionalChargeResponse {
+  unbilledLines?: UnbilledLineResponse[] | null;
+}
+
 export interface CreateRentAgreementResponse {
   agreementId: string;
   status: string;
