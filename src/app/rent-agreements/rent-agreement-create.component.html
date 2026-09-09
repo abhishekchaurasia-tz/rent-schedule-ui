@@ -375,6 +375,56 @@
             {{ res.totalAmount | number: '1.2-2' }}
           </div>
 
+          <!--
+            The only signals in this screen that arrive BEFORE the save. Rendered above the schedule
+            table, because their whole value is being read while the change can still be undone — the
+            same facts after a save are `blockedRemovals`, by which time the decision is made.
+          -->
+          @if (previewWarnings().length > 0) {
+            <div class="banner warn">
+              <p>
+                <strong
+                  >Saving this will cost
+                  {{ previewWarnings().length === 1 ? 'something' : 'a few things' }}.</strong
+                >
+                Nothing is wrong with the schedule below — this is what changes if you keep it.
+              </p>
+              <ul>
+                @for (warning of previewWarnings(); track warning.code) {
+                  <li>
+                    @if (warning.scheduledDate) {
+                      <strong>{{ warning.scheduledDate }}</strong> —
+                    }
+                    {{ warning.message }}
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+
+          @if (previewBlocked().length > 0) {
+            <div class="banner warn">
+              <p>
+                <strong
+                  >{{ previewBlocked().length }}
+                  {{ previewBlocked().length === 1 ? 'row cannot' : 'rows cannot' }} be removed by this
+                  save.</strong
+                >
+                Everything else in it will apply. To remove one of these, remove its invoice first.
+              </p>
+              <ul>
+                @for (row of previewBlocked(); track row.scheduledDate) {
+                  <li>
+                    <strong>{{ row.scheduledDate }}</strong> — {{ row.reason }}
+                    @if (row.invoiceStatus) {
+                      <small>Invoice: {{ row.invoiceStatus }}</small>
+                    }
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+
           @if (editRowError()) {
             <div class="banner error">{{ editRowError() }}</div>
           }

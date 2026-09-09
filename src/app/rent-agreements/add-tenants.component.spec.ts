@@ -224,6 +224,61 @@ describe('AddTenantsComponent', () => {
     expect(component.saveResult()).toEqual({ tenantIds: response.tenantIds });
   });
 
+  it('FR155_SaveReportsSkippedCycles_SurfacesThemWithoutCallingItAFailure', () => {
+    load();
+
+    const first = component.tenants.at(0);
+    first.patchValue({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' });
+
+    component.save();
+
+    // The save succeeded. Some months were already due when it ran, so they keep the split they were
+    // billed with (backend requirement 104) -- and the server names them rather than leaving the
+    // manager to notice that one month moved and another did not.
+    httpMock.expectOne(tenantsUrl).flush({
+      agreementId,
+      isGroupInvoice: true,
+      partialPaymentAllowed: true,
+      tenantIds: [first.get('tenantId')!.value],
+      skippedCycles: [
+        {
+          kind: 'schedule_row',
+          id: 'r1',
+          scheduledDate: '2026-08-01',
+          invoiceId: null,
+          reason: 'cycle_already_due',
+          message: 'This cycle was already due when the split changed, so it keeps the shares it was billed with.'
+        }
+      ]
+    } as SaveAgreementTenantsResponse);
+
+    expect(component.skippedCycles().length).toBe(1);
+    expect(component.skippedCycles()[0].scheduledDate).toBe('2026-08-01');
+    expect(component.skippedCycles()[0].message).toContain('keeps the shares it was billed with');
+
+    // Not an error, and the save is not undone: either would misdescribe what happened.
+    expect(component.saveError()).toBeNull();
+    expect(component.saveResult()).not.toBeNull();
+  });
+
+  it('FR155_SaveReportsNoSkippedCycles_SurfacesNothing', () => {
+    load();
+
+    const first = component.tenants.at(0);
+    first.patchValue({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com' });
+
+    component.save();
+
+    httpMock.expectOne(tenantsUrl).flush({
+      agreementId,
+      isGroupInvoice: true,
+      partialPaymentAllowed: true,
+      tenantIds: [first.get('tenantId')!.value]
+    } as SaveAgreementTenantsResponse);
+
+    expect(component.skippedCycles()).toEqual([]);
+  });
+
   it('navigates back to the edit screen on Cancel', () => {
     load();
 

@@ -152,13 +152,22 @@ behaviour exactly.
 
 ## Final Validation
 
-- [ ] This plan's `**Spec:** … — v19` first line resolves, and the spec's v19 changelog row links back
+- [x] This plan's `**Spec:** … — v19` first line resolves, and the spec's v19 changelog row links back
       to this plan file.
-- [ ] Authorship recorded: this plan's header names a real person and today's date. *(The spec's
+- [x] Authorship recorded: this plan's header names a real person and today's date. *(The spec's
       changelog has no Author column — a pre-existing gap in this repository, not introduced here.)*
-- [ ] Requirement 10 is implemented and named by at least one test.
-- [ ] The Flow Card matches what was built.
-- [ ] `ng build` and `ng test` both pass.
-- [ ] No dependency added, no route added, no global stylesheet change.
-- [ ] The deliberate limits — the remedy is named not offered, and the invoice id is shown raw — are in
+- [x] Requirement 10 is implemented and named by at least one test — three `FR124_…` tests in
+      `rent-agreement-edit.component.spec.ts`.
+- [x] The Flow Card matches what was built.
+- [x] `ng build` and `ng test` both pass — 312 passing at the time, 314 after the sibling slice below.
+- [x] No dependency added, no route added, no global stylesheet change — the merged commit `689f184`
+      touched four `src/app/rent-agreements/` files and this plan's two documents, nothing else.
+- [x] The deliberate limits — the remedy is named not offered, and the invoice id is shown raw — are in
       *Prerequisites & Open Questions* rather than left for a reader to discover.
+
+**Follow-on, recorded here because it is the same defect a second time:** `skippedCycles` on
+`PUT …/tenants` was being discarded in exactly the same way, on the next screen of the same wizard.
+Fixed by [2026-09-09T1500-06-surface-skipped-cycles](2026-09-09T1500-06-surface-skipped-cycles.md)
+against the new spec [`06-add-tenants-ui.md`](../../specs/rent-agreements/06-add-tenants-ui.md).
+Two instances is a pattern: **whenever the backend reports something on a `200`, check this
+repository actually reads it** — `grep` for the field name before assuming it is handled.

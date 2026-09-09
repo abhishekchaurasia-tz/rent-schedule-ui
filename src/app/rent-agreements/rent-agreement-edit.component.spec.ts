@@ -508,4 +508,101 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     // cancelled would be the same silent failure, now wearing a banner.
     expect(component.isRowCancelled('2026-02-01')).toBeFalse();
   });
+
+  it('FR023_PreviewReportsAWarning_SurfacesItBeforeTheSave', fakeAsync(() => {
+    load();
+
+    // Any schedule-affecting change re-fires the preview; which change it is does not matter here,
+    // because when a warning fires is the server's decision and rendering it is this screen's.
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1000, status: 'Planned' }],
+      totalInvoices: 1,
+      totalAmount: 1000,
+      warnings: [
+        {
+          code: 'frequency_change_loses_row_identity',
+          message: "This change moves nearly every row's date — row identity and hand-edited amounts will be lost.",
+          scheduledDate: null
+        }
+      ]
+    });
+    fixture.detectChanges();
+
+    expect(component.previewWarnings().length).toBe(1);
+    expect(component.previewWarnings()[0].code).toBe('frequency_change_loses_row_identity');
+    expect(fixture.nativeElement.textContent).toContain('row identity and hand-edited amounts will be lost');
+
+    // A warning is not an error: the preview succeeded and the schedule it computed is on screen.
+    expect(component.previewError()).toBeNull();
+    expect(component.previewResult()).not.toBeNull();
+  }));
+
+  it('FR022_PreviewReportsABlockedRemoval_SurfacesItBeforeTheSave', fakeAsync(() => {
+    load();
+
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }],
+      totalInvoices: 1,
+      totalAmount: 1200,
+      blocked: [{ scheduledDate: '2026-02-01', invoiceStatus: 'Paid', reason: 'This cycle is already billed.' }]
+    });
+    fixture.detectChanges();
+
+    expect(component.previewBlocked().length).toBe(1);
+    expect(component.previewBlocked()[0].scheduledDate).toBe('2026-02-01');
+    expect(fixture.nativeElement.textContent).toContain('This cycle is already billed.');
+  }));
+
+  it('FR023_PreviewReportsNothing_SurfacesNothing', fakeAsync(() => {
+    load();
+
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }],
+      totalInvoices: 1,
+      totalAmount: 1200
+    });
+
+    expect(component.previewWarnings()).toEqual([]);
+    expect(component.previewBlocked()).toEqual([]);
+  }));
+
+  it('FR023_ASecondPreviewWithoutWarnings_ClearsThePreviousOnes', fakeAsync(() => {
+    load();
+
+    // Any schedule-affecting change re-fires the preview; which change it is does not matter here,
+    // because when a warning fires is the server's decision and rendering it is this screen's.
+    component.form.patchValue({ rent: 1200 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1000, status: 'Planned' }],
+      totalInvoices: 1,
+      totalAmount: 1000,
+      warnings: [{ code: 'frequency_change_loses_row_identity', message: 'Row identity will be lost.', scheduledDate: null }]
+    });
+
+    expect(component.previewWarnings().length).toBe(1);
+
+    // Back to monthly: the warning no longer applies, so it must not be left on screen describing a
+    // change the user has already backed out of.
+    component.form.patchValue({ rent: 1300 });
+    tick(300);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1000, status: 'Planned' }],
+      totalInvoices: 1,
+      totalAmount: 1000
+    });
+
+    expect(component.previewWarnings()).toEqual([]);
+  }));
 });

@@ -13,7 +13,8 @@ import {
   AddAdditionalChargeRequest,
   AgreementTenantShareResponse,
   RentAgreementAdditionalChargeResponse,
-  RentAgreementDetailResponse
+  RentAgreementDetailResponse,
+  UnbilledLineResponse
 } from './rent-agreement.models';
 
 /** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — same shape check as the Open Lease screen. */
@@ -88,6 +89,18 @@ export class AddAdditionalChargeComponent {
 
   /** The charges this page has committed, newest first, with their server ids. */
   readonly addedCharges = signal<RentAgreementAdditionalChargeResponse[]>([]);
+
+  /**
+   * The lines each committed charge could bill nowhere, keyed by that charge's id.
+   *
+   * **Keyed by charge rather than held as one "latest save" list** because the disclosure outlives the
+   * save that produced it: this page adds fees one after another, and a second fee that bills fine
+   * says nothing about the first, which the owner still has to act on.
+   *
+   * Not an error signal — `submitError` means the save failed; this means it succeeded and part of
+   * what was recorded cannot reach an invoice.
+   */
+  readonly unbilledByCharge = signal<Record<string, UnbilledLineResponse[]>>({});
 
   /** How many tenants are ticked — drives the "shared by all" wording next to the list. */
   readonly selectedCount = computed(() => this.selectedTenantIds().size);
@@ -228,6 +241,15 @@ export class AddAdditionalChargeComponent {
     this.service.addAdditionalCharge(agreement.agreementId, request).subscribe({
       next: (created) => {
         this.addedCharges.update((charges) => [created, ...charges]);
+
+        // Recorded only when there is something to say, so the map holds disclosures rather than an
+        // entry per charge — and the charge that produced it is already in the list above, which is
+        // where the banner renders.
+        const unbilled = created.unbilledLines ?? [];
+        if (unbilled.length > 0) {
+          this.unbilledByCharge.update((byCharge) => ({ ...byCharge, [created.id]: unbilled }));
+        }
+
         this.submitting.set(false);
         this.showPanel.set(false);
       },
@@ -236,6 +258,16 @@ export class AddAdditionalChargeComponent {
         this.submitError.set(AddAdditionalChargeComponent.describeError(err));
       }
     });
+  }
+
+  /**
+   * What the named charge could bill nowhere — empty for every ordinary save.
+   *
+   * @param chargeId The committed charge's server id.
+   * @returns The unbilled lines the server disclosed for it, or an empty array.
+   */
+  unbilledFor(chargeId: string): UnbilledLineResponse[] {
+    return this.unbilledByCharge()[chargeId] ?? [];
   }
 
   /** An added charge's total, summed from its persisted item amounts. */

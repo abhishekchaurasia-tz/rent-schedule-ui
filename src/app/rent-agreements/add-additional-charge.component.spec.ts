@@ -368,4 +368,56 @@ describe('AddAdditionalChargeComponent', () => {
   it('totals an added charge from its item amounts', () => {
     expect(component.chargeTotal(createdCharge)).toBe(50);
   });
+
+  it('FR101_SaveReportsUnbilledLines_SurfacesThemAgainstThatCharge', () => {
+    loadAgreement();
+    component.openPanel();
+    component.onChargeCreated(emittedCharge);
+
+    httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush({
+      ...createdCharge,
+      unbilledLines: [{ description: 'Reserved bay', amount: 50 }]
+    });
+    fixture.detectChanges();
+
+    expect(component.unbilledFor(createdCharge.id).length).toBe(1);
+    expect(component.unbilledFor(createdCharge.id)[0].description).toBe('Reserved bay');
+    expect(component.unbilledFor(createdCharge.id)[0].amount).toBe(50);
+
+    // The charge was saved. Reporting what it could not bill must not read as a rejection.
+    expect(component.submitError()).toBeNull();
+    expect(component.addedCharges().length).toBe(1);
+    expect(fixture.nativeElement.textContent).toContain('Reserved bay');
+  });
+
+  it('FR101_SaveReportsNoUnbilledLines_SurfacesNothing', () => {
+    loadAgreement();
+    component.openPanel();
+    component.onChargeCreated(emittedCharge);
+
+    httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(createdCharge);
+    fixture.detectChanges();
+
+    expect(component.unbilledFor(createdCharge.id)).toEqual([]);
+  });
+
+  it('FR101_ASecondChargeBillsFine_LeavesTheFirstChargesDisclosureStanding', () => {
+    loadAgreement();
+
+    component.onChargeCreated(emittedCharge);
+    httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush({
+      ...createdCharge,
+      unbilledLines: [{ description: 'Reserved bay', amount: 50 }]
+    });
+
+    const second = { ...createdCharge, id: '99999999-9999-9999-9999-999999999999' };
+    component.onChargeCreated(emittedCharge);
+    httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(second);
+    fixture.detectChanges();
+
+    // Keyed by charge, not one banner for the latest save: a second fee that bills fine says nothing
+    // about the first one, and the owner still has to act on the first.
+    expect(component.unbilledFor(createdCharge.id).length).toBe(1);
+    expect(component.unbilledFor(second.id)).toEqual([]);
+  });
 });
