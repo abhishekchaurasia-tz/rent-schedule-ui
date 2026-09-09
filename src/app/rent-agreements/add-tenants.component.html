@@ -225,6 +225,29 @@
       }
 
       <!--
+        Reported beside the success banner, not instead of it: the save did apply. What these months did
+        not take is the new split — they were already due when it changed, so they keep the shares they
+        were billed with. Without this the manager reads "saved" and then meets a bill that disagrees.
+      -->
+      @if (skippedCycles().length > 0) {
+        <div class="banner warn">
+          <p>
+            <strong
+              >{{ skippedCycles().length }}
+              {{ skippedCycles().length === 1 ? 'month keeps' : 'months keep' }} the split it was billed
+              with.</strong
+            >
+            The new split applies from the next month that has not been billed yet.
+          </p>
+          <ul>
+            @for (skipped of skippedCycles(); track skipped.id) {
+              <li><strong>{{ skipped.scheduledDate }}</strong> — {{ skipped.message }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      <!--
         The end of the wizard. Activation is offered here because it is the first point at which it can
         actually succeed: the payer lanes it bills are derived from the tenants saved on this screen, so
         a lease with none gets a 422.

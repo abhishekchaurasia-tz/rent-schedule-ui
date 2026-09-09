@@ -11,6 +11,7 @@ import {
   AgreementTenantShareRequest,
   AgreementTenantShareResponse,
   AgreementTenantsResponse,
+  BlockedRemovalResponse,
   RentAgreementDetailResponse,
   SaveAgreementTenantsRequest
 } from './rent-agreement.models';
@@ -83,6 +84,13 @@ export class AddTenantsComponent {
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly saveResult = signal<{ tenantIds: string[] } | null>(null);
+
+  /**
+   * The already-due months the server left on the split they were billed with. The save itself
+   * succeeded, so these are reported and never rendered as a failure — see
+   * {@link SaveAgreementTenantsResponse.skippedCycles}.
+   */
+  readonly skippedCycles = signal<BlockedRemovalResponse[]>([]);
 
   readonly rentSplitUnit = signal<SplitUnit>('percent');
   readonly depositSplitUnit = signal<SplitUnit>('percent');
@@ -448,10 +456,12 @@ export class AddTenantsComponent {
     this.saving.set(true);
     this.saveError.set(null);
     this.saveResult.set(null);
+    this.skippedCycles.set([]);
 
     this.rentAgreementsService.saveTenants(this.agreementId, request).subscribe({
       next: (response) => {
         this.saveResult.set({ tenantIds: response.tenantIds });
+        this.skippedCycles.set(response.skippedCycles ?? []);
         this.saving.set(false);
 
         // Step 2 now exists on the server, so this screen is an edit from here on — without a reload.

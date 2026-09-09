@@ -436,6 +436,22 @@ export interface SaveAgreementTenantsResponse {
   partialPaymentAllowed: boolean;
   /** The submitted tenant set, echoed back in submission order — a tenant deactivated by omission is absent. */
   tenantIds: string[];
+  /**
+   * The cycles this roster change **could not reach** — the months already due when it was saved
+   * (backend spec 06 FR-155).
+   *
+   * **The save succeeded, and those months keep the split they were billed with.** That is the rule
+   * rather than a failure: a month already due is billed history, and a roster change is a bulk change
+   * (backend requirement 104, confirmed 2026-08-28). What the rule does not excuse is saying nothing —
+   * a property manager who re-divides a lease and sees three months move and one stay put has no way
+   * to tell the fourth was deliberate.
+   *
+   * Carries the **same shape** as {@link RentAgreementDetailResponse.blockedRemovals}: the backend
+   * returns `BlockedRemovalResponse` for both, so both render the server's own `message` verbatim.
+   *
+   * Optional and nullable so a response from a backend that does not send it still type-checks.
+   */
+  skippedCycles?: BlockedRemovalResponse[] | null;
 }
 
 /**
