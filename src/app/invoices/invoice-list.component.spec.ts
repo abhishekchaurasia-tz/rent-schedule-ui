@@ -270,12 +270,17 @@ describe('InvoiceListComponent', () => {
       .flush(page([overdueRow], { pageNumber: 3, totalPages: 3, hasNextPage: false, hasPreviousPage: true }));
     fixture.detectChanges();
 
-    // Past the last page the server reported: no request at all.
+    expect(component.result()!.pageNumber).toBe(3);
+
+    // Past the last page the server reported: no request at all, and the page it is showing is
+    // still the last one it was given rather than an empty fourth.
     component.goToPage(4);
     httpMock.expectNone((r) => r.url === invoicesUrl);
+    expect(component.result()!.pageNumber).toBe(3);
 
     component.goToPage(0);
     httpMock.expectNone((r) => r.url === invoicesUrl);
+    expect(component.result()!.pageNumber).toBe(3);
   });
 
   it('refresh re-issues the identical query and re-stamps the timestamp', () => {
@@ -516,9 +521,15 @@ describe('InvoiceListComponent', () => {
       openToFeeStep();
 
       component.onChargeCreated(emittedCharge);
+      expect(component.submittingCharge()).toBeTrue();
+
       component.onChargeCreated(emittedCharge);
 
-      httpMock.expectOne(chargeUrl).flush(createdCharge);
+      const requests = httpMock.match(chargeUrl);
+      expect(requests.length).toBe(1);
+
+      requests[0].flush(createdCharge);
+      expect(component.submittingCharge()).toBeFalse();
     });
 
     it('closing the panel discards the loaded lease', () => {

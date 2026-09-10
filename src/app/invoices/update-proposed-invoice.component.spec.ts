@@ -309,8 +309,12 @@ describe('UpdateProposedInvoiceComponent', () => {
     component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
     component.submit();
 
-    // expectOne on the fully-built URL is the assertion: a wrong agreement or proposal id would not match.
-    httpMock.expectOne(patchUrl).flush(correctedProposal);
+    // A wrong agreement or proposal id would build a different URL, so the URL is the assertion.
+    const request = httpMock.expectOne(patchUrl);
+    expect(request.request.url).toBe(patchUrl);
+    expect(request.request.method).toBe('PATCH');
+
+    request.flush(correctedProposal);
   });
 
   it('sends nothing when nothing changed, and says so', () => {
@@ -403,7 +407,10 @@ describe('UpdateProposedInvoiceComponent', () => {
     component.submit();
     component.submit();
 
-    httpMock.expectOne(patchUrl).flush(correctedProposal);
+    const requests = httpMock.match(patchUrl);
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(correctedProposal);
   });
 
   it('fetches the owner catalog on load, scoped to the invoice category', () => {

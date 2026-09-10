@@ -176,10 +176,16 @@ describe('ActivateLeaseComponent', () => {
 
   it('does not fire a second call while one is in flight', () => {
     component.activate();
+    expect(component.activating()).toBeTrue();
+
     component.activate();
 
     // One request, not two — a double-clicked button must not raise two sets of invoices.
-    httpMock.expectOne(activateUrl).flush(response());
+    const requests = httpMock.match(activateUrl);
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(response());
+    expect(component.activating()).toBeFalse();
   });
 
   it('renders the button first, then the Active chip and the outcome banner', () => {

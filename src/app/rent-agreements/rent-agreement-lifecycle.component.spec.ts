@@ -374,10 +374,16 @@ describe('RentAgreementLifecycleComponent', () => {
     component.confirm('terminate');
 
     component.terminate();
+    expect(component.working()).toBeTrue();
+
     component.terminate();
 
     // One request, not two: the in-flight guard is what stops a double-click withdrawing twice.
-    httpMock.expectOne(terminateUrl).flush(terminated());
+    const requests = httpMock.match(terminateUrl);
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(terminated());
+    expect(component.working()).toBeFalse();
   });
 
   // ---------- backend spec v77, FR-114 – FR-118: cancelling a draft ----------
@@ -457,8 +463,14 @@ describe('RentAgreementLifecycleComponent', () => {
     component.confirm('cancelDraft');
 
     component.cancelAgreement();
+    expect(component.working()).toBeTrue();
+
     component.cancelAgreement();
 
-    httpMock.expectOne(cancelUrl).flush(cancelled());
+    const requests = httpMock.match(cancelUrl);
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(cancelled());
+    expect(component.working()).toBeFalse();
   });
 });
