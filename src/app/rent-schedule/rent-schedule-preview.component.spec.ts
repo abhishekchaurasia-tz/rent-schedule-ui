@@ -1,6 +1,8 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 
+import { environment } from '../../environments/environment';
+
 import { RentSchedulePreviewComponent } from './rent-schedule-preview.component';
 import { CandidateDateResponse, PreviewRentScheduleResponse } from './rent-schedule.models';
 
@@ -15,8 +17,8 @@ describe('RentSchedulePreviewComponent', () => {
   let component: RentSchedulePreviewComponent;
   let httpMock: HttpTestingController;
 
-  const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
+  const previewUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/preview`;
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
 
   beforeEach(() => {
     TestBed.configureTestingModule({

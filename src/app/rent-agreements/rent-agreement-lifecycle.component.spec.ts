@@ -1,6 +1,8 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { environment } from '../../environments/environment';
+
 import { RentAgreementLifecycleComponent } from './rent-agreement-lifecycle.component';
 import {
   ArchiveRentAgreementResponse,
@@ -14,9 +16,9 @@ describe('RentAgreementLifecycleComponent', () => {
   let httpMock: HttpTestingController;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000041';
-  const terminateUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/terminate`;
-  const archiveUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/archive`;
-  const cancelUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/cancel`;
+  const terminateUrl = `/api/v1/rent/agreements/${agreementId}/terminate`;
+  const archiveUrl = `/api/v1/rent/agreements/${agreementId}/archive`;
+  const cancelUrl = `/api/v1/rent/agreements/${agreementId}/cancel`;
 
   const terminated = (
     overrides: Partial<TerminateRentAgreementResponse> = {}

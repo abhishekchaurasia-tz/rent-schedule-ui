@@ -95,7 +95,8 @@
               "buildTarget": "rent-schedule-ui:build:production"
             },
             "development": {
-              "buildTarget": "rent-schedule-ui:build:development"
+              "buildTarget": "rent-schedule-ui:build:development",
+              "proxyConfig": "proxy.conf.local.json"
             },
             "dev": {
               "buildTarget": "rent-schedule-ui:build:dev",

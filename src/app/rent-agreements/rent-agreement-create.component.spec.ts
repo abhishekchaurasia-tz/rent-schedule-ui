@@ -2,6 +2,8 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
+import { environment } from '../../environments/environment';
+
 import { RentAgreementCreateComponent } from './rent-agreement-create.component';
 import { AdditionalChargeCreationRequest, CreateRentAgreementResponse } from './rent-agreement.models';
 import { CandidateDateResponse, PreviewRentScheduleResponse } from '../rent-schedule/rent-schedule.models';
@@ -12,9 +14,9 @@ describe('RentAgreementCreateComponent', () => {
   let httpMock: HttpTestingController;
   let router: jasmine.SpyObj<Router>;
 
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
-  const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
-  const createUrl = 'http://localhost:5169/api/v1/rent/agreements';
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
+  const previewUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/preview`;
+  const createUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements`;
 
   const fillValidForm = () => {
     component.form.patchValue({
