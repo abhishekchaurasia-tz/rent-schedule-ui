@@ -1,4 +1,4 @@
-**Spec:** [`docs/specs/rent-agreements/03-update-proposed-invoice-ui.md`](../../specs/rent-agreements/03-update-proposed-invoice-ui.md) — v6
+**Spec:** [`docs/specs/rent-agreements/03-update-proposed-invoice-ui.md`](../../specs/rent-agreements/03-update-proposed-invoice-ui.md) — v7
 
 ## Checklist
 
@@ -20,7 +20,13 @@
       Added `zeroAmountRows`, reading the **product** after rounding toward zero at two places.
 - [x] Both new guards were **shown to fail with the guard removed** — 2 of 43 specs on this screen,
       one per rule. A rule test that has never failed has not been shown to test anything.
-- [x] Full suite green: **326 specs**.
+- [x] **v7 — the rent line too.** Reported by the user: the screen still offered to remove it and it
+      still went. That was v6 behaving as specified — backend `07` v10 recorded rent as unprotected —
+      and v11 reverses that reading. `isLastDepositLine` becomes `isLastSubjectLine`, asking the invoice
+      what it exists to bill rather than growing a second branch, which is how the backend states it too.
+      The spec that pinned rent as removable is **inverted**, and two cases added: a fee may still go,
+      and an invoice that never billed rent is untouched.
+- [x] Full suite green: **328 specs**.
 
 ## Technical Approach
 
