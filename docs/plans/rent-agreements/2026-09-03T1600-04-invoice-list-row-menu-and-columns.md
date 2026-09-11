@@ -7,7 +7,7 @@
 
 - [x] **Reported by the user, with a screenshot**, immediately after v5 shipped: rows looked like they were colliding into each other once the actions cell grew taller than its neighbours.
 - [x] **Root-caused with a Playwright screenshot against a mocked response** (`ng serve` + a throwaway script routing `**/api/v1/invoices**` to fixed JSON) rather than guessing from the CSS: `.invoice-table th, td { vertical-align: middle; }` centred every other cell's one line of text against the actions cell's new height, which is what read as "collapsing".
-- [x] **Reported again immediately after that fix**: three stacked links per row (Correct/Delete/Void) in a ten-column table was confusing on its own — "confused ho raha es UI se ki kya krna hai". Redesigned as a single ⋮ menu.
+- [x] **Reported again immediately after that fix**: three stacked links per row (Correct/Delete/Void) in a ten-column table was confusing on its own — "this UI is confusing about what to do". Redesigned as a single ⋮ menu.
 - [x] **Reused, not reinvented**: `RentAgreementCreateComponent`'s schedule-row kebab menu already solves exactly this — a `position: fixed` panel positioned from the clicked button's own `getBoundingClientRect()`, rendered as a sibling of the scrolling table wrapper rather than a descendant, because an ancestor's `overflow` clips a descendant's paint regardless of `position: fixed`.
 - [x] **Type column**: the user asked why `invoiceType` (Rent vs Security Deposit) wasn't shown. It was already on `InvoiceSummaryResponse` — the column was simply never added.
 - [x] **Unit column removed** at the user's explicit request.

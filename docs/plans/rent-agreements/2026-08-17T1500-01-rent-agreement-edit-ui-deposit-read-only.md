@@ -2,7 +2,7 @@
 
 # Show the deposit read-only on the edit page
 
-User report: *"deposit amount and uske flag check kro add/edit me uske value kyo nhi add ur update ho rage"*,
+User report: *"check the deposit amount and its flag on add and edit — why are its values not being added and updated"*,
 then, after the diagnosis was presented with options: *"read only mode me dikhawo deposit"* (option A).
 
 ## What the investigation actually found

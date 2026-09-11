@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, retry, throwError, timer } from 'rxjs';
 
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
@@ -19,6 +19,15 @@ import {
 
 /** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — same shape check as the Open Lease screen. */
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * How long to wait before replaying a submission the server answered `409`.
+ *
+ * Short enough that the user reads it as the save taking a moment, long enough that the writer which
+ * won the race has committed. It is a constant rather than a setting because a knob here would be a
+ * knob nobody ever turns — and the retry is bounded to one attempt anyway.
+ */
+const CONFLICT_RETRY_DELAY_MS = 400;
 
 /**
  * The **Add Additional Fee** page: appends one fee to an already-saved lease, charged to a chosen
@@ -220,9 +229,22 @@ export class AddAdditionalChargeComponent {
    * deposit/rent mixing rule, the recurring-field matrix, a lease that is not active — and closing on
    * emit would throw away everything the user just typed to hit one.
    *
-   * **Re-entrant submissions are dropped rather than queued.** The panel emits no `id`, so the
-   * endpoint's idempotency key is unavailable and a second POST would create a second charge, not
-   * replay the first.
+   * **Re-entrant submissions are dropped rather than queued**, and the `id` below is what makes the
+   * retry safe. This remark used to end *"the panel emits no `id`, so the endpoint's idempotency key is
+   * unavailable and a second POST would create a second charge, not replay the first"* — which was
+   * precisely the gap. The key is now minted here, so the request carries its own.
+   *
+   * **Why a `409` is retried at all.** A concurrent write to the same lease answers `409`, and nothing
+   * about the submission is wrong — another writer simply won the race. It was measured on 2026-09-10
+   * by submitting a fee immediately after activation, while that activation's own post-commit issuing
+   * pass was still in flight. Without the key a retry risked a second charge, so the only honest thing
+   * the screen could do was show the user an error they could answer only by clicking again. With the
+   * key it cannot: the endpoint replays the submission and answers `200` when the first attempt did in
+   * fact commit.
+   *
+   * **Once, and only for `409`.** A second conflict means something other than a lost race, and a
+   * retry loop on a write turns one slow request into several. Every other status — the routine `422`s
+   * especially — still reaches the user unchanged.
    */
   onChargeCreated(charge: AdditionalChargeCreationRequest): void {
     const agreement = this.agreement();
@@ -232,32 +254,44 @@ export class AddAdditionalChargeComponent {
 
     const request: AddAdditionalChargeRequest = {
       ...charge,
+      id: charge.id ?? crypto.randomUUID(),
       tenantIds: [...this.selectedTenantIds()]
     };
 
     this.submitError.set(null);
     this.submitting.set(true);
 
-    this.service.addAdditionalCharge(agreement.agreementId, request).subscribe({
-      next: (created) => {
-        this.addedCharges.update((charges) => [created, ...charges]);
+    this.service
+      .addAdditionalCharge(agreement.agreementId, request)
+      .pipe(
+        retry({
+          count: 1,
+          delay: (error: HttpErrorResponse) =>
+            error.status === 409
+              ? timer(CONFLICT_RETRY_DELAY_MS)
+              : throwError(() => error)
+        })
+      )
+      .subscribe({
+        next: (created) => {
+          this.addedCharges.update((charges) => [created, ...charges]);
 
-        // Recorded only when there is something to say, so the map holds disclosures rather than an
-        // entry per charge — and the charge that produced it is already in the list above, which is
-        // where the banner renders.
-        const unbilled = created.unbilledLines ?? [];
-        if (unbilled.length > 0) {
-          this.unbilledByCharge.update((byCharge) => ({ ...byCharge, [created.id]: unbilled }));
+          // Recorded only when there is something to say, so the map holds disclosures rather than an
+          // entry per charge — and the charge that produced it is already in the list above, which is
+          // where the banner renders.
+          const unbilled = created.unbilledLines ?? [];
+          if (unbilled.length > 0) {
+            this.unbilledByCharge.update((byCharge) => ({ ...byCharge, [created.id]: unbilled }));
+          }
+
+          this.submitting.set(false);
+          this.showPanel.set(false);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.submitting.set(false);
+          this.submitError.set(AddAdditionalChargeComponent.describeError(err));
         }
-
-        this.submitting.set(false);
-        this.showPanel.set(false);
-      },
-      error: (err: HttpErrorResponse) => {
-        this.submitting.set(false);
-        this.submitError.set(AddAdditionalChargeComponent.describeError(err));
-      }
-    });
+      });
   }
 
   /**
