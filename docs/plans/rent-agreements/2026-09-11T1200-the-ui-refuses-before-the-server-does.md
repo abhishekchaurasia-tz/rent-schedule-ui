@@ -40,10 +40,16 @@ same rule.
 legible messages, so a user who tripped either would have been told what was wrong — just later than
 they should have been, and after a round trip.
 
-**`isLastDepositLine` reads the row, not the count.** It refuses only when the row being removed is
-deposit-shaped *and* it is the last such row; a deposit invoice's credit line stays removable, and a
-rent invoice is untouched by the rule. Borrowing the deposit rule for rent would be wrong in the other
-direction: rent is optional on a proposal, so dropping the rent line is a supported edit.
+**`isLastSubjectLine` reads the row, not the count** (v6 called it `isLastDepositLine`). It refuses only
+when the row being removed is of the invoice's own subject kind *and* is the last such row, so a deposit
+invoice's credit and a rent invoice's fees stay removable.
+
+**v6 said the opposite about rent, and said it confidently.** It read: *"a rent invoice is untouched by
+the rule. Borrowing the deposit rule for rent would be wrong in the other direction: rent is optional on
+a proposal."* That followed backend `07` v10's D4, which itself came from reading *"rent bhi rakh sakta
+hai ur nhi bhi"* as a statement about every invoice rather than about creating a charge invoice. The
+user reported the consequence within the day. It is left quoted here rather than deleted, because the
+mistake was a reading of an instruction and that is the kind that repeats.
 
 **`zeroAmountRows` rounds the way the server rounds.** `Math.floor(quantity * rate * 100) / 100`
 mirrors `MidpointRounding.ToZero`, with a `1e-9` epsilon so binary floating point cannot turn a
@@ -65,6 +71,8 @@ than "not small" — a cent is exactly what a three-way even split leaves on one
 |---|---|
 | `refuses to remove a deposit invoice's last deposit line, though the set would not be empty` | FR 21 — the case the emptiness guard misses |
 | `lets a deposit invoice drop its credit line, because the deposit is what must survive` | FR 21 does not over-reach |
-| `lets a rent invoice drop its rent line, which the backend permits` | FR 21 is not borrowed for rent |
+| `refuses to remove a rent invoice's last rent line` | FR 21 widened — v7, replacing the inverted spec that permitted it |
+| `lets a rent invoice drop its fee line, because the rent is what must survive` | FR 21 does not over-reach on a rent invoice |
+| `lets an invoice that never billed rent drop a line` | Retention, not possession — a charge-only invoice is untouched |
 | `refuses a line whose quantity × rate rounds away to zero, before any request` | FR 22, and that no request is issued |
 | `accepts a line worth one cent, so the rule reads as "not zero" and not "not small"` | FR 22's boundary |
