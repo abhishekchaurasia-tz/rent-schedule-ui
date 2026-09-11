@@ -266,6 +266,80 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.submitNotice()).toContain('at least one line');
   });
 
+  it('refuses to remove a deposit invoice’s last deposit line, though the set would not be empty', () => {
+    // A deposit invoice may legitimately carry a credit beside its deposit, so removing the deposit
+    // leaves two-minus-one — not empty, and so past the guard above. The server refuses it with
+    // 422 invoice.deposit_line_may_not_be_removed; this screen should never have offered it.
+    loadInvoice(
+      {
+        ...invoice,
+        category: 'Deposit',
+        lines: [
+          { ...invoice.lines[0], itemType: 'Deposit', description: 'Security deposit' },
+          { ...invoice.lines[1], itemType: 'Credit', description: 'Goodwill credit' }
+        ]
+      },
+      []
+    );
+
+    component.removeLine(0);
+
+    expect(component.lines.length).toBe(2);
+    expect(component.submitNotice()).toContain('deposit');
+  });
+
+  it('lets a deposit invoice drop its credit line, because the deposit is what must survive', () => {
+    loadInvoice(
+      {
+        ...invoice,
+        category: 'Deposit',
+        lines: [
+          { ...invoice.lines[0], itemType: 'Deposit', description: 'Security deposit' },
+          { ...invoice.lines[1], itemType: 'Credit', description: 'Goodwill credit' }
+        ]
+      },
+      []
+    );
+
+    component.removeLine(1);
+
+    expect(component.lines.length).toBe(1);
+    expect(component.submitNotice()).toBeNull();
+  });
+
+  it('lets a rent invoice drop its rent line, which the backend permits', () => {
+    // Rent is optional on a proposal, so this screen must not borrow the deposit rule for it.
+    loadInvoice();
+
+    component.removeLine(0);
+
+    expect(component.lines.length).toBe(1);
+    expect(component.submitNotice()).toBeNull();
+  });
+
+  it('refuses a line whose quantity × rate rounds away to zero, before any request', () => {
+    // Both inputs clear their own minimums; only the product rounds to 0.00. This is the case the
+    // backend guards after rounding, and the screen guarded neither.
+    loadInvoice();
+
+    component.lines.at(1).patchValue({ quantity: 0.01, rate: 0.4 });
+    component.submit();
+
+    httpMock.expectNone((request) => request.method === 'PATCH');
+    expect(component.submitNotice()).toContain('zero');
+  });
+
+  it('accepts a line worth one cent, so the rule reads as "not zero" and not "not small"', () => {
+    loadInvoice();
+
+    component.lines.at(1).patchValue({ quantity: 1, rate: 0.01 });
+    component.submit();
+
+    const request = httpMock.expectOne(patchUrl);
+    expect(request.request.body.lines[1].rate).toBe(0.01);
+    request.flush(correctedProposal);
+  });
+
   it('sends a brand-new row with no lineId, which is how an addition is expressed', () => {
     loadInvoice();
 

@@ -375,17 +375,79 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * Nothing marks it deleted, because the submitted array *is* the statement — a live line the array
    * omits is soft-deleted. The last row cannot be removed: the endpoint rejects an empty `lines` array
    * with a `400`, and "delete every line" is not an edit this screen offers.
+   *
+   * **v6 — a deposit invoice's last deposit line cannot be removed either** (backend spec `07` FR 37).
+   * The emptiness guard below does not cover it: a deposit invoice may carry a `Credit` beside its
+   * deposit, so dropping the deposit leaves a set that is not empty and sails past it — and leaves a
+   * deposit invoice billing no deposit. The server refuses that with
+   * `422 invoice.deposit_line_may_not_be_removed`; this screen should never have offered it.
    */
   removeLine(index: number): void {
     if (this.lines.length <= 1) {
       this.submitNotice.set('An invoice must keep at least one line. Edit the last one instead of removing it.');
       return;
     }
+
+    if (this.isLastDepositLine(index)) {
+      this.submitNotice.set(
+        'A deposit invoice must keep a deposit line. Edit this one instead of removing it.'
+      );
+      return;
+    }
+
     this.lines.removeAt(index);
     // The open picker is addressed by row index, and every row after this one just shifted up — so a
     // menu left open would now be pointed at a different line than the one it was opened from.
     this.closeItemPicker();
     this.submitNotice.set(null);
+  }
+
+  /**
+   * Reports whether the row at `index` is the only deposit-shaped line left on a deposit invoice.
+   *
+   * The two deposit-shaped types are `Deposit` and `PetDeposit`, matching the backend's
+   * `InvoiceItemTypeExtensions.DepositTypes`. Compared case-insensitively for the reason
+   * `isDepositInvoice` gives: these arrive as enum names from the API and their casing is the
+   * serializer's business, not this screen's.
+   *
+   * @param index The row about to be removed.
+   * @returns True when removing it would leave a deposit invoice with no deposit line.
+   */
+  private isLastDepositLine(index: number): boolean {
+    if (!this.isDepositInvoice) {
+      return false;
+    }
+
+    const isDepositShaped = (itemType: unknown): boolean =>
+      typeof itemType === 'string' && ['deposit', 'petdeposit'].includes(itemType.toLowerCase());
+
+    if (!isDepositShaped(this.lines.at(index).value.itemType)) {
+      return false;
+    }
+
+    return this.lines.controls.filter((line) => isDepositShaped(line.value.itemType)).length <= 1;
+  }
+
+  /**
+   * Reports the rows whose quantity × rate rounds away to nothing (backend spec `07` FR 35).
+   *
+   * **Rounded toward zero at two places, the way the server does it**, which is the whole point: the
+   * per-field `min(0.01)` validators pass `0.01 × 0.40` and it bills `$0.00`. Guarding the inputs is
+   * exactly what lets a zero through, so this reads the product — and a tiny epsilon keeps binary
+   * floating point from turning a legitimate cent into a refusal.
+   *
+   * @returns The one-based row numbers that would bill nothing.
+   */
+  private zeroAmountRows(): number[] {
+    return this.lines.controls
+      .map((line, index) => {
+        const quantity = Number(line.value.quantity);
+        const rate = Number(line.value.rate);
+        const amount = Math.floor(quantity * rate * 100 + 1e-9) / 100;
+
+        return amount === 0 ? index + 1 : 0;
+      })
+      .filter((row) => row > 0);
   }
 
   /** Submits only what changed, and refuses locally when nothing did. */
@@ -407,6 +469,17 @@ export class UpdateProposedInvoiceComponent implements OnInit {
       this.submitNotice.set(
         'Every line needs an item type and a description, and a quantity and rate above zero. ' +
           'Fix the highlighted rows.'
+      );
+      return;
+    }
+
+    // v6 — checked on the product, after rounding, because the per-field minimums above cannot see it.
+    const zeroRows = this.zeroAmountRows();
+    if (zeroRows.length > 0) {
+      this.form.markAllAsTouched();
+      this.submitNotice.set(
+        `Quantity × rate rounds to zero on ${zeroRows.length === 1 ? 'row' : 'rows'} ` +
+          `${zeroRows.join(', ')}. A line must bill more than nothing.`
       );
       return;
     }
