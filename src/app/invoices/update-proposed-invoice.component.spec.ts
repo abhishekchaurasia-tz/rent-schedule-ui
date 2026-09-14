@@ -307,9 +307,38 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.submitNotice()).toBeNull();
   });
 
-  it('lets a rent invoice drop its rent line, which the backend permits', () => {
-    // Rent is optional on a proposal, so this screen must not borrow the deposit rule for it.
+  it('refuses to remove a rent invoice’s last rent line', () => {
+    // Reversed in v7 on the user's report that the screen still offered this and it still went. The
+    // earlier reading had rent removable anywhere; what the instruction meant was that rent is optional
+    // when a charge invoice is *created*, not that a rent line may be deleted from one that bills it.
     loadInvoice();
+
+    component.removeLine(0);
+
+    expect(component.lines.length).toBe(2);
+    expect(component.submitNotice()).toContain('rent line');
+  });
+
+  it('lets a rent invoice drop its fee line, because the rent is what must survive', () => {
+    loadInvoice();
+
+    component.removeLine(1);
+
+    expect(component.lines.length).toBe(1);
+    expect(component.submitNotice()).toBeNull();
+  });
+
+  it('lets an invoice that never billed rent drop a line, so a charge-only invoice is untouched', () => {
+    // Retention, not possession: the rule binds a set that already carries a rent line. An invoice
+    // billing only fees has none to keep, and a rule written as "a rent invoice must have a rent line"
+    // would have refused every parking-only invoice instead.
+    loadInvoice({
+      ...invoice,
+      lines: [
+        { ...invoice.lines[0], itemType: 'Parking', description: 'Reserved bay' },
+        { ...invoice.lines[1], itemType: 'PetFee', description: 'Pet fee' }
+      ]
+    });
 
     component.removeLine(0);
 
@@ -494,7 +523,8 @@ describe('UpdateProposedInvoiceComponent', () => {
 
     const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
     expect(catalogRequest.request.method).toBe('GET');
-    expect(catalogRequest.request.params.get('propertyOwnerId')).toBe(invoice.propertyOwnerId);
+    // v22, 13a -- the owner left the query string for the PropertyOwnerUid header.
+    expect(catalogRequest.request.params.get("propertyOwnerId")).toBeNull();
     expect(catalogRequest.request.params.get('scope')).toBe('AllExcludingCredit');
 
     catalogRequest.flush(lineItems);

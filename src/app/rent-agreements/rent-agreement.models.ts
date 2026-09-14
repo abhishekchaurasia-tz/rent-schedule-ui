@@ -154,11 +154,16 @@ export type AddAdditionalChargeRequest = AdditionalChargeCreationRequest;
 /**
  * Bound directly to `POST /rent-agreements`. Unlike {@link import('../rent-schedule/rent-schedule.models').PreviewRentScheduleRequest},
  * there is no `leaseTermType` field — the backend derives it from whether `endDate` is present.
+ *
+ * **`propertyOwnerId` is deliberately absent** (backend spec `01-rent-agreement.md` v90, FR-128). It
+ * was a required field up to v89 and now travels as the `PropertyOwnerId` request header, attached by
+ * `scopeHeadersInterceptor`. The backend ignores a body that still carries it, so a stale build fails
+ * on the *missing header* rather than on a rejected field — which is why dropping it here and sending
+ * the header must ship together.
  */
 export interface CreateRentAgreementRequest {
   propertyUnitId: string;
   propertyId: string;
-  propertyOwnerId: string;
   startDate: string;
   endDate?: string | null;
   fullRent: number;

@@ -232,7 +232,7 @@ export class UpdateProposedInvoiceComponent implements OnInit {
     // items in front of every property owner on the strength of a guess. Whether HOA items appear is
     // then the backend's rule, not this screen's invention.
     this.lineItemsService
-      .list(invoice.propertyOwnerId, scope, { isFromIncomeList: true })
+      .list(scope, { isFromIncomeList: true })
       .subscribe({
         next: (items) => this.lineItems.set(items),
         error: () => this.lineItems.set([])
@@ -376,11 +376,12 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * omits is soft-deleted. The last row cannot be removed: the endpoint rejects an empty `lines` array
    * with a `400`, and "delete every line" is not an edit this screen offers.
    *
-   * **v6 — a deposit invoice's last deposit line cannot be removed either** (backend spec `07` FR 37).
-   * The emptiness guard below does not cover it: a deposit invoice may carry a `Credit` beside its
-   * deposit, so dropping the deposit leaves a set that is not empty and sails past it — and leaves a
-   * deposit invoice billing no deposit. The server refuses that with
-   * `422 invoice.deposit_line_may_not_be_removed`; this screen should never have offered it.
+   * **v6, widened in v7 — the line this invoice exists to bill cannot be removed** (backend spec `07`
+   * FR 37 and 39). The emptiness guard below does not cover it: a deposit invoice may carry a `Credit`
+   * beside its deposit and a rent invoice carries its fees, so dropping the subject line leaves a set
+   * that is not empty and sails past it — and leaves an invoice billing nothing it is for. The server
+   * refuses that with `422 invoice.deposit_line_may_not_be_removed` or
+   * `invoice.rent_line_may_not_be_removed`; this screen should never have offered it.
    */
   removeLine(index: number): void {
     if (this.lines.length <= 1) {
@@ -388,9 +389,11 @@ export class UpdateProposedInvoiceComponent implements OnInit {
       return;
     }
 
-    if (this.isLastDepositLine(index)) {
+    if (this.isLastSubjectLine(index)) {
       this.submitNotice.set(
-        'A deposit invoice must keep a deposit line. Edit this one instead of removing it.'
+        this.isDepositInvoice
+          ? 'A deposit invoice must keep a deposit line. Edit this one instead of removing it.'
+          : 'An invoice that bills rent must keep its rent line. Edit this one instead of removing it.'
       );
       return;
     }
@@ -403,29 +406,35 @@ export class UpdateProposedInvoiceComponent implements OnInit {
   }
 
   /**
-   * Reports whether the row at `index` is the only deposit-shaped line left on a deposit invoice.
+   * Reports whether the row at `index` is the last line of this invoice's own **subject kind**.
    *
-   * The two deposit-shaped types are `Deposit` and `PetDeposit`, matching the backend's
-   * `InvoiceItemTypeExtensions.DepositTypes`. Compared case-insensitively for the reason
-   * `isDepositInvoice` gives: these arrive as enum names from the API and their casing is the
-   * serializer's business, not this screen's.
+   * The subject kind is what the invoice exists to bill: `Deposit` or `PetDeposit` on a deposit
+   * invoice — matching the backend's `InvoiceItemTypeExtensions.DepositTypes` — and `Rent` on anything
+   * else. Compared case-insensitively for the reason `isDepositInvoice` gives: these arrive as enum
+   * names from the API and their casing is the serializer's business, not this screen's.
+   *
+   * **v7 — one rule, not two.** The deposit rule and the rent rule are the same sentence with the
+   * category swapped, so this asks the category once rather than growing a second branch. Backend spec
+   * `07` FR 39 states it the same way, through `InvoiceLineRank`.
+   *
+   * **Retention, not possession.** It only refuses when the invoice *already* carries such a line, so
+   * an additional-charge invoice that never billed rent is untouched — which is what keeps R5 intact
+   * without an exception for it.
    *
    * @param index The row about to be removed.
-   * @returns True when removing it would leave a deposit invoice with no deposit line.
+   * @returns True when removing it would leave the invoice without the line it exists to bill.
    */
-  private isLastDepositLine(index: number): boolean {
-    if (!this.isDepositInvoice) {
+  private isLastSubjectLine(index: number): boolean {
+    const subjectKinds = this.isDepositInvoice ? ['deposit', 'petdeposit'] : ['rent'];
+
+    const isSubject = (itemType: unknown): boolean =>
+      typeof itemType === 'string' && subjectKinds.includes(itemType.toLowerCase());
+
+    if (!isSubject(this.lines.at(index).value.itemType)) {
       return false;
     }
 
-    const isDepositShaped = (itemType: unknown): boolean =>
-      typeof itemType === 'string' && ['deposit', 'petdeposit'].includes(itemType.toLowerCase());
-
-    if (!isDepositShaped(this.lines.at(index).value.itemType)) {
-      return false;
-    }
-
-    return this.lines.controls.filter((line) => isDepositShaped(line.value.itemType)).length <= 1;
+    return this.lines.controls.filter((line) => isSubject(line.value.itemType)).length <= 1;
   }
 
   /**

@@ -38,7 +38,6 @@ describe('RentAgreementsService', () => {
     const request: CreateRentAgreementRequest = {
       propertyUnitId: '11111111-1111-1111-1111-111111111111',
       propertyId: '22222222-2222-2222-2222-222222222222',
-      propertyOwnerId: '33333333-3333-3333-3333-333333333333',
       startDate: '2026-08-01',
       endDate: '2027-08-01',
       fullRent: 100,
@@ -82,7 +81,6 @@ describe('RentAgreementsService', () => {
     const request: CreateRentAgreementRequest = {
       propertyUnitId: '11111111-1111-1111-1111-111111111111',
       propertyId: '22222222-2222-2222-2222-222222222222',
-      propertyOwnerId: '33333333-3333-3333-3333-333333333333',
       startDate: '2026-08-01',
       fullRent: 100,
       frequency: 'monthly',

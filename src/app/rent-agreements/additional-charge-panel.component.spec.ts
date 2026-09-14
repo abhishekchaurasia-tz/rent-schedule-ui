@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { environment } from '../../environments/environment';
 import { toIsoDate } from '../shared/date.util';
+import { RequestScopeService } from '../request-scope.service';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
 import { AdditionalChargeCreationRequest } from './rent-agreement.models';
 import { LineItemResponse } from './line-item.models';
@@ -55,6 +56,42 @@ describe('AdditionalChargePanelComponent', () => {
     req.flush(items);
   }
 
+  /**
+   * v22 requirement 13b (D5) — the mismatch between the record's owner and the settings box is shown.
+   *
+   * **Why this is the requirement's real content.** Removing the owner argument (13a) is two lines and
+   * changes no visible behaviour; what it leaves behind is a catalog that quietly answers for whoever
+   * the settings box names. Nothing errors, so without this notice a tester reads an empty-looking
+   * picker as "this owner has no custom fees" rather than "I am looking at the wrong owner".
+   */
+  it('Req13b_RecordOwnerDiffersFromTestScope_ShowsTheMismatch', () => {
+    TestBed.inject(RequestScopeService).setPropertyOwnerId('99999999-9999-9999-9999-999999999999');
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+    fixture.detectChanges();
+
+    const notice: HTMLElement | null =
+      fixture.nativeElement.querySelector('.scope-mismatch');
+
+    expect(notice).withContext('a silent wrong-owner catalog is the defect this version fixes').not.toBeNull();
+    expect(notice!.textContent).toContain(propertyOwnerId);
+    expect(notice!.textContent).toContain('99999999-9999-9999-9999-999999999999');
+  });
+
+  /** The ordinary case: the box and the record agree, so nothing is said. */
+  it('Req13b_RecordOwnerMatchesTestScope_SaysNothing', () => {
+    TestBed.inject(RequestScopeService).setPropertyOwnerId(propertyOwnerId);
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.scope-mismatch'))
+      .withContext('a notice on every screen would be noise, and noise is ignored')
+      .toBeNull();
+  });
+
   it('should create', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
@@ -67,7 +104,7 @@ describe('AdditionalChargePanelComponent', () => {
     const req = httpMock.expectOne(
       (r) =>
         r.url === baseUrl &&
-        r.params.get('propertyOwnerId') === propertyOwnerId &&
+        // v22, 13a -- the owner is a header now, so the query carries scope alone.
         r.params.get('scope') === 'AllExcludingCredit'
     );
     req.flush([parkingItem, petFeeItem]);

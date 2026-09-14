@@ -6,6 +6,21 @@
     <h2>{{ depositOnly ? 'Add Additional Deposit Fee (Optional) Record' : 'Add Additional Fee (Optional) Record' }}</h2>
   </div>
 
+  <!--
+    v22 requirement 13b (D5). The fee-name list is fetched under the PropertyOwnerUid header, which
+    carries the settings-box value, while this panel is editing a record that names its own owner.
+    When they disagree nothing errors -- the list simply comes back holding only the shared entries,
+    and a new name is filed under the box's owner. Saying so is the whole point: a test harness whose
+    scope silently disagrees with its data produces results a tester will trust and should not.
+  -->
+  @if (ownerScopeMismatch) {
+    <p class="scope-mismatch" role="status">
+      This record belongs to property owner <strong>{{ propertyOwnerId }}</strong>, but the fee-name
+      list is being read for <strong>{{ scope.propertyOwnerId() }}</strong> — the value in Test scope.
+      You will see only the shared entries, and a new name will be filed under the Test scope owner.
+    </p>
+  }
+
   <form [formGroup]="form" class="panel-body">
     <h3>Invoice Item Details</h3>
 

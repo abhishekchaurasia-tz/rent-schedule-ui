@@ -60,3 +60,55 @@ $font-stack:
   overflow-y: auto;
   height: 100vh;
 }
+
+// The test-scope box. Pushed to the bottom of the sidebar with margin-top:auto so it sits clear of the
+// navigation links rather than reading as one of them — it is configuration, not a destination.
+.scope-box {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid #d5dde5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scope-box-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5b6b7c;
+}
+
+.scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: #5b6b7c;
+
+  input {
+    // Monospace and small, so a full GUID is readable without widening the sidebar.
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid #d5dde5;
+    border-radius: 4px;
+    background: #fff;
+    color: #1f2d3d;
+    width: 100%;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: 2px solid #1a56db;
+      outline-offset: -1px;
+    }
+  }
+}
+
+.scope-hint {
+  margin: 0;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: #7a8798;
+}

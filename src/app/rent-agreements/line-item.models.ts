@@ -25,7 +25,6 @@ export interface LineItemResponse {
  * never sees. Send the snake_case member name; read {@link LineItemResponse.itemType} back.
  */
 export interface CreateLineItemRequest {
-  propertyOwnerId: string;
   name: string;
   itemType: string;
 }

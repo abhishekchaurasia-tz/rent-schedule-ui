@@ -390,3 +390,17 @@ fieldset.frequency-config {
     background: #f0f5ff;
   }
 }
+
+// v22 requirement 13b — the owner-scope mismatch notice. Amber rather than red: nothing has failed,
+// and the tester may well have meant to look at another owner's record. It has to be noticeable
+// without reading as an error, because the condition it describes produces no error of its own.
+.scope-mismatch {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #ead5a8;
+  border-radius: 6px;
+  background: #fdf3de;
+  color: #b26a00;
+  font-size: 13px;
+  line-height: 1.5;
+}
