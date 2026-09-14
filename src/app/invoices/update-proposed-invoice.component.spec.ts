@@ -516,7 +516,8 @@ describe('UpdateProposedInvoiceComponent', () => {
 
     const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
     expect(catalogRequest.request.method).toBe('GET');
-    expect(catalogRequest.request.params.get('propertyOwnerId')).toBe(invoice.propertyOwnerId);
+    // v22, 13a -- the owner left the query string for the PropertyOwnerUid header.
+    expect(catalogRequest.request.params.get("propertyOwnerId")).toBeNull();
     expect(catalogRequest.request.params.get('scope')).toBe('AllExcludingCredit');
 
     catalogRequest.flush(lineItems);

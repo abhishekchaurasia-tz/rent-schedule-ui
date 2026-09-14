@@ -81,7 +81,9 @@ export class NewItemTypeFormComponent {
 
     this.lineItems
       .create({
-        propertyOwnerId: this.propertyOwnerId,
+        // v22, requirement 13a -- the owner is no longer sent: the backend takes it from the
+        // PropertyOwnerUid header the interceptor attaches, so a body field here would be a second
+        // source for one fact, and the one the backend now ignores.
         name,
         itemType: NewItemTypeFormComponent.CustomItemTypeWire
       })

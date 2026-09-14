@@ -45,7 +45,8 @@ describe('NewItemTypeFormComponent', () => {
     component.submit();
 
     const request = httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST');
-    expect(request.request.body.propertyOwnerId).toBe(propertyOwnerId);
+    // v22, 13a -- the owner is no longer in the body; the PropertyOwnerUid header carries it.
+    expect(request.request.body.propertyOwnerId).toBeUndefined();
     expect(request.request.body.name).withContext('trimmed').toBe('Rooftop parking');
 
     // `miscellaneous` — the same type `AdditionalChargeItemProvisioningService.CustomItemType` assigns

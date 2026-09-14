@@ -7,11 +7,14 @@ const STORAGE_KEY = 'innago.test-scope';
 interface StoredScope {
   organizationId?: string;
   propertyOwnerId?: string;
+  identityId?: string;
 }
 
 /**
- * Holds the two caller-scope identifiers this application sends on every Billing API request —
- * `OrganizationId` and `PropertyOwnerId` (backend spec `01-rent-agreement.md` v89 FR-127, v90 FR-128).
+ * Holds the three identifiers this application sends on every Billing API request —
+ * `OrganizationUid` and `PropertyOwnerUid`, which say *on whose behalf* it is acting (backend spec
+ * `01-rent-agreement.md` v89 FR-127, v90 FR-128), and `IdentityId`, which says *who* is acting and is
+ * recorded in `created_by` / `modified_by` on every row written (v91 FR-129).
  *
  * **Why a service and not a form control.** `scopeHeadersInterceptor` runs outside any component and
  * cannot read an input box, so something has to sit between the two. This is that something, and it is
@@ -36,11 +39,23 @@ export class RequestScopeService {
 
   private readonly _propertyOwnerId = signal(readStored('propertyOwnerId'));
 
-  /** The account the agreement is filed under — sent as the `OrganizationId` header. */
+  private readonly _identityId = signal(readStored('identityId'));
+
+  /** The account the agreement is filed under — sent as the `OrganizationUid` header. */
   readonly organizationId = this._organizationId.asReadonly();
 
-  /** The property owner the agreement is for — sent as the `PropertyOwnerId` header. */
+  /** The property owner the agreement is for — sent as the `PropertyOwnerUid` header. */
   readonly propertyOwnerId = this._propertyOwnerId.asReadonly();
+
+  /**
+   * The person performing the action — sent as the `IdentityId` header (v22, requirement 13c).
+   *
+   * **Unlike the other two, this one is not required.** The backend never refuses a write for its
+   * absence (FR-129d): it records the row as unattributed and logs a warning. So a wrong or missing
+   * value here costs an honest audit trail, not a working screen — which is why nothing in this
+   * application validates it or blocks on it.
+   */
+  readonly identityId = this._identityId.asReadonly();
 
   /**
    * Replaces the account id and remembers it.
@@ -70,10 +85,27 @@ export class RequestScopeService {
     this.persist();
   }
 
+  /**
+   * Replaces the acting user and remembers it. Blank values are ignored, as above — though for a
+   * different reason than the other two: an empty `IdentityId` is accepted by the backend and simply
+   * records the row as unattributed, so ignoring a blank here keeps the last usable value rather than
+   * silently degrading the audit trail on a stray keystroke.
+   */
+  setIdentityId(value: string): void {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    this._identityId.set(trimmed);
+    this.persist();
+  }
+
   private persist(): void {
     const scope: StoredScope = {
       organizationId: this._organizationId(),
-      propertyOwnerId: this._propertyOwnerId()
+      propertyOwnerId: this._propertyOwnerId(),
+      identityId: this._identityId()
     };
 
     try {

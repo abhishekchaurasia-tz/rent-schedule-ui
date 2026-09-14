@@ -46,7 +46,23 @@
         />
       </label>
 
-      <p class="scope-hint">Sent on every API call. Remembered in this browser.</p>
+      <label class="scope-field" for="scope-identity-id">
+        <span>IdentityId</span>
+        <input
+          id="scope-identity-id"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          [value]="scope.identityId()"
+          (change)="onIdentityIdInput($any($event.target).value)"
+        />
+      </label>
+
+      <p class="scope-hint">
+        Sent on every API call. Remembered in this browser. IdentityId is recorded as who created or
+        changed each row; unlike the other two it is never required, so a wrong value costs an honest
+        audit trail rather than a working screen.
+      </p>
     </div>
   </nav>
 

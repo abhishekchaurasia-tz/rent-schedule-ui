@@ -232,7 +232,7 @@ export class UpdateProposedInvoiceComponent implements OnInit {
     // items in front of every property owner on the strength of a guess. Whether HOA items appear is
     // then the backend's rule, not this screen's invention.
     this.lineItemsService
-      .list(invoice.propertyOwnerId, scope, { isFromIncomeList: true })
+      .list(scope, { isFromIncomeList: true })
       .subscribe({
         next: (items) => this.lineItems.set(items),
         error: () => this.lineItems.set([])

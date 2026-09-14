@@ -36,4 +36,9 @@ export class AppComponent {
   protected onPropertyOwnerIdInput(value: string): void {
     this.scope.setPropertyOwnerId(value);
   }
+
+  /** Publishes the acting user the Billing API records in `created_by` / `modified_by` (v22, 13c). */
+  protected onIdentityIdInput(value: string): void {
+    this.scope.setIdentityId(value);
+  }
 }

@@ -16,6 +16,7 @@ import { MatInputModule } from '@angular/material/input';
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { debounceTime } from 'rxjs';
 
+import { RequestScopeService } from '../request-scope.service';
 import { RentScheduleService } from '../rent-schedule/rent-schedule.service';
 import { CandidateDateRequest, FrequencyConfig, LeaseTermType, RentFrequency } from '../rent-schedule/rent-schedule.models';
 import { buildFrequencyConfig, ordinal } from '../rent-schedule/frequency-config.util';
@@ -162,10 +163,30 @@ export class AdditionalChargePanelComponent implements OnInit {
 
   readonly form: FormGroup;
 
+  /**
+   * True when the record on screen belongs to a different property owner than the settings box —
+   * v22 requirement 13b, decision D5.
+   *
+   * **Why this is shown rather than silently tolerated.** The catalog is fetched under the
+   * `PropertyOwnerUid` header, which carries the settings-box value; this panel is editing a record
+   * that names its own owner. When they disagree the backend answers for the box's owner and this
+   * screen renders the result as though it had asked for the record's — the picker shows only the
+   * shared system-defined entries, and a new fee name is filed under an owner nobody chose. Nothing
+   * errors, which is exactly what makes it worth saying out loud.
+   *
+   * **It becomes unreachable once the backend's D5 milestones ship**, because a cross-owner read is
+   * then refused with a `404` and the record never loads at all. It is built for the window before
+   * that, and falls silent on its own afterwards rather than needing removal.
+   */
+  protected get ownerScopeMismatch(): boolean {
+    return this.propertyOwnerId !== null && this.propertyOwnerId !== this.scope.propertyOwnerId();
+  }
+
   constructor(
     private readonly fb: FormBuilder,
     private readonly lineItemsService: LineItemsService,
-    private readonly rentScheduleService: RentScheduleService
+    private readonly rentScheduleService: RentScheduleService,
+    protected readonly scope: RequestScopeService
   ) {
     this.form = this.fb.group({
       items: this.fb.array([this.buildItemGroup()]),
@@ -362,7 +383,7 @@ export class AdditionalChargePanelComponent implements OnInit {
 
     const scope: LineItemScope = this.depositOnly ? 'DepositOnly' : 'AllExcludingCredit';
 
-    this.lineItemsService.list(this.propertyOwnerId, scope).subscribe((items) => this.lineItems.set(items));
+    this.lineItemsService.list(scope).subscribe((items) => this.lineItems.set(items));
   }
 
   /**

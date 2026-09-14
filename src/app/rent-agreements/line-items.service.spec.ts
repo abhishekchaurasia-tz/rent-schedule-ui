@@ -28,16 +28,16 @@ describe('LineItemsService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('list() gets /api/v1/line-items with propertyOwnerId and scope as query params', () => {
+  it('list() gets /api/v1/line-items with scope only -- the owner is a header now (v22, 13a)', () => {
     const expectedResponse: LineItemResponse[] = [
       { id: '11111111-1111-1111-1111-111111111111', name: 'Parking', itemType: 'Parking', isDepositType: false }
     ];
 
     let actualResponse: LineItemResponse[] | undefined;
-    service.list('22222222-2222-2222-2222-222222222222', 'AllExcludingCredit').subscribe((response) => (actualResponse = response));
+    service.list('AllExcludingCredit').subscribe((response) => (actualResponse = response));
 
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('propertyOwnerId') === '22222222-2222-2222-2222-222222222222' && r.params.get('scope') === 'AllExcludingCredit'
+      (r) => r.url === baseUrl && r.params.get('scope') === 'AllExcludingCredit'
     );
     expect(req.request.method).toBe('GET');
     expect(req.request.params.has('isHOATerm')).toBeFalse();
@@ -51,7 +51,7 @@ describe('LineItemsService', () => {
 
   it('list() includes isHOATerm, isFromIncomeList, and search when provided', () => {
     service
-      .list('22222222-2222-2222-2222-222222222222', 'AllExcludingCredit', {
+      .list('AllExcludingCredit', {
         isHOATerm: true,
         isFromIncomeList: false,
         search: 'park'
@@ -68,7 +68,7 @@ describe('LineItemsService', () => {
 
   it('list() propagates an HTTP error response to the caller', () => {
     let error: unknown;
-    service.list('22222222-2222-2222-2222-222222222222', 'DepositOnly').subscribe({
+    service.list('DepositOnly').subscribe({
       error: (err) => (error = err)
     });
 

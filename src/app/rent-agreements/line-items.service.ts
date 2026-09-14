@@ -22,10 +22,18 @@ export class LineItemsService {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * Lists the `LineItem` catalog entries visible to `propertyOwnerId`, narrowed by `scope`.
+   * Lists the `LineItem` catalog entries visible to the caller, narrowed by `scope`.
+   *
+   * **The owner is no longer a parameter (v22, requirement 13a).** Backend `02-invoicing.md` v39 FR 47
+   * moved the catalog's owner scope onto the `PropertyOwnerUid` header, which
+   * `scopeHeadersInterceptor` already attaches to every request. Passing one here as well would be a
+   * second source for one fact — and it was worse than redundant: callers passed the owner of the
+   * *record on screen* while the header carried the *settings-box* value, so when they differed the
+   * backend silently answered for the box's owner and this application showed the result as if it had
+   * asked for the other. Nothing errored. Removing the argument is what makes the two agree.
    */
-  list(propertyOwnerId: string, scope: LineItemScope, options?: LineItemListOptions): Observable<LineItemResponse[]> {
-    let params = new HttpParams().set('propertyOwnerId', propertyOwnerId).set('scope', scope);
+  list(scope: LineItemScope, options?: LineItemListOptions): Observable<LineItemResponse[]> {
+    let params = new HttpParams().set('scope', scope);
 
     if (options?.isHOATerm !== undefined) {
       params = params.set('isHOATerm', String(options.isHOATerm));
@@ -41,8 +49,8 @@ export class LineItemsService {
   }
 
   /**
-   * Resolves a catalog entry by name, creating one scoped to `propertyOwnerId` when no visible entry
-   * already carries that name.
+   * Resolves a catalog entry by name, creating one scoped to the caller's own property owner — taken
+   * from the `PropertyOwnerUid` header, never from this request's body (v22, requirement 13a).
    *
    * **Get-or-create, not create** — the backend is idempotent by design, so typing a name that already
    * exists returns that entry rather than failing or duplicating it. That is what makes it safe to call
