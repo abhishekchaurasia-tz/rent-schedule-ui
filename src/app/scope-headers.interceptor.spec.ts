@@ -44,10 +44,10 @@ describe('scopeHeadersInterceptor', () => {
 
     const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/x`);
 
-    expect(request.request.headers.get('OrganizationId')).toBe(
+    expect(request.request.headers.get('OrganizationUid')).toBe(
       '11111111-1111-1111-1111-111111111111'
     );
-    expect(request.request.headers.get('PropertyOwnerId')).toBe(
+    expect(request.request.headers.get('PropertyOwnerUid')).toBe(
       '22222222-2222-2222-2222-222222222222'
     );
 
@@ -62,8 +62,8 @@ describe('scopeHeadersInterceptor', () => {
     const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements`);
     const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-    expect(request.request.headers.get('OrganizationId')).toMatch(guid);
-    expect(request.request.headers.get('PropertyOwnerId')).toMatch(guid);
+    expect(request.request.headers.get('OrganizationUid')).toMatch(guid);
+    expect(request.request.headers.get('PropertyOwnerUid')).toMatch(guid);
 
     request.flush({});
   });
@@ -73,8 +73,8 @@ describe('scopeHeadersInterceptor', () => {
 
     const request = httpMock.expectOne('https://example.test/something');
 
-    expect(request.request.headers.has('OrganizationId')).toBeFalse();
-    expect(request.request.headers.has('PropertyOwnerId')).toBeFalse();
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
 
     request.flush({});
   });
@@ -88,7 +88,7 @@ describe('scopeHeadersInterceptor', () => {
 
     const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/invoices`);
 
-    expect(request.request.headers.get('OrganizationId')).toBe(
+    expect(request.request.headers.get('OrganizationUid')).toBe(
       '33333333-3333-3333-3333-333333333333'
     );
 

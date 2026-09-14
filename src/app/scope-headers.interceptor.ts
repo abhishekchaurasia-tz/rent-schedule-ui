@@ -30,8 +30,8 @@ export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
   return next(
     request.clone({
       setHeaders: {
-        OrganizationId: scope.organizationId(),
-        PropertyOwnerId: scope.propertyOwnerId()
+        OrganizationUid: scope.organizationId(),
+        PropertyOwnerUid: scope.propertyOwnerId()
       }
     })
   );
