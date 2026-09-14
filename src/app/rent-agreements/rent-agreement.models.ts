@@ -356,7 +356,7 @@ export interface RentAgreementDetailResponse {
    * is paid — the alternative makes the property owner find the offending row by hand. So a `200` does
    * **not** mean everything asked for happened, and this array is the only place that difference is
    * stated. A client that ignores it turns a refusal into a silent no-op, which is exactly how this
-   * was reported: *"jab maine invoice bana diya to schedule row deletion failed ho raha silently"*.
+   * was reported: *"once I had created the invoice, deleting the schedule row started failing silently"*.
    *
    * Optional and nullable so a response from a backend that does not send it still type-checks.
    */

@@ -189,8 +189,8 @@ resurrect a row the user acted on.
     FR-103's filter shape). Each entry is rendered with the server's own `message`, verbatim, and with
     the `invoiceId` it names when it has one. The refused row shows as **not** cancelled, because the
     response re-seeds the rows and the server kept it planned.
-    **Reported from the running application 2026-09-08** — *"jab maine invoice bana diya to schedule
-    row deletion failed ho raha silently"*. It never failed: `PUT …/terms` answered `200`, applied
+    **Reported from the running application 2026-09-08** — *"once I had created the invoice, deleting
+    the schedule row started failing silently"*. It never failed: `PUT …/terms` answered `200`, applied
     every other change, and named the refusal with a ready-to-display message and the invoice standing
     in the way. **`blockedRemovals` appeared nowhere in this application** — no model field, no
     component code, no template branch — so the report was received and discarded, and the row simply

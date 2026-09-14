@@ -73,11 +73,17 @@ describe('NewItemTypeFormComponent', () => {
   });
 
   it('ignores an unnamed type without calling the API', () => {
+    let emitted: LineItemResponse | undefined;
+    component.created.subscribe((item) => (emitted = item));
+
     component.name.set('   ');
     component.submit();
 
     // Silently, like the panel: an empty box with Add pressed is a slip, not something to report.
     httpMock.expectNone((r) => r.url === lineItemsUrl && r.method === 'POST');
+    expect(component.error()).toBeNull();
+    expect(component.submitting()).toBeFalse();
+    expect(emitted).toBeUndefined();
   });
 
   it('refuses when no property owner is loaded — there is nothing to scope a new entry to', () => {
@@ -111,9 +117,15 @@ describe('NewItemTypeFormComponent', () => {
   it('drops a second submit while one is in flight', () => {
     component.name.set('Rooftop parking');
     component.submit();
+    expect(component.submitting()).toBeTrue();
+
     component.submit();
 
-    httpMock.expectOne((r) => r.url === lineItemsUrl && r.method === 'POST').flush(resolved);
+    const requests = httpMock.match((r) => r.url === lineItemsUrl && r.method === 'POST');
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(resolved);
+    expect(component.submitting()).toBeFalse();
   });
 
 });

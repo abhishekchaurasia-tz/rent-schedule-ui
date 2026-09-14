@@ -1,5 +1,5 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { environment } from '../../environments/environment';
@@ -224,6 +224,75 @@ describe('AddAdditionalChargeComponent', () => {
     request.flush(createdCharge);
   });
 
+  it('mints an idempotency key, so a replay cannot become a second charge', () => {
+    loadAgreement();
+
+    component.onChargeCreated(emittedCharge);
+
+    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+
+    // The endpoint replays a submission whose id it has already seen (backend FR 57, FR 60). Without
+    // one it cannot tell a retry from a new fee, which is what made the retry below unsafe before.
+    expect(request.request.body.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+
+    request.flush(createdCharge);
+  });
+
+  it('replays the submission once when the server answers 409, and reports nothing to the user', fakeAsync(() => {
+    loadAgreement();
+
+    component.onChargeCreated(emittedCharge);
+
+    const first = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+    const key = first.request.body.id;
+
+    // A concurrent write to the same lease won the race — measured against the running system by
+    // submitting a fee while an activation's own post-commit issuing pass was still in flight.
+    first.flush({ detail: 'A concurrent write won.' }, { status: 409, statusText: 'Conflict' });
+    tick(500);
+
+    const retried = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+    expect(retried.request.body.id).toBe(key);
+
+    retried.flush(createdCharge);
+    tick();
+
+    expect(component.submitError()).toBeNull();
+    expect(component.submitting()).toBeFalse();
+    expect(component.addedCharges().length).toBe(1);
+  }));
+
+  it('gives up after one replay, and never retries a business rule', fakeAsync(() => {
+    loadAgreement();
+
+    component.onChargeCreated(emittedCharge);
+
+    httpMock
+      .expectOne(`${baseUrl}/${agreementId}/additional-charges`)
+      .flush({ detail: 'Conflict.' }, { status: 409, statusText: 'Conflict' });
+    tick(500);
+
+    httpMock
+      .expectOne(`${baseUrl}/${agreementId}/additional-charges`)
+      .flush({ detail: 'Still conflicting.' }, { status: 409, statusText: 'Conflict' });
+    tick(500);
+
+    httpMock.verify();
+    expect(component.submitError()).toBe('Still conflicting.');
+
+    // A 422 is the user's to fix, not the network's, so it reaches them on the first answer.
+    component.onChargeCreated(emittedCharge);
+    httpMock
+      .expectOne(`${baseUrl}/${agreementId}/additional-charges`)
+      .flush({ detail: 'The lease is not active.' }, { status: 422, statusText: 'Unprocessable Entity' });
+    tick(500);
+
+    httpMock.verify();
+    expect(component.submitError()).toBe('The lease is not active.');
+  }));
+
   it('posts the emitted charge fields at the body root and never sends isManualInvoice', () => {
     loadAgreement();
 
@@ -291,10 +360,16 @@ describe('AddAdditionalChargeComponent', () => {
     loadAgreement();
 
     component.onChargeCreated(emittedCharge);
+    expect(component.submitting()).toBeTrue();
+
     component.onChargeCreated(emittedCharge);
 
     // One and only one — expectOne throws if a second matching request exists.
-    httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(createdCharge);
+    const requests = httpMock.match(`${baseUrl}/${agreementId}/additional-charges`);
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(createdCharge);
+    expect(component.addedCharges().length).toBe(1);
   });
 
   it('treats a 204 from the tenants endpoint as "step 2 never saved", not as an empty roster', () => {
