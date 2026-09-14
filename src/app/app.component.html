@@ -11,6 +11,43 @@
       Invoices
     </a>
     <a routerLink="/invoices/update" routerLinkActive="active" class="sidebar-link">Update Invoice</a>
+
+    <!--
+      Test scope. Sent as the OrganizationId / PropertyOwnerId headers on every Billing API request
+      (backend spec 01-rent-agreement.md v89 FR-127, v90 FR-128). Both start at an invented value, so
+      leaving them alone still produces a valid request; type a real one to point this app at a real
+      account in dev or qa. Editable only because this is a test harness — a production client would
+      take both from the signed-in token and show neither.
+    -->
+    <div class="scope-box">
+      <div class="scope-box-title">Test scope</div>
+
+      <label class="scope-field" for="scope-organization-id">
+        <span>OrganizationId</span>
+        <input
+          id="scope-organization-id"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          [value]="scope.organizationId()"
+          (change)="onOrganizationIdInput($any($event.target).value)"
+        />
+      </label>
+
+      <label class="scope-field" for="scope-property-owner-id">
+        <span>PropertyOwnerId</span>
+        <input
+          id="scope-property-owner-id"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          [value]="scope.propertyOwnerId()"
+          (change)="onPropertyOwnerIdInput($any($event.target).value)"
+        />
+      </label>
+
+      <p class="scope-hint">Sent on every API call. Remembered in this browser.</p>
+    </div>
   </nav>
 
   <main class="app-content">

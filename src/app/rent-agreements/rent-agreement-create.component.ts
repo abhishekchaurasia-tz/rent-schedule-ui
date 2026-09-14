@@ -1242,7 +1242,10 @@ export class RentAgreementCreateComponent {
     const request: CreateRentAgreementRequest = {
       propertyUnitId: value.propertyUnitId,
       propertyId: value.propertyId,
-      propertyOwnerId: value.propertyOwnerId,
+      // No propertyOwnerId: it travels as the PropertyOwnerId header now (backend v90, FR-128),
+      // attached by scopeHeadersInterceptor. The form control stays — the charge panel and the
+      // line-item pickers bind to it for catalog scoping, and the edit page patches it from the
+      // loaded agreement.
       startDate: toIsoDate(value.startDate)!,
       endDate: value.leaseTermType === 'fixed' ? toIsoDate(value.endDate) : null,
       fullRent: Number(value.rent),
