@@ -2,6 +2,7 @@
 
 | Version | Date | Author | Summary | Plan |
 |---------|------|--------|---------|------|
+| v22 | 2026-09-14 | Abhishek Chaurasia | **The line-item catalog stops being asked for by owner, a third identifier joins the settings box, and v21's own requirement text is corrected where it named headers that never shipped.** New requirement **13**; **12d is corrected**. *Follows backend `02-invoicing.md` v39 FR 47 and `01-rent-agreement.md` v91 FR-129.* **The part that matters is a silent wrong answer, not a broken screen.** Backend v39 moved the line-item catalog's owner scope from a query parameter to the `PropertyOwnerUid` header. This application already sends that header on every API call, so **nothing returns `400`** — but `LineItemsService.list()` takes the owner as an *argument*, and its callers pass **the owner of the record being edited** (`additional-charge-panel.component.ts` passes the agreement's; `update-proposed-invoice.component.ts` passes the invoice's), while the header carries the **settings-box** value, which starts as an invented GUID. So after v39 the catalog resolves under whichever owner the box holds: the picker quietly shows only system-defined items, and a new entry is filed under an owner nobody chose. **A screen that looks like it works is worse than one that fails**, which is why this version exists rather than waiting for someone to notice. **Requirement 13** removes the argument — the header becomes the only source, matching the service — and adds a **visible mismatch warning** when the loaded record's owner differs from the box, so the condition that used to be silent is on screen (**D5**). **A third identifier, `IdentityId`,** joins the box and the interceptor: backend FR-129 records who wrote every row in `created_by`/`modified_by`, and without it every row this application writes is stamped as unattributed and logs a warning server-side. It is **not required** — the backend never refuses a write for its absence — so this is about the audit trail being true, not about the screen working. **The correction:** requirement 12d as written says the interceptor adds `OrganizationId` and `PropertyOwnerId`. **It never did.** Those claims are `long`s in the platform's token; the GUID variants are `OrganizationUid` and `PropertyOwnerUid`, which is what the code has sent since it was written — as v21's own changelog row explains at length. The requirement text was left behind when the code was corrected, and is fixed here rather than left to mislead the next reader. | [2026-09-14T1400-01-the-scope-ids-travel-as-headers](../../plans/rent-agreements/2026-09-14T1400-01-the-scope-ids-travel-as-headers.md) |
 | v21 | 2026-09-14 | Abhishek Chaurasia | **The two ids that say *who is saving* leave the lease body and become request headers, supplied from a settings box the tester controls.** New **requirement 12**. *Requested by the user 2026-09-14 as the client half of `innago-rent-accounting` spec `01-rent-agreement.md` v89–v90 (FR-127, FR-128).* The Billing API now requires **`OrganizationUid`** and **`PropertyOwnerUid`** on `POST /rent/agreements` and **no longer reads `propertyOwnerId` from the request body**. **What changes here.** `CreateRentAgreementRequest` loses `propertyOwnerId`; a new **HTTP interceptor** attaches both headers to every call whose URL starts with `environment.apiBaseUrl`, registered through `provideHttpClient(withInterceptors(...))` in `app.config.ts`, which registered none before; a small `RequestScopeService` holds the two values; and the shell's sidebar gains a **Test scope box** with both of them, editable and remembered across reloads. **Two decisions were reversed during the work, and both are recorded under Clarifications rather than quietly applied.** (1) *The values are typed, not invented.* The first draft hid them behind generated GUIDs; this application is a **test harness that never reaches production**, and its purpose is to drive real dev and qa environments — an identifier nobody can set cannot be pointed at a real account, which would leave the whole change untestable against anything but itself. They still **start populated**, so a tester who ignores the box still gets a `201` rather than a `400` about a header they have never heard of. (2) *The headers are the `Uid` variants.* The first draft used `OrganizationId`/`PropertyOwnerId`, the names the gateway forwards — but the platform’s own `SessionManager` parses those as **`long`** and the `Uid` siblings as **`Guid`**, and both backend columns are `uuid`. Using the plain names would have returned `400` on every create against a real token. **`propertyOwnerId` stays a form control:** the charge panel and line-item pickers bind to it for catalog scoping, and the edit page patches it from the loaded agreement. It stops being a *body field*; it does not stop existing. **Release coupling, stated plainly:** this change and the backend’s are one release. Ship either alone and every lease save is refused — nothing is half-saved, but the create screen is unusable until both are out. | [2026-09-14T1400-01-the-scope-ids-travel-as-headers](../../plans/rent-agreements/2026-09-14T1400-01-the-scope-ids-travel-as-headers.md) |
 | v20 | 2026-09-09 | — | **The preview already said what the change would cost and what the save would refuse; this application threw both away — the fourth and fifth times in two days.** New **requirement 11**. `POST /rent/schedule/preview` returns `warnings` (non-blocking consequences the backend documents as *"the user must see before saving"*, e.g. `frequency_change_loses_row_identity`) and `blocked` (the rows `PUT …/terms` will decline). **`grep -rn "warnings" src/` and `grep -rn "blocked" src/` found neither** — no model field, no signal, no template branch. **These are the only signals in this application that arrive *before* a save.** `blockedRemovals` (v19) explains a refusal afterwards, by which point the decision is made; `warnings` is the one thing that can change a decision while it is still being made — which is why both render **above** the schedule table rather than beside the save button. **Replaced wholesale on every preview, never merged:** a warning describes *that* computed change, so carrying one forward would leave it describing a change the user has already backed out of — pinned by a test that previews twice. Neither is an error: `previewError` means the preview failed, these mean it succeeded and the change has a consequence. **Shipped with the backend fix that makes `blocked` trustworthy** — its predicate had been stale since FR-124, so it named rows the save removes without complaint (backend spec 01 v88). Surfacing it before that fix would have been surfacing a wrong answer more loudly. | [2026-09-09T1900-01-surface-what-the-preview-says](../../plans/rent-agreements/2026-09-09T1900-01-surface-what-the-preview-says.md) |
 | v19 | 2026-09-08 | — | **A refused row deletion looked exactly like a save that did nothing, because this application threw the server's explanation away.** New **requirement 10**. *Reported 2026-09-08: "jab maine invoice bana diya to schedule row deletion failed ho raha silently".* **It never failed.** `PUT …/terms` answered `200`, applied every other change, and named the refusal in `blockedRemovals` — a message written for display, plus the id of the invoice standing in the way, which the backend added at its v45 expressly *"so a client can offer to remove the invoice rather than leaving the owner stuck at a refusal with no next step"*. **`blockedRemovals` appeared nowhere in this repository**: no model field, no component code, no template branch. A terms save is a filter rather than an all-or-nothing request (backend FR-103), so a `200` does not mean everything asked for happened — and this was the only place that difference could have been shown. **Holding the navigation is the half that makes it a fix.** The save moved straight to the tenants screen on success, so a banner rendered here would have been rendered onto a page the user never saw; the page now stays while anything is refused, putting the row, the reason and the invoice together. The happy path is untouched. **Three deliberate limits, recorded rather than left to be discovered:** the server's `message` is shown verbatim because the wording belongs to whoever owns the rule; the invoice is **named, not acted on**, since removing one is destructive and `04-invoice-list-ui.md` already owns that confirm flow; and the invoice id is shown raw, because a filtered link needs a route contract `/invoices` does not have. | [2026-09-08T2100-01-surface-blocked-removals](../../plans/rent-agreements/2026-09-08T2100-01-surface-blocked-removals.md) |
@@ -65,7 +66,15 @@ value — the screen supplies both — so the only way they experience this chan
 
 **What this changes in the data.** Nothing the manager can see. The same lease is saved, with the same
 owner recorded against it. One extra identifier — the account — is now recorded too. No screen gains a
-field and no screen loses one.
+field and no screen loses one. **(v22)** A third identifier is added to the same settings box, saying
+*who is doing this*, so every record the service saves notes the person behind it. And the fee-name
+picker stops naming an owner of its own — it now uses the one in the box, like everything else does.
+
+**(v22) The thing this version is really about.** Until now the fee-name picker asked for one owner's
+list while the rest of the screen said it was working as another. Nothing complained: the list simply
+came back holding only the shared entries, and a new fee name was filed under the owner in the box
+rather than the one on screen. **A screen that looks right while answering for the wrong person is
+worse than one that plainly fails**, so when the two disagree the screen now says so.
 
 **The three most likely ways this goes wrong.**
 1. This screen and the service are released at different moments, and **every attempt to save a new
@@ -84,8 +93,21 @@ field and no screen loses one.
 | D3 | Should the tester be able to see and change both values? | — | **Yes** — that is the point of D1's reversal. In a production client these would never be visible; this is not one | Settled 2026-09-14 — see *Clarifications* |
 | D4 | Do the typed values survive a page reload? | Remembered in the browser / re-typed each time | **Remembered.** A tester who re-types two GUIDs on every reload will stop using the box, and then every request goes out under the default again without anyone noticing | Standard, no input needed |
 
+| D5 | **(v22)** When the record on screen belongs to a different owner than the settings box, what should happen? | Warn and carry on / silently use the box / block the screen | **Warn and carry on.** Blocking makes a test harness unusable the moment a tester is looking at data from another owner, which is a normal thing to do. Using it silently is today's behaviour and is exactly the defect — the catalog answers for the wrong owner and nothing says so. A warning naming both values lets the tester decide in one glance whether the picker they are about to use means anything | **Needs your call** |
+| D6 | **(v22)** Should `IdentityId` be required before the screen will save? | Required here / optional, matching the service | **Optional.** The service deliberately never refuses a write for its absence (FR-129d) — it records the row as unattributed and warns. A client that refused would be stricter than the contract, and would block a tester over an audit field rather than over anything they can see | Standard, no input needed |
+
 ## Assumptions to Confirm
 
+- **(v22) A tester who cares which owner's catalog they see will put that owner in the box.** The
+  warning in 13b tells them when it matters; it does not change the value for them. *If wrong — if
+  testers read past the warning:* the line-item picker shows only system-defined entries and new
+  entries are filed under the box's owner. Nothing is corrupted for real users, because this
+  application is a test harness, but a tester may conclude a catalog is empty when it is merely being
+  asked for under the wrong owner.
+- **(v22) Sending `IdentityId` changes nothing a tester can see.** It is recorded in two columns that
+  no screen in this application displays. *If wrong:* nothing visible breaks; the cost of it being
+  absent is that server-side rows say nobody wrote them, which is the state everything was in before
+  backend v91 anyway.
 - **This screen and the service behind it are released together.** *If wrong:* nobody can create a
   lease until both are out. Every attempt is refused immediately; nothing is half-saved and no existing
   lease is affected, but the "Add Lease" screen is unusable for the whole gap. **This is the only
@@ -219,10 +241,13 @@ resurrect a row the user acted on.
       new structure v21 introduces, and it is what lets one box feed every request.
     - **(d) One interceptor attaches both.** An HTTP interceptor registered via
       `provideHttpClient(withInterceptors(...))` in `app.config.ts` — which registers **none** today —
-      shall add `OrganizationId` and `PropertyOwnerId` to outbound requests. It shall be **scoped to
-      `environment.apiBaseUrl`**, and shall add nothing when no scope has been published, so a request
-      that runs before the create screen has initialised carries no empty header rather than an invalid
-      one.
+      shall add **`OrganizationUid`** and **`PropertyOwnerUid`** to outbound requests *(corrected in
+      v22: this clause said `OrganizationId` and `PropertyOwnerId`, which the code never sent — those
+      claims are `long`s in the platform's token and both backend columns are `uuid`, so the plain
+      names would have returned `400` on every create. v21's changelog row records the reversal; only
+      this clause was left behind.)* It shall be **scoped to `environment.apiBaseUrl`**, and shall add
+      nothing when no scope has been published, so a request that runs before the create screen has
+      initialised carries no empty header rather than an invalid one.
     - **(e) The known cost, accepted rather than hidden.** Because the interceptor is central (D2), both
       headers ride **every** Billing API call — the invoicing list, the line-item pickers,
       `PUT …/terms`, the lifecycle calls — none of which read them. The backend ignores unknown headers,
@@ -232,6 +257,46 @@ resurrect a row the user acted on.
       before the backend, every save is refused by a service still expecting `propertyOwnerId` in the
       body; released after, every save is refused for the missing headers. Neither leaves partial data
       — see *Assumptions to Confirm*.
+
+13. **v22** — The system shall stop telling the Billing API which owner's line-item catalog to read,
+    because the service now takes that from the header this application already sends; and it shall
+    send a third identifier so the rows it writes record who wrote them.
+
+    **The failure this prevents is a screen that looks like it works.** Backend `02-invoicing.md` v39
+    (FR 47) moved the catalog's owner scope out of the query string. This application already attaches
+    `PropertyOwnerUid` to every API call, so no request is refused — but it *also* passes an owner as
+    an argument, and that argument is **the owner of the record on screen**, while the header carries
+    **whatever is in the settings box**. When they differ the catalog silently resolves under the box's
+    owner: the picker shows only the system-defined entries, and any new entry is filed under an owner
+    nobody chose. Nothing errors, so nothing draws attention to it.
+
+13a. **The argument goes.** `LineItemsService.list` and its get-or-create counterpart shall take no
+     owner parameter and shall send none — not in the query string, not in the body. Their callers
+     (`additional-charge-panel.component.ts`, `update-proposed-invoice.component.ts`) shall stop
+     passing one. The header is the single source, which is the whole point of the backend change.
+
+13b. **The mismatch becomes visible (D5).** When a screen has loaded a record whose `propertyOwnerId`
+     differs from the settings box's, the system shall show a plain warning naming both values and
+     saying the catalog will resolve under the box's owner. **This is the requirement's real content.**
+     Removing the argument is a two-line change; the reason this version exists is that the resulting
+     condition is otherwise invisible, and a test harness whose scope silently disagrees with its data
+     produces results a tester will trust and should not.
+
+13c. **The acting user joins the box.** A third input, **`IdentityId`**, shall sit beside the other two
+     and be attached by the same interceptor. Backend `01-rent-agreement.md` v91 FR-129 stamps it into
+     `created_by` and `modified_by` on every row. It follows the same rules as the other two — seeded
+     so nothing is ever sent empty, editable, remembered across reloads.
+
+13d. **It is not required, and that difference is deliberate.** The backend **never refuses a write**
+     for a missing or malformed `IdentityId` (FR-129d); it records the row as unattributed and logs a
+     warning. So unlike the two scope headers, this one failing costs an honest audit trail rather than
+     a working screen. It is listed here so nobody later "fixes" a passing save by making this header
+     mandatory on the client.
+
+13e. **The form control still stays.** As in 12a, `propertyOwnerId` remains a form control on the lease
+     screen — the create flow still needs a value to send in its own header context, and the edit page
+     still patches it from the loaded agreement so 13b can compare it. What goes is passing it *to the
+     catalog service*, not the field itself.
 
 ## Constraints
 
@@ -289,12 +354,24 @@ PascalCase (`"Planned"`, `"Cancelled"`).
   sign-in arrives it supplies them and the two headers retire entirely; the interceptor is the seam
   that makes that a small change, which is the whole reason it was chosen over attaching them to one
   call.
-- **Showing or editing either scope id (v21, D3)** — no input, no display, no validation message
-  naming them. A field for a stand-in is work that gets deleted the moment the stand-in does.
-- **Moving `propertyOwnerId` anywhere else (v21)** — it remains a form control, remains bound to
-  `AdditionalChargePanelComponent` and the line-item pickers for catalog scoping, and remains a
-  **query parameter** on the invoicing and line-item calls, which the backend did not change
-  (`02-invoicing.md` owns those). Only its placement in the create *body* moves.
+- ~~**Showing or editing either scope id (v21, D3)**~~ — **this bullet was already false when it was
+  written, and is withdrawn in v22.** It says "no input, no display", but v21's own requirement 12b
+  adds a settings box with both ids, editable and remembered, after D1 was reversed mid-version. The
+  reversal reached the requirement and the code and not this list. The ids **are** shown and editable,
+  and v22 adds a third.
+- ~~**Moving `propertyOwnerId` anywhere else (v21)**~~ — **superseded by v22, requirement 13.** It said
+  the owner "remains a **query parameter** on the invoicing and line-item calls, which the backend did
+  not change". The backend then changed exactly that: `02-invoicing.md` v39 FR 47 moved it to the
+  `PropertyOwnerUid` header on `GET`/`POST /line-items` and `GET /invoices`. It does still remain a
+  **form control**, bound for catalog scoping and patched from the loaded agreement (13e) — what it
+  stops being is a parameter this application sends.
+- **Choosing the catalog's owner independently of the settings box (v22, D5)** — the header is one
+  value for the whole application, so the picker answers for whoever the box names. Letting a screen
+  override it per request would reintroduce two sources for one fact, which is what FR 47 removed. The
+  mismatch is surfaced (13b) rather than worked around.
+- **Displaying who created or changed a record (v22)** — `IdentityId` is sent so the service can
+  record it; no screen here reads `created_by` or `modified_by` back, and the backend returns neither
+  (FR-129e).
 - **The backend change itself (v21)** — `01-rent-agreement.md` v89–v90 in `innago-rent-accounting`,
   with its own plan. Named here as the other half of one release, not as work this spec covers.
 - The backend's soft-cancel/restore semantics and the `PUT …/terms` reconcile matrix — specified in
