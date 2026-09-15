@@ -173,6 +173,20 @@ export interface CreateRentAgreementRequest {
   deposit?: number | null;
   depositDueDate?: string | null;
   depositCollected?: boolean;
+
+  /**
+   * Whether this fixed term is agreed to become month-to-month when it ends, rather than expiring
+   * (backend spec v108, FR-134a).
+   *
+   * Optional, and only meaningful on a fixed term: an agreement with no `endDate` is already
+   * month-to-month, so the backend stores `false` whatever is sent (FR-134f). It is derived rather
+   * than refused, so sending it there is silently ignored — which is why the control is hidden
+   * unless the term is fixed rather than merely disabled.
+   *
+   * Setting it changes nothing observable yet (FR-134c): the Lease service keeps the flag but has
+   * no job that flips a term at its end.
+   */
+  switchToMonthToMonth?: boolean;
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges?: AdditionalChargeCreationRequest[];
 }
@@ -306,6 +320,16 @@ export interface RentAgreementDetailResponse {
   leaseTermType: LeaseTermType;
   startDate: string;
   endDate?: string | null;
+
+  /**
+   * Whether this fixed term is agreed to become month-to-month when it ends (backend spec v108,
+   * FR-134h).
+   *
+   * Read it before every edit and resubmit it: `PUT …/terms` replaces the terms it is given,
+   * so an edit body that omits `switchToMonthToMonth` clears the flag. Optional on the type only
+   * because a server older than v108 does not send it.
+   */
+  switchToMonthToMonth?: boolean;
   fullRent: number;
   frequency: RentFrequency;
   frequencyConfig: FrequencyConfig;
@@ -692,6 +716,20 @@ export interface UpdateRentAgreementTermsRequest {
   deposit?: number | null;
   depositDueDate?: string | null;
   depositCollected?: boolean;
+
+  /**
+   * Whether the revised fixed term is agreed to become month-to-month when it ends (backend spec
+   * v108, FR-134d and FR-134g).
+   *
+   * **Always send it.** Unlike the deposit fields above, this endpoint has no `…Supplied` marker for
+   * it: `PUT …/terms` replaces the terms it is given, so omitting the field stores `false` and
+   * silently clears whatever the agreement held. Read the current value from
+   * {@link RentAgreementDetailResponse.switchToMonthToMonth} and resubmit it.
+   *
+   * A revision that leaves the agreement with no `endDate` stores `false` regardless — the term no
+   * longer has an end for a switch to happen on. The revision is not refused (FR-134g).
+   */
+  switchToMonthToMonth?: boolean;
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges: AdditionalChargeCreationRequest[];
 }

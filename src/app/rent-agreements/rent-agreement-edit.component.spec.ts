@@ -35,6 +35,9 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     deposit: 500,
     depositDueDate: '2026-01-01',
     depositCollected: false,
+    // Backend spec v108 FR-134h. `true` on purpose: an edit that failed to resubmit it would store
+    // `false`, and a fixture holding `false` could not tell that apart from working.
+    switchToMonthToMonth: true,
     // Locked by default in this fixture, so the existing tests keep exercising the read-only path; the
     // editable-deposit tests below override it.
     isDepositEditable: false,
@@ -160,6 +163,28 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     httpMock.expectNone(previewUrl);
     expect(component.previewResult()!.rows[0].rent).toBe(800);
   }));
+
+  // Requirement 14c, and the only obligation of that requirement that fails silently. `PUT .../terms`
+  // REPLACES the terms it is given and has no `...Supplied` marker for this field, so omitting it
+  // stores `false`. An edit about the rent -- or a schedule row, or anything else -- would clear what
+  // the parties agreed, return `200`, and report nothing. Only a user noticing the box later would
+  // ever find it.
+  //
+  // Note what this asserts: the value came from the LOADED AGREEMENT, not from anything this test
+  // typed. That is the whole chain -- read it back (FR-134h), patch the form, resubmit it -- and it is
+  // why the read path is a dependency of the edit path rather than a convenience.
+  it('resubmits the month-to-month switch it loaded, rather than clearing it', () => {
+    load();
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    expect(req.request.body.switchToMonthToMonth)
+      .withContext('an omitted or false value would silently unset what the agreement held')
+      .toBeTrue();
+
+    req.flush(detail());
+  });
 
   it('saves through PUT .../terms with both collections complete', () => {
     load();
