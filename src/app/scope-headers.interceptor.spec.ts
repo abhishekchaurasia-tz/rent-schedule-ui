@@ -36,6 +36,8 @@ describe('scopeHeadersInterceptor', () => {
     localStorage.clear();
   });
 
+  // v25: asserted with no token set, which is now the branch that sends these headers at all
+  // (requirement 15f). The assertion is unchanged; what changed is that it names its precondition.
   it('Req12d_ApiRequest_AttachesBothHeaders', () => {
     scope.setOrganizationId('11111111-1111-1111-1111-111111111111');
     scope.setPropertyOwnerId('22222222-2222-2222-2222-222222222222');
@@ -107,6 +109,41 @@ describe('scopeHeadersInterceptor', () => {
   // The leak case. The token inherits the URL guard the scope headers already have, and inheriting it
   // silently is worth its own test because the consequence is a credential sent to a third party
   // (requirement 15e).
+  // Requirement 15f. The gateway derives the caller from the token, so sending our three ids
+  // alongside it would put two answers to one question in one request -- and the client cannot know
+  // which the backend records. Not sending them removes the question instead of documenting it.
+  it('Req15f_TokenSet_SendsNoScopeIds', () => {
+    scope.setAccessToken('a-token-the-gateway-will-read');
+
+    http.get(`${environment.apiBaseUrl}/api/v1/rent/agreements`).subscribe();
+
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements`);
+
+    expect(request.request.headers.get('Authorization')).toBe('Bearer a-token-the-gateway-will-read');
+    expect(request.request.headers.has('OrganizationUid'))
+      .withContext('the gateway derives this from the token; two answers must not travel together')
+      .toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
+    expect(request.request.headers.has('IdentityId')).toBeFalse();
+
+    request.flush({});
+  });
+
+  // The other half, and the local build's normal state: no gateway to derive anything, and Billing
+  // reads the three headers itself.
+  it('Req15f_NoToken_SendsTheScopeIdsAndNoAuthorization', () => {
+    http.get(`${environment.apiBaseUrl}/api/v1/rent/agreements`).subscribe();
+
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements`);
+
+    expect(request.request.headers.has('OrganizationUid')).toBeTrue();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeTrue();
+    expect(request.request.headers.has('IdentityId')).toBeTrue();
+    expect(request.request.headers.has('Authorization')).toBeFalse();
+
+    request.flush({});
+  });
+
   it('Req15e_NonApiUrl_NeverReceivesTheToken', () => {
     scope.setAccessToken('a-token-that-must-not-leave');
 

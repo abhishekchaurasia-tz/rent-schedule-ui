@@ -29,19 +29,28 @@ export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
 
   const token = scope.accessToken();
 
-  return next(
-    request.clone({
-      setHeaders: {
+  // Requirement 15f -- ONE SET OR THE OTHER, never both.
+  //
+  // With a token, the gateway derives the caller from it: UserId, OrganizationId, PropertyOwnerId and
+  // more. Sending our three ids alongside would put two answers to one question in one request, and
+  // the client cannot know which the backend records. Not sending them removes the question rather
+  // than documenting it.
+  //
+  // Without a token -- the local build's normal state -- there is no gateway to derive anything and
+  // Billing reads the three headers itself (requirement 12).
+  //
+  // Keyed on the token rather than on environment.name, and the difference shows in one case: a dev or
+  // qa build before a token has been pasted. Keyed on the environment that build would send neither,
+  // so every call would carry no caller information at all -- a second failure under the gateway's
+  // refusal, teaching nobody anything. Keyed on the token it still sends the ids, is still refused for
+  // the real reason, and the refusal still reads as `no token`.
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {
         OrganizationUid: scope.organizationId(),
         PropertyOwnerUid: scope.propertyOwnerId(),
-        IdentityId: scope.identityId(),
+        IdentityId: scope.identityId()
+      };
 
-        // Requirement 15d. Spread in only when a token is present: attaching it unconditionally would
-        // send `Bearer ` with nothing after it from the local build, and a malformed credential reads
-        // worse than an absent one -- it invites whoever is debugging to investigate authentication
-        // rather than notice there is none.
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    })
-  );
+  return next(request.clone({ setHeaders: headers }));
 };

@@ -87,7 +87,20 @@ Angular workspace as-is.
 - [ ] **How to obtain a dev or qa token.** Out of this repository's hands: sign in to the relevant
       environment and copy the bearer from a request's headers, exactly as the screenshot that prompted
       this work shows. Worth writing into the box's own hint text so nobody has to ask twice.
-- [ ] **Does the gateway overwrite or append the caller headers this application already sends?**
+- [x] **Withdrawn 2026-09-16 rather than answered, and that is the better outcome.** *The user
+      decided the two sets are never sent together* (requirement 15f, spec v25): with a token the
+      request carries `Authorization` and none of the three ids; without one it carries the ids and
+      no `Authorization`.
+
+      **The question cannot arise if the client never sends both.** It was going to be answered by
+      an experiment against qa; not creating the condition is worth more than measuring it, because
+      the measurement would have had to be repeated every time the gateway config changed.
+
+      Original question, for the record: Ocelot's `AddHeadersToRequest` derives `UserId`,
+      `OrganizationId`, `PropertyOwnerId` and more **from the token**, while this application sent
+      `OrganizationUid`, `PropertyOwnerUid` and `IdentityId` of its own — and if they collided, the
+      backend would record whoever the token said while a tester read the box and believed
+      otherwise.
       *Unconfirmed, and it decides how loud requirement 15's warning needs to be.* Ocelot's
       `AddHeadersToRequest` derives `UserId`, `OrganizationId`, `PropertyOwnerId` and more **from the
       token**; this application sends `OrganizationUid`, `PropertyOwnerUid` and `IdentityId` of its own.
@@ -242,4 +255,5 @@ that is requirement 15b, and it is the one a person can observe failing.
 - [x] The field is absent on the `local` and `production` builds, and present on `dev` and `qa`.
 - [x] The box states which environment it belongs to.
 - [ ] A `ng serve --configuration qa` run with a real token reaches a `201`.
-- [ ] The open question about gateway header precedence is answered, or carried forward explicitly.
+- [x] The open question about gateway header precedence is **withdrawn**: requirement 15f means the
+      client never sends both sets, so precedence cannot be reached.
