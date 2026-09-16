@@ -84,9 +84,10 @@ Angular workspace as-is.
 
 ### Prerequisites & Open Questions
 
-- [ ] **How to obtain a dev or qa token.** Out of this repository's hands: sign in to the relevant
-      environment and copy the bearer from a request's headers, exactly as the screenshot that prompted
-      this work shows. Worth writing into the box's own hint text so nobody has to ask twice.
+- [x] **How to obtain a token: answered 2026-09-16 — the user enters it.** Sign in to the environment
+      and copy the bearer from a request's headers, as the screenshot that prompted this work showed.
+      **Written into the box's own hint text**, including that it expires, so the next person does not
+      have to ask and the one after that does not either.
 - [x] **Withdrawn 2026-09-16 rather than answered, and that is the better outcome.** *The user
       decided the two sets are never sent together* (requirement 15f, spec v25): with a token the
       request carries `Authorization` and none of the three ids; without one it carries the ids and
@@ -101,13 +102,6 @@ Angular workspace as-is.
       `OrganizationUid`, `PropertyOwnerUid` and `IdentityId` of its own — and if they collided, the
       backend would record whoever the token said while a tester read the box and believed
       otherwise.
-      *Unconfirmed, and it decides how loud requirement 15's warning needs to be.* Ocelot's
-      `AddHeadersToRequest` derives `UserId`, `OrganizationId`, `PropertyOwnerId` and more **from the
-      token**; this application sends `OrganizationUid`, `PropertyOwnerUid` and `IdentityId` of its own.
-      The names are not all identical, so they may well coexist — but if they collide, **the backend
-      records whoever the token says**, and a tester reading the box would believe otherwise.
-      Answerable by one request against qa with the token set and the box pointed at a different
-      account.
 
 ---
 
@@ -151,8 +145,9 @@ carries `Authorization: Bearer …`; the local build with an empty box sends no 
 - [x] Show the environment the box is for (`environment.name`), so a tester on the qa build can see at
       a glance that they are not looking at the dev token.
 - [x] `ng build`, `tsc --noEmit` and `ng test` green.
-- [ ] **STOP — review checkpoint.** Report: files changed, the specs added, the per-environment storage
-      change and its one-time effect on remembered ids, and the commit.
+- [x] **STOP — review checkpoint: reported 2026-09-16.** 4 files, 6 specs, the per-environment storage
+      change and its one-time effect on remembered ids all reported; commit `984217b`, and `38233dd`
+      for requirement 15f, which the user added at the checkpoint.
 
 #### Flow Card — M0 The access token
 

@@ -108,7 +108,9 @@ was ticked while it was still visible.
 
       **Proved rather than assumed**: with the line removed from `saveEdit`, this was the only
       failure out of 343. That is what makes it a test of the obligation and not of the plumbing.
-- [ ] **STOP — review checkpoint.** Report: files changed, the specs added, the gap above, the commit.
+- [x] **STOP — review checkpoint: reported 2026-09-16.** 4 files and 3 specs reported, and the gap
+      named there — the missing requirement 14c spec — was closed in the same session rather than
+      shipped open. Commit `973bf68`.
 
 #### Flow Card — M0 The switch is offered, sent, and preserved
 
