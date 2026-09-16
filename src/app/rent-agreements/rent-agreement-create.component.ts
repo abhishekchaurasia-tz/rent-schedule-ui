@@ -30,6 +30,7 @@ import {
   frequenciesFor,
   isFrequencyAllowed
 } from '../rent-schedule/frequency-options.util';
+import { reloadOnScopeChange } from '../scope-change';
 import { parseIsoDate, toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
@@ -346,6 +347,12 @@ export class RentAgreementCreateComponent {
       deposit: [null],
       depositDueDate: [null as Date | null],
       depositCollected: [false],
+
+      // Backend v108 FR-134a. Only meaningful on a fixed term -- an agreement with no end date is
+      // already month-to-month, so the backend stores false whatever is sent (FR-134f). The template
+      // hides the control rather than disabling it, and the payload builders below send false when the
+      // term is not fixed, so a value left over from a term the user switched away from cannot leak.
+      switchToMonthToMonth: [false],
       dueOnDay: [1],
       dueOnDays: this.fb.array([this.fb.control(1), this.fb.control(15)]),
       dayOfWeek: [1],
@@ -391,6 +398,23 @@ export class RentAgreementCreateComponent {
         this.saveResult.set(null);
       }
       this.refreshCandidateDates();
+      this.maybeAutoGeneratePreview();
+    });
+
+    // Requirement 15g. Placed before the edit-mode branch below, which returns, so both paths get it.
+    //
+    // The same pair the create path runs for itself, and for the same reason: these are the two calls
+    // this screen makes without being asked, so they are the two that will have been made under the
+    // scope in force before the token was pasted. `refreshCandidateDates(true)` -- the isInitialLoad
+    // arm -- because a refetch must never clear a date the user has already picked; and
+    // `maybeAutoGeneratePreview`, whose own signature guard leaves an existing schedule alone and only
+    // retries the preview that had nothing to show.
+    //
+    // The loaded agreement is deliberately NOT re-read: this screen holds an editable form, and
+    // re-hydrating it would discard whatever is half typed -- the same reason `onActivated` reads back
+    // only the status.
+    reloadOnScopeChange(() => {
+      this.refreshCandidateDates(true);
       this.maybeAutoGeneratePreview();
     });
 
@@ -449,6 +473,11 @@ export class RentAgreementCreateComponent {
             deposit: agreement.deposit ?? null,
             depositDueDate: parseIsoDate(agreement.depositDueDate),
             depositCollected: agreement.depositCollected,
+
+            // Backend v108 FR-134h, and NOT cosmetic: PUT .../terms replaces the terms it is given, so
+            // an edit that does not resubmit this clears it. Reading it back is what lets the edit
+            // resubmit what was saved. ?? false covers a server older than v108, which omits the field.
+            switchToMonthToMonth: agreement.switchToMonthToMonth ?? false,
             ...frequencyConfigToFormValue(agreement.frequencyConfig)
           },
           { emitEvent: false }
@@ -1255,6 +1284,11 @@ export class RentAgreementCreateComponent {
       deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
       depositDueDate: toIsoDate(value.depositDueDate),
       depositCollected: Boolean(value.depositCollected),
+
+      // Backend v108 FR-134a. Sent as false unless the term is fixed: the backend derives the same
+      // answer (FR-134f), but sending the coherent value means the request says what the user was
+      // actually shown rather than relying on the server to correct it.
+      switchToMonthToMonth: this.switchToMonthToMonthForSubmission(value),
       // Every previewed row is sent — a row the user removed via the kebab menu's Delete is still
       // submitted, flagged isCancelled, so the backend persists it directly with a Cancelled status
       // (spec v39) instead of it never existing.
@@ -1295,9 +1329,36 @@ export class RentAgreementCreateComponent {
    * `409 rent_agreement.deposit_not_editable` that fails the whole edit, and omitting it leaves the stored
    * deposit untouched, which is exactly the desired behaviour once it is locked.
    */
+  /**
+   * The value to submit for the month-to-month switch, on either write path (backend spec v108,
+   * FR-134f).
+   *
+   * Always `false` unless the term is fixed. An agreement with no end date is already month-to-month,
+   * so there is no end for a switch to happen on — the backend derives exactly this and would store
+   * `false` anyway (FR-134f), but deriving it here too means the request states what the user was
+   * shown rather than depending on the server to correct it.
+   *
+   * It also closes the one way a stale value could be sent: the control is hidden when the term is
+   * not fixed, and a hidden control keeps whatever it last held. Somebody who ticks the box, then
+   * switches the term to month-to-month, would otherwise submit a `true` they can no longer see.
+   *
+   * @param value The current form value.
+   * @returns What to send.
+   */
+  private switchToMonthToMonthForSubmission(value: any): boolean {
+    return value.leaseTermType === 'fixed' && Boolean(value.switchToMonthToMonth);
+  }
+
   private saveEdit(agreementId: string, value: any, preview: PreviewRentScheduleResponse): void {
     const request: UpdateRentAgreementTermsRequest = {
       endDate: value.leaseTermType === 'fixed' ? toIsoDate(value.endDate) : null,
+
+      // Backend v108 FR-134d/FR-134g. ALWAYS SENT, unlike the deposit block below, and the asymmetry
+      // is the point: this endpoint replaces the terms it is given and there is no ...Supplied marker
+      // for this field, so omitting it stores false and silently clears whatever was saved. The value
+      // comes from the form, which was patched from the loaded agreement (FR-134h) -- that read-back
+      // is what makes resubmitting it possible at all.
+      switchToMonthToMonth: this.switchToMonthToMonthForSubmission(value),
       fullRent: Number(value.rent),
       frequency: value.frequency,
       frequencyConfig: buildFrequencyConfig(value),

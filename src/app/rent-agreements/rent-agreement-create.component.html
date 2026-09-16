@@ -100,6 +100,20 @@
               <mat-datepicker-toggle matIconSuffix [for]="endDatePicker"></mat-datepicker-toggle>
               <mat-datepicker #endDatePicker></mat-datepicker>
             </mat-form-field>
+
+            <!--
+              Backend v108 FR-134a. Inside the fixed-term block on purpose: a lease with no end date is
+              already month-to-month, so there is no end for a switch to happen on and the backend
+              stores false whatever is sent (FR-134f). Hidden rather than disabled, because a disabled
+              control still suggests the choice exists here.
+
+              Ticking it changes nothing observable yet (FR-134c) -- the Lease service keeps the flag
+              but has no job that flips a term at its end, and billing still stops at the end date. It
+              records the intention at the only moment anyone states it.
+            -->
+            <mat-checkbox formControlName="switchToMonthToMonth" class="switch-to-m2m-checkbox">
+              When this term ends, continue month-to-month instead of expiring.
+            </mat-checkbox>
           }
         </div>
 

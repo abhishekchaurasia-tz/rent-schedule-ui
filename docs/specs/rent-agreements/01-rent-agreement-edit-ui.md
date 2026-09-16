@@ -2,6 +2,10 @@
 
 | Version | Date | Author | Summary | Plan |
 |---------|------|--------|---------|------|
+| v26 | 2026-09-16 | Abhishek Chaurasia | **Three bugs the user found the moment they ran v24/v25 against dev and qa — and each one made a screen lie rather than fail.** **Requirement 15 gains g.** *Reported by the user.* **(1) The Test scope box showed OrganizationUid, PropertyOwnerUid and IdentityId on every build.** v25 keyed the *headers* on the token and left the *fields* on all four builds, and the gap between those two rules was the defect: on `dev` and `qa` before a token was pasted, this application sent three GUIDs `crypto.randomUUID()` had invented — values **nobody could see, set or correct**, travelling as though they named an account. The fields are now the `local` build's alone, and so are the headers: the ids require both no token **and** the local build. 15f is untouched and still holds on its own. The one behaviour v25 argued for and this reverses is a dev or qa build *before* a token arrives — it now sends no caller headers at all rather than three fabricated ones, and the gateway refuses it either way, before Billing is reached. **(2) Pasting the token did nothing to the screen already open.** Every screen fetches when it opens and the token is pasted afterwards, in response to seeing an empty list — so the data on screen had been read under a scope that no longer applied, and the only remedy was a browser reload, which on the Add Lease screen means **retyping the lease**. `RequestScopeService` now announces every change on a `revision` signal and each screen re-runs what is safe to repeat: a catalog, a list, a candidate-date enumeration, **never** a re-hydration of a form the user is part-way through. **(3) The fee panel's catalog fetch was still gated on the record's owner.** v22 moved the owner from a query parameter to the header and deleted the argument; the `if (!this.propertyOwnerId) return;` it existed for stayed behind — through two versions, kept alive by a test that pinned the defect rather than a requirement. A record naming no owner therefore fetched **nothing** and rendered *"No catalog items are available to pick from yet"*, which reads as an empty catalog rather than a request never made. **The owner-mismatch notice (13b) falls silent** wherever the ids are not what the catalog was read for, which after (1) is every dev and qa record — it had been comparing against a GUID nobody ever saw. **The header rule is now a pure function, `sendsScopeIds(environmentName, token)`, and that is the part worth copying:** the specs run under `environment.ts`, the *local* build, so no test in this repository could ever have observed what a `dev` or `qa` build sends — which is exactly where the wrong thing was being sent. Asking the rule directly is the only way one suite can cover all four builds. | [2026-09-16T1600-01-the-scope-box-belongs-to-local](../../plans/rent-agreements/2026-09-16T1600-01-the-scope-box-belongs-to-local.md) |
+| v25 | 2026-09-16 | Abhishek Chaurasia | **The token and the three scope ids are never sent together.** **Requirement 15 gains f**; **requirement 12e's accepted cost is narrowed**. *The user's decision, answering v24's own open question rather than waiting for the experiment it proposed:* when a token goes, the scope headers do not — the gateway derives the caller from the token, so sending ours alongside it invites exactly the disagreement v24 could only warn about. **Local keeps the headers**, because there is no gateway there to derive anything and Billing reads them directly (FR-127, FR-128, FR-129). **Keyed on whether a token is present, not on which build is running**, and the difference matters in one case: a dev or qa build **before** a token has been pasted. Keyed on the environment it would send neither, and every call would fail with no caller information at all — a second failure mode layered on the gateway's refusal, for no gain. Keyed on the token, that build still sends the ids, is still refused by the gateway, and the refusal still reads as *no token*. For the two states the user named the behaviour is identical: local sends ids, dev and qa with a token send the token. **This closes v24's open question by not creating it.** That question — whether the gateway overwrites or appends the client's headers — cannot arise if the client never sends both, so it is withdrawn rather than carried, and the box's mismatch warning becomes a statement of which set is in use. | [2026-09-16T1000-01-the-access-token](../../plans/rent-agreements/2026-09-16T1000-01-the-access-token.md) |
+| v24 | 2026-09-16 | Abhishek Chaurasia | **The tester can paste a dev or qa access token and drive a real environment with it.** New requirement **15**. *Requested by the user: a way to put a token in and have the qa or dev build hit its API with it.* **Today this application cannot reach dev or qa at all.** `proxy.conf.{dev,qa}.json` already point at `api-{dev,qa}-my.innago.com`, and the gateway's `/billing/{everything}` route carries `AuthenticationProviderKey: Bearer` — so every request is refused **at the gateway**, before Billing sees it. The interceptor sends three scope headers and no `Authorization` at all; its own comment has said since v21 that this is where a bearer would go. **The token is entered at runtime and remembered per environment, not compiled into the build** (**D6**). *This is the part that answers the request and also declines part of it:* a token in `environment.qa.ts` would be a **secret in source control**, and — the decisive objection — **a JWT expires in minutes or hours**, so a build carrying one is stale before the day is out and every refresh becomes a rebuild. Keyed by `environment.name`, the qa build reads the qa token and the dev build reads the dev one, which is what "whichever env build we make" asks for without either cost. **The field is shown on the `dev` and `qa` builds only** — *as the user asked* — because those are the two that go through a gateway that demands a bearer. `local` talks to Billing directly and Billing validates nothing; `production` would have real sign-in, and a paste box there is somewhere a credential gets typed into the wrong window and then remembered. **Blank is a real value here, unlike the three ids beside it.** Those ignore a blank because an empty header is a `400`; an empty token means *send no `Authorization` at all*, which is exactly right for the local build, where there is no gateway and Billing validates nothing. **One consequence is called out rather than discovered:** with a token present the gateway injects its own claim headers derived from it, so the box's three ids and the token can disagree and the backend will see the gateway's answer. Whether Ocelot overwrites or appends the client's headers is **not settled here** and is recorded as an assumption to confirm. | [2026-09-16T1000-01-the-access-token](../../plans/rent-agreements/2026-09-16T1000-01-the-access-token.md) |
+| v23 | 2026-09-15 | Abhishek Chaurasia | **The lease form gains the month-to-month switch, and the edit screen stops being able to clear it by accident.** New requirement **14**. *Client half of backend `01-rent-agreement.md` v108 (FR-134), and its v110 — which moved these obligations out of the backend spec and into this one, because the backend cannot review a screen it cannot see.* The backend's `switch_to_m2m` column had **no writer anywhere in the system** until v108: this application never sent such a field, the API had no such property, and the aggregate hard-set `false`. **Three obligations, and only one of them can go wrong without anybody noticing.** **(1)** The control appears only when the term is fixed — a lease with no end date is already month-to-month, so the backend stores `false` whatever arrives, and a control there would collect an answer that is discarded. **(2)** The payload sends `false` whenever the term is not fixed: **hiding a ticked box does not untick it**, so a user who ticks it and then switches the term would otherwise submit a `true` they can no longer see. **(3)** `PUT …/terms` **always** carries the field. That endpoint **replaces** the terms it is given and has no `…Supplied` marker for this one, so omitting it stores `false` — meaning any unrelated edit would silently clear what the parties agreed. **That third one is why the value is read back**, and why the backend added it to `GET` (FR-134h): a screen that cannot read the stored value cannot resubmit it. **Ticking the box changes nothing observable yet**, and the label is written accordingly: the Lease service stores the flag but has no job that flips a term at its end, and billing still stops at the end date. It records the intention at the only moment anyone states it. | [2026-09-15T2100-01-the-month-to-month-switch](../../plans/rent-agreements/2026-09-15T2100-01-the-month-to-month-switch.md) |
 | v22 | 2026-09-14 | Abhishek Chaurasia | **The line-item catalog stops being asked for by owner, a third identifier joins the settings box, and v21's own requirement text is corrected where it named headers that never shipped.** New requirement **13**; **12d is corrected**. *Follows backend `02-invoicing.md` v39 FR 47 and `01-rent-agreement.md` v91 FR-129.* **The part that matters is a silent wrong answer, not a broken screen.** Backend v39 moved the line-item catalog's owner scope from a query parameter to the `PropertyOwnerUid` header. This application already sends that header on every API call, so **nothing returns `400`** — but `LineItemsService.list()` takes the owner as an *argument*, and its callers pass **the owner of the record being edited** (`additional-charge-panel.component.ts` passes the agreement's; `update-proposed-invoice.component.ts` passes the invoice's), while the header carries the **settings-box** value, which starts as an invented GUID. So after v39 the catalog resolves under whichever owner the box holds: the picker quietly shows only system-defined items, and a new entry is filed under an owner nobody chose. **A screen that looks like it works is worse than one that fails**, which is why this version exists rather than waiting for someone to notice. **Requirement 13** removes the argument — the header becomes the only source, matching the service — and adds a **visible mismatch warning** when the loaded record's owner differs from the box, so the condition that used to be silent is on screen (**D5**). **A third identifier, `IdentityId`,** joins the box and the interceptor: backend FR-129 records who wrote every row in `created_by`/`modified_by`, and without it every row this application writes is stamped as unattributed and logs a warning server-side. It is **not required** — the backend never refuses a write for its absence — so this is about the audit trail being true, not about the screen working. **The correction:** requirement 12d as written says the interceptor adds `OrganizationId` and `PropertyOwnerId`. **It never did.** Those claims are `long`s in the platform's token; the GUID variants are `OrganizationUid` and `PropertyOwnerUid`, which is what the code has sent since it was written — as v21's own changelog row explains at length. The requirement text was left behind when the code was corrected, and is fixed here rather than left to mislead the next reader. | [2026-09-14T1400-01-the-scope-ids-travel-as-headers](../../plans/rent-agreements/2026-09-14T1400-01-the-scope-ids-travel-as-headers.md) |
 | v21 | 2026-09-14 | Abhishek Chaurasia | **The two ids that say *who is saving* leave the lease body and become request headers, supplied from a settings box the tester controls.** New **requirement 12**. *Requested by the user 2026-09-14 as the client half of `innago-rent-accounting` spec `01-rent-agreement.md` v89–v90 (FR-127, FR-128).* The Billing API now requires **`OrganizationUid`** and **`PropertyOwnerUid`** on `POST /rent/agreements` and **no longer reads `propertyOwnerId` from the request body**. **What changes here.** `CreateRentAgreementRequest` loses `propertyOwnerId`; a new **HTTP interceptor** attaches both headers to every call whose URL starts with `environment.apiBaseUrl`, registered through `provideHttpClient(withInterceptors(...))` in `app.config.ts`, which registered none before; a small `RequestScopeService` holds the two values; and the shell's sidebar gains a **Test scope box** with both of them, editable and remembered across reloads. **Two decisions were reversed during the work, and both are recorded under Clarifications rather than quietly applied.** (1) *The values are typed, not invented.* The first draft hid them behind generated GUIDs; this application is a **test harness that never reaches production**, and its purpose is to drive real dev and qa environments — an identifier nobody can set cannot be pointed at a real account, which would leave the whole change untestable against anything but itself. They still **start populated**, so a tester who ignores the box still gets a `201` rather than a `400` about a header they have never heard of. (2) *The headers are the `Uid` variants.* The first draft used `OrganizationId`/`PropertyOwnerId`, the names the gateway forwards — but the platform’s own `SessionManager` parses those as **`long`** and the `Uid` siblings as **`Guid`**, and both backend columns are `uuid`. Using the plain names would have returned `400` on every create against a real token. **`propertyOwnerId` stays a form control:** the charge panel and line-item pickers bind to it for catalog scoping, and the edit page patches it from the loaded agreement. It stops being a *body field*; it does not stop existing. **Release coupling, stated plainly:** this change and the backend’s are one release. Ship either alone and every lease save is refused — nothing is half-saved, but the create screen is unusable until both are out. | [2026-09-14T1400-01-the-scope-ids-travel-as-headers](../../plans/rent-agreements/2026-09-14T1400-01-the-scope-ids-travel-as-headers.md) |
 | v20 | 2026-09-09 | — | **The preview already said what the change would cost and what the save would refuse; this application threw both away — the fourth and fifth times in two days.** New **requirement 11**. `POST /rent/schedule/preview` returns `warnings` (non-blocking consequences the backend documents as *"the user must see before saving"*, e.g. `frequency_change_loses_row_identity`) and `blocked` (the rows `PUT …/terms` will decline). **`grep -rn "warnings" src/` and `grep -rn "blocked" src/` found neither** — no model field, no signal, no template branch. **These are the only signals in this application that arrive *before* a save.** `blockedRemovals` (v19) explains a refusal afterwards, by which point the decision is made; `warnings` is the one thing that can change a decision while it is still being made — which is why both render **above** the schedule table rather than beside the save button. **Replaced wholesale on every preview, never merged:** a warning describes *that* computed change, so carrying one forward would leave it describing a change the user has already backed out of — pinned by a test that previews twice. Neither is an error: `previewError` means the preview failed, these mean it succeeded and the change has a consequence. **Shipped with the backend fix that makes `blocked` trustworthy** — its predicate had been stale since FR-124, so it named rows the save removes without complaint (backend spec 01 v88). Surfacing it before that fix would have been surfacing a wrong answer more loudly. | [2026-09-09T1900-01-surface-what-the-preview-says](../../plans/rent-agreements/2026-09-09T1900-01-surface-what-the-preview-says.md) |
@@ -297,6 +301,152 @@ resurrect a row the user acted on.
      screen — the create flow still needs a value to send in its own header context, and the edit page
      still patches it from the loaded agreement so 13b can compare it. What goes is passing it *to the
      catalog service*, not the field itself.
+
+14. **v23** — The system shall let a tester state that a **fixed** term continues month-to-month when
+    it ends, shall never send that statement for a term that is not fixed, and shall resubmit what was
+    saved on every edit.
+
+    Backend `01-rent-agreement.md` v108, FR-134; the obligations below were moved here by its v110.
+
+    a. **The control renders only inside the fixed-term block.** A lease with no end date is already
+       month-to-month, so there is no end for a switch to happen on; the backend stores `false`
+       whatever arrives (FR-134f). **Hidden, not disabled** — a disabled control still says the choice
+       belongs here.
+
+    b. **Both payloads send `false` unless the term is fixed**, through one helper shared by the create
+       and edit builders. **Hiding a ticked box does not untick it:** a tester who ticks it and then
+       switches the term to month-to-month would otherwise submit a `true` they can no longer see.
+       The backend derives the same answer, so **nothing stored would be wrong** — what would be wrong
+       is the request claiming something the user was never shown.
+
+    c. **The edit payload always carries the field.** Unlike the deposit block, which is sent only when
+       the server reports it editable, this one is unconditional: `PUT …/terms` **replaces** the terms
+       it is given and has no `…Supplied` marker for it, so **omitting it stores `false`** and clears
+       what the parties agreed — on an edit that may have been about something else entirely.
+
+    d. **The form is patched from the loaded agreement**, defaulting to `false` when the field is absent
+       so an older server does not break the screen. **This is what makes (c) possible at all** — it is
+       a dependency, not a convenience.
+
+    **Only (c) can fail silently**, which is why it is the one with a spec test: a screen that stops
+    sending the field still saves, still returns `200`, and quietly unsets a term the tester never
+    touched. (a) and (b) are visible the moment anyone looks.
+
+    **Ticking it changes nothing observable yet** (backend FR-134c): the Lease service keeps the flag
+    but has no job that flips a term at its end, and billing still stops at the end date. The label
+    therefore describes the agreement rather than promising behaviour.
+
+15. **v24** — The system shall let a tester supply an access token for the environment the build
+    targets, and shall send it as `Authorization: Bearer …` on every Billing API request.
+
+    **Without this, the dev and qa builds cannot reach their APIs at all.** The proxies already point
+    at `api-{dev,qa}-my.innago.com`, and the gateway route those requests land on requires a bearer
+    — so the refusal happens at the gateway, before Billing is reached, and no amount of scope headers
+    changes it.
+
+    a. **The token is entered in the Test scope box**, beside the three identifiers already there.
+       Same box, same reason as **D1**: this application drives real environments, and a value nobody
+       can set cannot be pointed at a real account.
+
+       **The field renders only on the `dev` and `qa` builds** — *the user's instruction* — and is
+       absent on `local` and `production`. Each exclusion has its own reason. **Local** reaches
+       Billing directly with no gateway in front of it, and Billing registers no authentication
+       scheme, so a token there is a box that changes nothing. **Production** would carry a real
+       sign-in; a paste-a-credential box on a production build is a place for a token to be typed
+       into the wrong window and then remembered in that browser.
+
+       Gating the field is not a substitute for 15d: the header is attached on whatever the token
+       holds, so an empty token on any build still sends nothing.
+
+    b. **It is remembered per environment**, keyed by `environment.name` — so a qa build and a dev
+       build each keep their own, and switching between them does not mean re-pasting. This is what
+       "whichever env build we make" means in practice.
+
+    c. **It is never compiled into the build** (**D6**). Two independent reasons, either sufficient:
+       a token in an `environment.*.ts` is a **secret committed to source control**, and a JWT
+       **expires within hours**, so the build would be stale almost immediately and every refresh
+       would be a rebuild and a redeploy.
+
+    d. **Blank means send nothing**, and blank is the default. This is the opposite of the three ids
+       beside it, which ignore a blank because an empty header is a `400`. An absent `Authorization`
+       is correct for the local build: there is no gateway, and Billing registers no authentication
+       scheme of its own. **The default is empty rather than an invented value**, again unlike the
+       ids — a fabricated token looks real, is refused, and sends the reader looking for the wrong
+       problem.
+
+    e. **The header is attached only to Billing API requests**, by the same URL test the scope headers
+       already use. A token must not leak to any other host this application may call later.
+
+    f. **v25 — The token and the three scope ids shall never be sent together.** When a token is
+       present the request carries `Authorization` and **no** `OrganizationUid`,
+       `PropertyOwnerUid` or `IdentityId`; when it is absent the request carries the three ids and
+       no `Authorization`. *The user's decision.*
+
+       **The gateway derives the caller from the token** — `UserId`, `OrganizationId`,
+       `PropertyOwnerId` and more. Sending ours alongside it means two answers to one question
+       travelling in one request, and **the client cannot know which the backend will record**. Not
+       sending them removes the question rather than documenting it.
+
+       **Local keeps the ids** because there is no gateway there to derive anything, and Billing reads
+       the three headers itself (requirement 12, backend FR-127 – FR-129).
+
+       **Keyed on the token, not on the build**, and there is one case where that differs: a dev or qa
+       build **before** a token has been pasted. Keyed on the environment it would send neither, so
+       every call would carry no caller information at all — a second failure layered under the
+       gateway's refusal, teaching nobody anything. Keyed on the token it still sends the ids, is
+       still refused for the real reason, and the refusal still reads as *no token*. For the two
+       states named in the decision the behaviour is identical.
+
+       **This is also what retires v24's open question.** Whether the gateway overwrites or appends
+       the client's headers cannot matter if the client never sends both.
+
+    g. **v26 — The ids belong to the local build, and a scope change re-reads the screen.** Two
+       corrections to v24/v25, both reported by the user after running against dev and qa. *The
+       user's report.*
+
+       **g1 — The three identifier fields render on the `local` build only**, and are **not sent on
+       any other build**, with or without a token. v25 keyed the *headers* on the token but left the
+       *fields* on every build, and the gap between those two rules was the defect: on `dev` and `qa`
+       before a token was pasted, this application sent three GUIDs `crypto.randomUUID()` had
+       invented — values **nobody could see, set or correct**, travelling as though they identified an
+       account. A field that collects a value the build will never send is worse than no field,
+       because it invites a tester to set it and then to trust what they set.
+
+       **15f is unchanged and still holds on its own**: wherever a token goes, the ids do not. g1
+       narrows the other arm — the ids now require *both* no token *and* the local build. The one
+       behaviour v25 argued for and this reverses is a dev or qa build before a token is pasted: it
+       now sends no caller headers at all rather than three invented ones. The gateway refuses it
+       either way, before Billing is reached, so nothing reaches a service that could read them.
+
+       **g2 — Pasting the token re-reads the current screen, with no browser reload.** Every screen
+       fetches when it opens; the token is pasted afterwards, in response to seeing an empty list.
+       Until this, nothing happened — the data on screen had been read under the old scope and no
+       longer applied, and the only way to correct it was a full reload, which on a form-bearing
+       screen means retyping the lease. **A reload is not an acceptable remedy on this application**,
+       which is the whole reason this is a requirement rather than a note.
+
+       **Each screen re-runs only what is safe to repeat**: a catalog, a list, a candidate-date
+       enumeration. **Never a re-hydration of a form the user is part-way through** — the invoice
+       correction screen re-reads its item catalog and deliberately not the invoice, for the same
+       reason `onActivated` reads back only the status.
+
+       **g3 — The fee panel's catalog fetch stops being gated on the record's owner.** v22 moved the
+       owner from a query parameter to the header, but the `if (!this.propertyOwnerId) return;` that
+       guarded the fetch stayed behind — so a record naming no owner fetched **nothing** and rendered
+       *"No catalog items are available to pick from yet"*, which reads as an empty catalog rather
+       than a request never made. The owner is a header; it cannot gate the call.
+
+       **g4 — The owner-mismatch notice (13b) falls silent whenever the ids are not the catalog's
+       scope**, which after g1 is every build but `local` and every `local` session with a token. It
+       compares the record's owner against the box's; when the box's is not sent, the two never met
+       and a notice would report a disagreement that does not exist. Left ungated it fired on *every*
+       dev and qa record, against a GUID nobody ever saw.
+
+    **The confusing part, stated so nobody has to find it — and narrowed by g1:** once a token is
+    present the gateway derives its own caller headers from it. On `local`, where the ids are still
+    offered, the box and the token could therefore describe **different people**, and what the backend
+    records is the gateway's answer. On `dev` and `qa` the question no longer arises: there is nothing
+    in the box to disagree with the token.
 
 ## Constraints
 

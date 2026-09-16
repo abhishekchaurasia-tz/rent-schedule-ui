@@ -89,6 +89,77 @@ describe('RentAgreementCreateComponent', () => {
     httpMock.expectNone(createUrl);
   }));
 
+  // ---------------------------------------------------------------------------------------------
+  // The month-to-month switch (backend spec v108, FR-134i). Three obligations, and only one of them
+  // can go wrong without anybody noticing -- which is why all three are pinned here.
+  // ---------------------------------------------------------------------------------------------
+
+  it('sends the month-to-month switch on create when the term is fixed', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ switchToMonthToMonth: true });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
+      totalInvoices: 1,
+      totalAmount: 100
+    } as PreviewRentScheduleResponse);
+
+    component.save();
+
+    const req = httpMock.expectOne(createUrl);
+    expect(req.request.body.switchToMonthToMonth).toBeTrue();
+
+    req.flush({
+      agreementId: '44444444-4444-4444-4444-444444444444',
+      status: 'draft',
+      depositCollected: false,
+      scheduleRows: [],
+      additionalCharges: []
+    } as CreateRentAgreementResponse);
+    tick();
+  }));
+
+  // THE ONE THAT COULD REGRESS SILENTLY. The checkbox is hidden when the term is not fixed, and a
+  // hidden control keeps whatever it last held -- so a user who ticks the box and then switches the
+  // term to month-to-month would submit a `true` they can no longer see. The backend derives `false`
+  // anyway (FR-134f), so nothing stored would be wrong; what would be wrong is the request claiming
+  // something the user was never shown, and no test outside this one would notice.
+  it('sends false when the term is month-to-month, even if the box was ticked first', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ switchToMonthToMonth: true });
+
+    // The user changes their mind about the term. The control is now hidden; its value is not.
+    component.form.patchValue({ leaseTermType: 'month_to_month', monthToMonthInvoiceCount: 2 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    httpMock.expectOne(previewUrl).flush({
+      rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
+      totalInvoices: 1,
+      totalAmount: 100
+    } as PreviewRentScheduleResponse);
+
+    component.save();
+
+    const req = httpMock.expectOne(createUrl);
+    expect(req.request.body.switchToMonthToMonth)
+      .withContext('a hidden control keeps its value; the payload must not')
+      .toBeFalse();
+
+    req.flush({
+      agreementId: '44444444-4444-4444-4444-444444444444',
+      status: 'draft',
+      depositCollected: false,
+      scheduleRows: [],
+      additionalCharges: []
+    } as CreateRentAgreementResponse);
+    tick();
+  }));
+
   it('saves the previewed rows as a new rent agreement on Save', fakeAsync(() => {
     fixture.detectChanges();
     fillValidForm();

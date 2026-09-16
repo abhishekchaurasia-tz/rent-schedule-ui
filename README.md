@@ -22,7 +22,7 @@ A single-page form (`src/app/rent-schedule/`) lets you:
 1. Start the .NET API (from the `innago-rent-accounting` repo):
 
    ```bash
-   dotnet run --project src/Innago.RentAccounting.Api
+   dotnet run --project src/Innago.Billing.Api
    ```
 
    By default it listens on `http://localhost:5169` (see `Properties/launchSettings.json`).
@@ -38,8 +38,77 @@ A single-page form (`src/app/rent-schedule/`) lets you:
 
    Open `http://localhost:4200`.
 
-CORS for `http://localhost:4200` is already allowlisted in the API's
-`appsettings.Development.json` (`Cors:AllowedOrigins`).
+CORS for `http://localhost:4200` is already allowlisted in the API's `appsettings.json`
+(`Cors:AllowedOrigins`). There is no `appsettings.Development.json` any more — the API ships a single
+settings file, and those origins are read **only** when it runs in the Development environment, so a
+deployed API grants none however that file is written.
+
+## Running against dev or qa
+
+The section above runs against a **local** API. To drive a real environment instead, pick the build
+configuration for it — the difference is which API the dev-server proxies to, and whether a token is
+needed.
+
+| Configuration | API it reaches | Access token |
+|---|---|---|
+| *(none)* / `development` | `http://localhost:5169` — your own API | Not used |
+| `dev` | `https://api-dev-my.innago.com` via the gateway | **Required** |
+| `qa` | `https://api-qa-my.innago.com` via the gateway | **Required** |
+| `production` | `/api`, same origin | Real sign-in; the box is not offered |
+
+### Why dev and qa need a token
+
+Both go through the API gateway, whose `/billing/{everything}` route validates a bearer before it
+forwards anything. Without one **every request is refused at the gateway** and the Billing API is
+never reached — so the failure is a `401` that has nothing to do with this application.
+
+### Steps
+
+1. Start the app on the configuration you want:
+
+   ```bash
+   npm start -- --configuration qa     # or: ng serve --configuration qa
+   ```
+
+2. Sign in to that environment in another tab, open DevTools → **Network**, pick any request, and
+   copy the value of its `Authorization` header.
+
+3. In this app's sidebar, under **Test scope**, paste it into **Access token** — **without** the word
+   `Bearer`, which the app adds itself.
+
+It is remembered in this browser **per environment**, so the dev and qa builds keep separate tokens
+and switching between them does not mean pasting again. **It expires**, so expect to repeat steps 2
+and 3; a `401` after a while working is almost always that rather than anything you changed.
+
+It takes effect **immediately**: the screen you are on re-reads its data as soon as you paste, with
+no browser reload. That matters most on **Add Lease**, where a reload would mean retyping the lease —
+so the usual sequence is to open the fee panel, see an empty item list, paste the token, and watch it
+fill. Only the fetched data is re-read; anything you have typed stays where it is.
+
+### The token replaces the three scope ids, it does not join them
+
+**`OrganizationUid`, `PropertyOwnerUid` and `IdentityId` are the local build's, and only the local
+build shows them.** There is no gateway in front of a local API, so the Billing API reads those three
+headers directly. On dev and qa the gateway derives the caller from the token instead — the
+organization, the property owner and the acting user all come from it — so there is nothing to set by
+hand and no field offering to.
+
+With a token set the request carries `Authorization` and **none** of the three, on any build. Sending
+ours as well would put two answers to one question in one request, and the client could not know which
+the backend would record.
+
+### Builds
+
+```bash
+ng build --configuration dev
+ng build --configuration qa
+```
+
+**No token is ever compiled in.** It is entered at runtime because a bearer in a committed file is a
+credential in git history, and a JWT expires within hours — a build carrying one would be stale
+before the day was out.
+
+Specified in `docs/specs/rent-agreements/01-rent-agreement-edit-ui.md`, requirement 15.
 
 ## Project structure
 
@@ -55,8 +124,12 @@ src/app/rent-schedule/
 ## Development server
 
 ```bash
-ng serve
+ng serve                          # local API on :5169
+ng serve --configuration dev      # dev, via the gateway — needs a token
+ng serve --configuration qa       # qa, via the gateway — needs a token
 ```
+
+See *Running against dev or qa* above for the token.
 
 ## Building
 
