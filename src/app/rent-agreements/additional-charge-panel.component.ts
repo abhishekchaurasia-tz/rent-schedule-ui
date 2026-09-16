@@ -16,7 +16,10 @@ import { MatInputModule } from '@angular/material/input';
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { debounceTime } from 'rxjs';
 
+import { environment } from '../../environments/environment';
 import { RequestScopeService } from '../request-scope.service';
+import { reloadOnScopeChange } from '../scope-change';
+import { sendsScopeIds } from '../scope-headers.interceptor';
 import { RentScheduleService } from '../rent-schedule/rent-schedule.service';
 import { CandidateDateRequest, FrequencyConfig, LeaseTermType, RentFrequency } from '../rent-schedule/rent-schedule.models';
 import { buildFrequencyConfig, ordinal } from '../rent-schedule/frequency-config.util';
@@ -174,11 +177,21 @@ export class AdditionalChargePanelComponent implements OnInit {
    * shared system-defined entries, and a new fee name is filed under an owner nobody chose. Nothing
    * errors, which is exactly what makes it worth saying out loud.
    *
+   * **Silent unless the box's owner is the one the catalog was read for (v26).** On any build but
+   * `local`, and on `local` once a token is pasted, the three ids are not sent at all — so the box's
+   * `PropertyOwnerUid` is not what the list was scoped by and comparing against it would report a
+   * disagreement between two values that never met. Left ungated it fired on *every* dev and qa
+   * record, against a GUID `crypto.randomUUID()` invented and nobody ever saw.
+   *
    * **It becomes unreachable once the backend's D5 milestones ship**, because a cross-owner read is
    * then refused with a `404` and the record never loads at all. It is built for the window before
    * that, and falls silent on its own afterwards rather than needing removal.
    */
   protected get ownerScopeMismatch(): boolean {
+    if (!sendsScopeIds(environment.name, this.scope.accessToken())) {
+      return false;
+    }
+
     return this.propertyOwnerId !== null && this.propertyOwnerId !== this.scope.propertyOwnerId();
   }
 
@@ -257,6 +270,11 @@ export class AdditionalChargePanelComponent implements OnInit {
     this.form.valueChanges.pipe(debounceTime(300), takeUntilDestroyed()).subscribe(() => {
       this.refreshRecurringDueDateCandidates();
     });
+
+    // Requirement 15g. This panel is routinely open *before* the token is pasted -- an empty item list
+    // is the thing that sends a tester to the box in the first place -- so the catalog is read again
+    // when the scope changes. Only the catalog: the form beside it may be half filled in.
+    reloadOnScopeChange(() => this.loadLineItems());
   }
 
   ngOnInit(): void {
@@ -376,11 +394,17 @@ export class AdditionalChargePanelComponent implements OnInit {
     }
   }
 
+  /**
+   * Fetches the fee-name catalog this panel's pickers offer.
+   *
+   * **No longer gated on {@link propertyOwnerId} (v26).** That guard was left behind by v22, which
+   * removed the owner from `GET /api/v1/line-items` and made the `PropertyOwnerUid` header — or, with
+   * a token, the gateway's own reading of it — the only source. The argument went; the `return` that
+   * depended on it stayed. The result was a panel that fetched nothing at all whenever the record on
+   * screen named no owner, and showed *"No catalog items are available to pick from yet"* as though
+   * the catalog were empty rather than never asked for.
+   */
   private loadLineItems(): void {
-    if (!this.propertyOwnerId) {
-      return;
-    }
-
     const scope: LineItemScope = this.depositOnly ? 'DepositOnly' : 'AllExcludingCredit';
 
     this.lineItemsService.list(scope).subscribe((items) => this.lineItems.set(items));

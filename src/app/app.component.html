@@ -22,41 +22,49 @@
     <div class="scope-box">
       <div class="scope-box-title">Test scope</div>
 
-      <label class="scope-field" for="scope-organization-id">
-        <span>OrganizationUid</span>
-        <input
-          id="scope-organization-id"
-          type="text"
-          spellcheck="false"
-          autocomplete="off"
-          [value]="scope.organizationId()"
-          (change)="onOrganizationIdInput($any($event.target).value)"
-        />
-      </label>
+      <!--
+        Requirement 15g. The local build only. Billing reads these three directly there, with no
+        gateway in front of it. On dev and qa the gateway derives the caller from the token instead
+        and these are never sent, so a field here would collect a value that goes nowhere -- and
+        invite a tester to believe they had pointed the build at an account.
+      -->
+      @if (showScopeIds) {
+        <label class="scope-field" for="scope-organization-id">
+          <span>OrganizationUid</span>
+          <input
+            id="scope-organization-id"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            [value]="scope.organizationId()"
+            (change)="onOrganizationIdInput($any($event.target).value)"
+          />
+        </label>
 
-      <label class="scope-field" for="scope-property-owner-id">
-        <span>PropertyOwnerUid</span>
-        <input
-          id="scope-property-owner-id"
-          type="text"
-          spellcheck="false"
-          autocomplete="off"
-          [value]="scope.propertyOwnerId()"
-          (change)="onPropertyOwnerIdInput($any($event.target).value)"
-        />
-      </label>
+        <label class="scope-field" for="scope-property-owner-id">
+          <span>PropertyOwnerUid</span>
+          <input
+            id="scope-property-owner-id"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            [value]="scope.propertyOwnerId()"
+            (change)="onPropertyOwnerIdInput($any($event.target).value)"
+          />
+        </label>
 
-      <label class="scope-field" for="scope-identity-id">
-        <span>IdentityId</span>
-        <input
-          id="scope-identity-id"
-          type="text"
-          spellcheck="false"
-          autocomplete="off"
-          [value]="scope.identityId()"
-          (change)="onIdentityIdInput($any($event.target).value)"
-        />
-      </label>
+        <label class="scope-field" for="scope-identity-id">
+          <span>IdentityId</span>
+          <input
+            id="scope-identity-id"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            [value]="scope.identityId()"
+            (change)="onIdentityIdInput($any($event.target).value)"
+          />
+        </label>
+      }
 
       <!--
         Requirement 15. Offered on the dev and qa builds only: those reach Billing through a gateway
@@ -82,11 +90,13 @@
         </label>
       }
 
-      <p class="scope-hint">
-        Sent on every API call. Remembered in this browser. IdentityId is recorded as who created or
-        changed each row; unlike the other two it is never required, so a wrong value costs an honest
-        audit trail rather than a working screen.
-      </p>
+      @if (showScopeIds) {
+        <p class="scope-hint">
+          Sent on every API call. Remembered in this browser. IdentityId is recorded as who created or
+          changed each row; unlike the other two it is never required, so a wrong value costs an honest
+          audit trail rather than a working screen.
+        </p>
+      }
 
       @if (showAccessToken) {
         <p class="scope-hint">
@@ -95,9 +105,9 @@
           the box to stop sending the header.
         </p>
         <p class="scope-hint">
-          With a token set, the gateway derives its own caller headers from it — so the three ids above
-          and the token can describe different people, and what the backend records is the token's
-          answer.
+          On this build the token is the only caller header sent: the gateway derives the organization,
+          the property owner and the acting user from it, so there is nothing here to set by hand.
+          Paste it and this page reloads its data straight away — no browser refresh.
         </p>
       }
     </div>

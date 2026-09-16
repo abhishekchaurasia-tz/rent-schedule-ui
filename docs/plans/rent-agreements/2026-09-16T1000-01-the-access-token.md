@@ -6,6 +6,16 @@
 Delivers **requirement 15** (v24): a tester pastes the token for the environment the build targets,
 and every Billing API request carries it as `Authorization: Bearer …`.
 
+> **Partly superseded 2026-09-16 by
+> [the scope box belongs to local](2026-09-16T1600-01-the-scope-box-belongs-to-local.md) (v26),
+> after the user ran this against dev and qa.** Two things below are no longer true. **The three id
+> fields are not shown on every build** — they are the `local` build's alone, and dev and qa do not
+> send them even before a token is pasted, which reverses this plan's "keyed on the token rather than
+> on `environment.name`" reasoning: it assumed the ids meant something, and on those builds they were
+> invented values nobody could see or set. **And the box's mismatch warning is silent** wherever the
+> ids are not what a request carries. Everything about the token itself — runtime entry, per-environment
+> storage, blank meaning no header, the URL guard — stands unchanged.
+
 ## Today the dev and qa builds cannot reach their APIs at all
 
 This is not a missing convenience. It is a wall.

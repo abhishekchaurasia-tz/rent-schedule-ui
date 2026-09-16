@@ -36,6 +36,12 @@ describe('AdditionalChargePanelComponent', () => {
   };
 
   beforeEach(() => {
+    // `RequestScopeService` seeds itself from localStorage, which outlives the TestBed and every spec
+    // in this browser session. Jasmine runs specs in a random order, so a token stored by one of the
+    // v26 tests below would otherwise reach the mismatch tests above it and silence them — a failure
+    // that appears and disappears with the seed.
+    localStorage.clear();
+
     TestBed.configureTestingModule({
       imports: [AdditionalChargePanelComponent, HttpClientTestingModule]
     });
@@ -48,6 +54,7 @@ describe('AdditionalChargePanelComponent', () => {
 
   afterEach(() => {
     httpMock.verify();
+    localStorage.clear();
   });
 
   /** Flushes the catalog GET fired from ngOnInit (via fixture.detectChanges()). */
@@ -92,6 +99,66 @@ describe('AdditionalChargePanelComponent', () => {
       .toBeNull();
   });
 
+  /**
+   * v26 requirement 15g. With a token in play the three ids are not sent at all, so the box's
+   * `PropertyOwnerUid` is not what the catalog was read for — and a notice comparing against it would
+   * report a disagreement between two values that never met.
+   */
+  it('Req15g_TokenInPlay_SilencesTheOwnerMismatchNotice', () => {
+    const scope = TestBed.inject(RequestScopeService);
+    scope.setPropertyOwnerId('99999999-9999-9999-9999-999999999999');
+    scope.setAccessToken('a-token-the-gateway-reads-the-owner-from');
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.scope-mismatch'))
+      .withContext('the box owner is not sent once a token is, so there is nothing to disagree with')
+      .toBeNull();
+  });
+
+  /**
+   * v26. **The bug: an empty picker that had never asked.** v22 removed the owner from
+   * `GET /api/v1/line-items` and made the header the only source — but the `if (!this.propertyOwnerId)
+   * return;` that guarded the fetch stayed behind. A record naming no owner rendered
+   * *"No catalog items are available to pick from yet"*, which reads as an empty catalog rather than a
+   * request never made.
+   */
+  it('Req15g_NoRecordOwner_StillFetchesTheCatalog', () => {
+    component.propertyOwnerId = null;
+
+    fixture.detectChanges();
+
+    const request = httpMock.expectOne((r) => r.url === baseUrl);
+    request.flush([parkingItem]);
+
+    expect(component.lineItems())
+      .withContext('the owner is a header, not an argument — it cannot gate the call')
+      .toEqual([parkingItem]);
+  });
+
+  /**
+   * v26 requirement 15g. **The sequence this is built for.** The panel is open, the catalog came back
+   * empty because the gateway refused the request, and the tester pastes the token in response. Before
+   * this, nothing happened — the only fix was a browser reload, which on the Add Lease screen means
+   * retyping the lease.
+   */
+  it('Req15g_TokenPastedWhilePanelIsOpen_RefetchesTheCatalogWithoutAReload', () => {
+    fixture.detectChanges();
+    flushLineItems([]);
+
+    TestBed.inject(RequestScopeService).setAccessToken('the-token-pasted-after-the-panel-opened');
+    fixture.detectChanges();
+
+    // The request itself, not its headers: this TestBed registers no interceptor, and what the header
+    // then carries is `scope-headers.interceptor.spec.ts`'s subject rather than this one's.
+    const refetch = httpMock.expectOne((r) => r.url === baseUrl);
+    refetch.flush([parkingItem, petFeeItem]);
+
+    expect(component.lineItems()).toEqual([parkingItem, petFeeItem]);
+  });
+
   it('should create', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
@@ -124,12 +191,10 @@ describe('AdditionalChargePanelComponent', () => {
     expect(component.lineItems()).toEqual([petDepositItem]);
   });
 
-  it('does not fetch the catalog when propertyOwnerId is not set', () => {
-    component.propertyOwnerId = null;
-    fixture.detectChanges();
-
-    expect(() => httpMock.expectNone(baseUrl)).not.toThrow();
-  });
+  // v26 removed `does not fetch the catalog when propertyOwnerId is not set`, which pinned the defect
+  // rather than a requirement. It was written before v22 made the owner a header; when the argument
+  // went, this test kept the `return` that used to produce it alive through two versions.
+  // `Req15g_NoRecordOwner_StillFetchesTheCatalog` above asserts the opposite, which is the rule.
 
   it('does not emit and marks fields touched when the form is invalid', () => {
     fixture.detectChanges();

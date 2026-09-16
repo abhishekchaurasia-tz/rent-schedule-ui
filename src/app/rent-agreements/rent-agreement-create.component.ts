@@ -30,6 +30,7 @@ import {
   frequenciesFor,
   isFrequencyAllowed
 } from '../rent-schedule/frequency-options.util';
+import { reloadOnScopeChange } from '../scope-change';
 import { parseIsoDate, toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
@@ -397,6 +398,23 @@ export class RentAgreementCreateComponent {
         this.saveResult.set(null);
       }
       this.refreshCandidateDates();
+      this.maybeAutoGeneratePreview();
+    });
+
+    // Requirement 15g. Placed before the edit-mode branch below, which returns, so both paths get it.
+    //
+    // The same pair the create path runs for itself, and for the same reason: these are the two calls
+    // this screen makes without being asked, so they are the two that will have been made under the
+    // scope in force before the token was pasted. `refreshCandidateDates(true)` -- the isInitialLoad
+    // arm -- because a refetch must never clear a date the user has already picked; and
+    // `maybeAutoGeneratePreview`, whose own signature guard leaves an existing schedule alone and only
+    // retries the preview that had nothing to show.
+    //
+    // The loaded agreement is deliberately NOT re-read: this screen holds an editable form, and
+    // re-hydrating it would discard whatever is half typed -- the same reason `onActivated` reads back
+    // only the status.
+    reloadOnScopeChange(() => {
+      this.refreshCandidateDates(true);
       this.maybeAutoGeneratePreview();
     });
 

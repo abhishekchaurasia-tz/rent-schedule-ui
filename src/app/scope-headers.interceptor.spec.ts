@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from '../environments/environment';
 
 import { RequestScopeService } from './request-scope.service';
-import { scopeHeadersInterceptor } from './scope-headers.interceptor';
+import { scopeHeadersInterceptor, sendsScopeIds } from './scope-headers.interceptor';
 
 /**
  * Covers requirement 12d and 12e of `01-rent-agreement-edit-ui.md` v21 — the interceptor that sends the
@@ -169,6 +169,35 @@ describe('scopeHeadersInterceptor', () => {
 
   // Pins the cost the spec accepts rather than leaving it to be discovered: the headers ride every
   // Billing API call, not just the create (requirement 12e).
+  // -----------------------------------------------------------------------------------------------
+  // Requirement 15g. THE BUG THESE EXIST FOR, and the reason the rule is a pure function rather than a
+  // condition inside the interceptor: the specs run under `environment.ts`, which is the LOCAL build.
+  // Keyed on the token alone, no test in this file could ever have observed what a dev or qa build
+  // sends -- which is exactly where the wrong thing was being sent. Asking the rule directly is the
+  // only way to cover all four builds from one suite.
+  // -----------------------------------------------------------------------------------------------
+
+  it('Req15g_DevAndQaBuilds_NeverSendTheScopeIdsEvenWithNoTokenYet', () => {
+    // The ids are typed into a box those builds do not show. Before v26 they were still sent -- three
+    // GUIDs invented by crypto.randomUUID(), which nobody could see, set or correct, travelling as
+    // though they identified an account.
+    expect(sendsScopeIds('dev', '')).toBeFalse();
+    expect(sendsScopeIds('qa', '')).toBeFalse();
+    expect(sendsScopeIds('production', '')).toBeFalse();
+  });
+
+  it('Req15g_LocalBuild_SendsTheScopeIdsWhenThereIsNoToken', () => {
+    // The one build that shows the fields is the one build that sends them: there is no gateway in
+    // front of Billing locally, and Billing reads the three headers itself (requirement 12).
+    expect(sendsScopeIds('local', '')).toBeTrue();
+  });
+
+  it('Req15f_ATokenSuppressesTheIdsOnEveryBuildIncludingLocal', () => {
+    // 15f is unchanged by v26 and still has to hold on its own: wherever a token goes, the ids do not.
+    expect(sendsScopeIds('local', 'a-token')).toBeFalse();
+    expect(sendsScopeIds('qa', 'a-token')).toBeFalse();
+  });
+
   it('Req12e_EveryApiRequest_CarriesTheHeadersNotJustTheCreate', () => {
     scope.setOrganizationId('33333333-3333-3333-3333-333333333333');
 
@@ -241,6 +270,29 @@ describe('RequestScopeService', () => {
     expect(localStorage.getItem(`innago.test-scope.${environment.name}`))
       .withContext('the key carries the environment, so dev and qa do not overwrite each other')
       .toContain('env-scoped');
+  });
+
+  // Requirement 15g. The signal every open screen watches so it can re-read what it fetched under the
+  // scope that has just stopped applying.
+  it('Req15g_PastingAToken_AnnouncesTheChangeOnRevision', () => {
+    const scope = TestBed.inject(RequestScopeService);
+    const before = scope.revision();
+
+    scope.setAccessToken('a-token-pasted-after-the-page-loaded');
+
+    expect(scope.revision()).toBeGreaterThan(before);
+  });
+
+  // A keystroke that changed nothing must not make every open screen refetch. The three ids return
+  // before reaching `persist`, which is where the announcement lives -- so this falls out of that
+  // placement rather than needing a rule of its own.
+  it('Req15g_IgnoredBlankId_DoesNotAnnounceAChange', () => {
+    const scope = TestBed.inject(RequestScopeService);
+    const before = scope.revision();
+
+    scope.setOrganizationId('   ');
+
+    expect(scope.revision()).toBe(before);
   });
 
   it('Req12c_TypedValue_IsRemembered', () => {

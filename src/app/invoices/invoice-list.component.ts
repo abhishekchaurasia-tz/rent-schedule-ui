@@ -20,6 +20,7 @@ import {
   InvoiceSummaryResponse,
   PagedResult
 } from './invoice.models';
+import { reloadOnScopeChange } from '../scope-change';
 import { InvoicesService } from './invoices.service';
 
 /** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — the same check the other id screens use. */
@@ -208,6 +209,15 @@ export class InvoiceListComponent {
       outstandingOnly: [false],
       includeDeleted: [false],
       pageSize: [50]
+    });
+
+    // Requirement 15g. A list already on screen was read as whoever the scope said at the time; after
+    // a token is pasted it is a stale answer that looks like a current one. Guarded on `hasSearched`
+    // so a paste before the first search does not fire a search nobody asked for.
+    reloadOnScopeChange(() => {
+      if (this.hasSearched()) {
+        this.runSearch();
+      }
     });
   }
 

@@ -12,6 +12,7 @@ import { toIsoDate, parseIsoDate } from '../shared/date.util';
 import { LineItemResponse, LineItemScope } from '../rent-agreements/line-item.models';
 import { NewItemTypeFormComponent } from '../rent-agreements/new-item-type-form.component';
 import { LineItemsService } from '../rent-agreements/line-items.service';
+import { reloadOnScopeChange } from '../scope-change';
 import { RentAgreementsService } from '../rent-agreements/rent-agreements.service';
 import {
   ProposedInvoiceDetailResponse,
@@ -132,6 +133,16 @@ export class UpdateProposedInvoiceComponent implements OnInit {
       // and lands on the previous day for anyone west of Greenwich.
       dueDate: [null as Date | null, Validators.required],
       lines: this.fb.array([])
+    });
+
+    // Requirement 15g. The catalog only -- deliberately NOT a re-`load()`, which calls
+    // `resetLoadedState()` and would throw away corrections already typed into the lines below. The
+    // item picker is the part that was read under the old scope and can be re-read for nothing.
+    reloadOnScopeChange(() => {
+      const invoice = this.invoice();
+      if (invoice) {
+        this.loadLineItems(invoice);
+      }
     });
   }
 

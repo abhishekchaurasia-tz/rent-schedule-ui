@@ -50,6 +50,21 @@ export class AppComponent {
    */
   protected readonly showAccessToken = environment.name === 'dev' || environment.name === 'qa';
 
+  /**
+   * Whether to offer the three identifier fields at all (requirement 15g).
+   *
+   * **The local build only, and this is v26's correction.** They were offered everywhere, which read
+   * as though typing one on the qa build pointed that build at an account — it never did. The gateway
+   * derives the caller from the token, so on `dev` and `qa` these three are not sent once a token is
+   * in play, and as of v26 are not sent before one is either: a value nobody can act on is worse than
+   * an absent field, because it invites a tester to set it and then to trust what they set.
+   *
+   * The two flags are exclusive by construction — `local` gets the ids, `dev` and `qa` get the token,
+   * `production` gets neither — and each is written as its own condition rather than one as the
+   * negation of the other, because `production` has to fall outside both.
+   */
+  protected readonly showScopeIds = environment.name === 'local';
+
   /** Applies a typed account id. Blank input is ignored by the service, leaving the previous value. */
   protected onOrganizationIdInput(value: string): void {
     this.scope.setOrganizationId(value);

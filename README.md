@@ -60,8 +60,7 @@ needed.
 
 Both go through the API gateway, whose `/billing/{everything}` route validates a bearer before it
 forwards anything. Without one **every request is refused at the gateway** and the Billing API is
-never reached — so the failure is a `401` that has nothing to do with this application or with the
-scope ids in the Test scope box.
+never reached — so the failure is a `401` that has nothing to do with this application.
 
 ### Steps
 
@@ -81,16 +80,22 @@ It is remembered in this browser **per environment**, so the dev and qa builds k
 and switching between them does not mean pasting again. **It expires**, so expect to repeat steps 2
 and 3; a `401` after a while working is almost always that rather than anything you changed.
 
+It takes effect **immediately**: the screen you are on re-reads its data as soon as you paste, with
+no browser reload. That matters most on **Add Lease**, where a reload would mean retyping the lease —
+so the usual sequence is to open the fee panel, see an empty item list, paste the token, and watch it
+fill. Only the fetched data is re-read; anything you have typed stays where it is.
+
 ### The token replaces the three scope ids, it does not join them
 
-With a token set, the request carries `Authorization` and **none** of `OrganizationUid`,
-`PropertyOwnerUid` or `IdentityId`. The gateway derives the caller from the token itself, so sending
-ours as well would put two answers to one question in one request — and the client could not know
-which the backend would record.
+**`OrganizationUid`, `PropertyOwnerUid` and `IdentityId` are the local build's, and only the local
+build shows them.** There is no gateway in front of a local API, so the Billing API reads those three
+headers directly. On dev and qa the gateway derives the caller from the token instead — the
+organization, the property owner and the acting user all come from it — so there is nothing to set by
+hand and no field offering to.
 
-**So on dev and qa the three id boxes have no effect.** They are read on the local build, where
-there is no gateway to derive anything and the Billing API reads them directly. Clearing the token
-puts them back in use.
+With a token set the request carries `Authorization` and **none** of the three, on any build. Sending
+ours as well would put two answers to one question in one request, and the client could not know which
+the backend would record.
 
 ### Builds
 

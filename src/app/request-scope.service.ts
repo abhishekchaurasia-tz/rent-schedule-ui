@@ -64,6 +64,8 @@ export class RequestScopeService {
    */
   private readonly _accessToken = signal(readStoredToken());
 
+  private readonly _revision = signal(0);
+
   /** The account the agreement is filed under — sent as the `OrganizationUid` header. */
   readonly organizationId = this._organizationId.asReadonly();
 
@@ -89,6 +91,22 @@ export class RequestScopeService {
    * request is refused **before Billing is reached** — which is what this exists to fix.
    */
   readonly accessToken = this._accessToken.asReadonly();
+
+  /**
+   * Bumped once by every setter on this service — the signal a screen watches to know its data was
+   * fetched under a scope that no longer applies (requirement 15g).
+   *
+   * **Why a counter rather than watching the values themselves.** A screen does not care *which* of
+   * the four changed; it cares that the answer it is showing was read as somebody else. One signal to
+   * watch means one `effect` per screen instead of four, and it fires exactly once when a paste
+   * changes two of them.
+   *
+   * **It starts at zero and only ever moves on a deliberate edit**, so an `effect` created during a
+   * component's construction sees the current value, does nothing, and lets `ngOnInit` perform the
+   * first load as it always has. Without that, every screen would fetch twice on open — once from an
+   * effect that had not yet been given its inputs.
+   */
+  readonly revision = this._revision.asReadonly();
 
   /**
    * Replaces the account id and remembers it.
@@ -150,6 +168,13 @@ export class RequestScopeService {
     this.persist();
   }
 
+  /**
+   * Writes the four values to storage and announces the change on {@link revision}.
+   *
+   * **The announcement lives here rather than in each setter** because `persist` is the one thing all
+   * four already call, and because a setter that ignored a blank returns before reaching it — so a
+   * keystroke that changed nothing does not make every open screen refetch.
+   */
   private persist(): void {
     const scope: StoredScope = {
       organizationId: this._organizationId(),
@@ -163,6 +188,10 @@ export class RequestScopeService {
     } catch {
       // A browser with storage disabled still works; the values simply do not survive a reload.
     }
+
+    // After the write, and outside the try: a browser that refuses storage still has to refetch, since
+    // the in-memory value the interceptor reads has already changed.
+    this._revision.update((revision) => revision + 1);
   }
 }
 
