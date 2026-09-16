@@ -27,12 +27,20 @@ export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
 
   const scope = inject(RequestScopeService);
 
+  const token = scope.accessToken();
+
   return next(
     request.clone({
       setHeaders: {
         OrganizationUid: scope.organizationId(),
         PropertyOwnerUid: scope.propertyOwnerId(),
-        IdentityId: scope.identityId()
+        IdentityId: scope.identityId(),
+
+        // Requirement 15d. Spread in only when a token is present: attaching it unconditionally would
+        // send `Bearer ` with nothing after it from the local build, and a malformed credential reads
+        // worse than an absent one -- it invites whoever is debugging to investigate authentication
+        // rather than notice there is none.
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
     })
   );

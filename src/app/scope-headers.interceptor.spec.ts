@@ -68,6 +68,57 @@ describe('scopeHeadersInterceptor', () => {
     request.flush({});
   });
 
+  // -----------------------------------------------------------------------------------------------
+  // The access token (requirement 15). Without it the dev and qa builds are refused at the gateway,
+  // before Billing is reached -- the proxies already point at api-{dev,qa}-my.innago.com, whose
+  // /billing route carries AuthenticationProviderKey: Bearer.
+  // -----------------------------------------------------------------------------------------------
+
+  it('Req15_TokenSet_AttachesTheBearer', () => {
+    scope.setAccessToken('a-token-from-a-signed-in-session');
+
+    http.get(`${environment.apiBaseUrl}/api/v1/rent/agreements`).subscribe();
+
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements`);
+
+    expect(request.request.headers.get('Authorization')).toBe(
+      'Bearer a-token-from-a-signed-in-session'
+    );
+
+    request.flush({});
+  });
+
+  // THE ARM THAT MATTERS. An unconditionally attached header would pass the test above and would send
+  // `Bearer ` with nothing after it from the local build -- a malformed credential, which reads worse
+  // than an absent one because it invites whoever is debugging to investigate authentication rather
+  // than notice there is none (requirement 15d).
+  it('Req15d_TokenBlank_SendsNoAuthorizationHeaderAtAll', () => {
+    http.get(`${environment.apiBaseUrl}/api/v1/rent/agreements`).subscribe();
+
+    const request = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements`);
+
+    expect(request.request.headers.has('Authorization'))
+      .withContext('an empty token means send nothing, not `Bearer `')
+      .toBeFalse();
+
+    request.flush({});
+  });
+
+  // The leak case. The token inherits the URL guard the scope headers already have, and inheriting it
+  // silently is worth its own test because the consequence is a credential sent to a third party
+  // (requirement 15e).
+  it('Req15e_NonApiUrl_NeverReceivesTheToken', () => {
+    scope.setAccessToken('a-token-that-must-not-leave');
+
+    http.get('https://example.test/something').subscribe();
+
+    const request = httpMock.expectOne('https://example.test/something');
+
+    expect(request.request.headers.has('Authorization')).toBeFalse();
+
+    request.flush({});
+  });
+
   it('Req12d_NonApiUrl_IsUntouched', () => {
     http.get('https://example.test/something').subscribe();
 
@@ -113,6 +164,46 @@ describe('RequestScopeService', () => {
 
     expect(scope.organizationId()).toMatch(guid);
     expect(scope.propertyOwnerId()).toMatch(guid);
+  });
+
+  it('Req15_TokenDefaultsToEmpty_NotAnInventedValue', () => {
+    // Unlike the three ids beside it, which seed themselves so a tester who never opens the box still
+    // gets a 201. A fabricated token looks real, is refused at the gateway, and sends whoever is
+    // debugging to look for the wrong problem.
+    expect(TestBed.inject(RequestScopeService).accessToken()).toBe('');
+  });
+
+  // The opposite of the three ids, and deliberately so: they ignore a blank because an empty header is
+  // a 400. An empty token means send no Authorization at all, which is the local build's normal state
+  // -- so a blank must be storable, or the box could never be cleared.
+  it('Req15d_BlankToken_IsStoredRatherThanIgnored', () => {
+    const scope = TestBed.inject(RequestScopeService);
+    scope.setAccessToken('something');
+
+    scope.setAccessToken('   ');
+
+    expect(scope.accessToken()).toBe('');
+  });
+
+  it('Req15_PastedToken_IsTrimmedAndRemembered', () => {
+    // Trimmed because a copied token routinely carries whitespace, and a leading space makes the
+    // header malformed in a way that reads as a server fault.
+    TestBed.inject(RequestScopeService).setAccessToken('  a-pasted-token\n');
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+
+    expect(TestBed.inject(RequestScopeService).accessToken()).toBe('a-pasted-token');
+  });
+
+  // Requirement 15b. One shared key would mean pasting a qa token wipes the dev one, and the next dev
+  // run fails with a 401 that looks like a broken environment rather than last Tuesday's paste.
+  it('Req15b_StorageKey_IsScopedToTheEnvironment', () => {
+    TestBed.inject(RequestScopeService).setAccessToken('env-scoped');
+
+    expect(localStorage.getItem(`innago.test-scope.${environment.name}`))
+      .withContext('the key carries the environment, so dev and qa do not overwrite each other')
+      .toContain('env-scoped');
   });
 
   it('Req12c_TypedValue_IsRemembered', () => {

@@ -58,11 +58,48 @@
         />
       </label>
 
+      <!--
+        Requirement 15. Offered on the dev and qa builds only: those reach Billing through a gateway
+        whose /billing route requires a bearer, so without one every request is refused BEFORE Billing
+        is reached. The local build needs none, and a production build would carry real sign-in.
+
+        A textarea rather than an input because a JWT runs to hundreds of characters, and a
+        single-line box makes it impossible to see whether the paste is complete -- a truncated token
+        fails as a 401 that looks exactly like an expiry.
+      -->
+      @if (showAccessToken) {
+        <label class="scope-field" for="scope-access-token">
+          <span>Access token ({{ environmentName }})</span>
+          <textarea
+            id="scope-access-token"
+            rows="3"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Paste the bearer token, without the word Bearer"
+            [value]="scope.accessToken()"
+            (change)="onAccessTokenInput($any($event.target).value)"
+          ></textarea>
+        </label>
+      }
+
       <p class="scope-hint">
         Sent on every API call. Remembered in this browser. IdentityId is recorded as who created or
         changed each row; unlike the other two it is never required, so a wrong value costs an honest
         audit trail rather than a working screen.
       </p>
+
+      @if (showAccessToken) {
+        <p class="scope-hint">
+          The token is remembered per environment, so the dev and qa builds keep their own. Copy it
+          from a signed-in session's request headers — it expires, so expect to do this again. Clear
+          the box to stop sending the header.
+        </p>
+        <p class="scope-hint">
+          With a token set, the gateway derives its own caller headers from it — so the three ids above
+          and the token can describe different people, and what the backend records is the token's
+          answer.
+        </p>
+      }
     </div>
   </nav>
 

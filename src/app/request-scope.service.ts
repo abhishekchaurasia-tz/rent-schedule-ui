@@ -1,13 +1,27 @@
 import { Injectable, signal } from '@angular/core';
 
-/** Where the remembered scope ids live between reloads. */
-const STORAGE_KEY = 'innago.test-scope';
+import { environment } from '../environments/environment';
+
+/**
+ * Where the remembered scope values live between reloads, **keyed by environment** (requirement 15b).
+ *
+ * One shared key would mean pasting a qa token wipes the dev one, and the next dev run fails with a
+ * `401` that looks like a broken environment rather than last Tuesday's paste. The same reasoning
+ * applies to the three ids, which is why they moved here too: a qa account id is not a dev one.
+ *
+ * **One-time effect of that move:** values remembered under the old un-keyed name are not found on the
+ * first load after this ships, and each id falls back to a freshly generated one. Nothing breaks — a
+ * generated id is what a fresh browser has always had — but a tester who had typed real ids will need
+ * to type them once more.
+ */
+const STORAGE_KEY = `innago.test-scope.${environment.name}`;
 
 /** The shape persisted under {@link STORAGE_KEY}. */
 interface StoredScope {
   organizationId?: string;
   propertyOwnerId?: string;
   identityId?: string;
+  accessToken?: string;
 }
 
 /**
@@ -41,6 +55,15 @@ export class RequestScopeService {
 
   private readonly _identityId = signal(readStored('identityId'));
 
+  /**
+   * The bearer token, if one has been pasted.
+   *
+   * **Read without the generated fallback the three ids use**, because an invented token is worse than
+   * none: it looks real, is refused at the gateway, and sends whoever is debugging to look for the
+   * wrong problem.
+   */
+  private readonly _accessToken = signal(readStoredToken());
+
   /** The account the agreement is filed under — sent as the `OrganizationUid` header. */
   readonly organizationId = this._organizationId.asReadonly();
 
@@ -56,6 +79,16 @@ export class RequestScopeService {
    * application validates it or blocks on it.
    */
   readonly identityId = this._identityId.asReadonly();
+
+  /**
+   * The access token sent as `Authorization: Bearer …` on every Billing API request (requirement 15).
+   *
+   * **Empty means send no header at all**, which is the local build's normal state: there is no
+   * gateway in front of Billing and Billing registers no authentication scheme of its own. On the dev
+   * and qa builds the gateway's `/billing/{everything}` route requires a bearer, so without one every
+   * request is refused **before Billing is reached** — which is what this exists to fix.
+   */
+  readonly accessToken = this._accessToken.asReadonly();
 
   /**
    * Replaces the account id and remembers it.
@@ -101,11 +134,28 @@ export class RequestScopeService {
     this.persist();
   }
 
+  /**
+   * Replaces the access token and remembers it.
+   *
+   * **A blank is stored, not ignored — the opposite of the three setters above**, and the difference is
+   * the point. They ignore a blank because an empty header is a `400` from the backend. An empty token
+   * means *send no `Authorization` at all*, so ignoring a blank here would make the box impossible to
+   * clear once anything had been typed into it.
+   *
+   * Trimmed because a copied token routinely carries whitespace, and a leading space makes the header
+   * malformed in a way that reads as a server fault rather than a bad paste.
+   */
+  setAccessToken(value: string): void {
+    this._accessToken.set(value.trim());
+    this.persist();
+  }
+
   private persist(): void {
     const scope: StoredScope = {
       organizationId: this._organizationId(),
       propertyOwnerId: this._propertyOwnerId(),
-      identityId: this._identityId()
+      identityId: this._identityId(),
+      accessToken: this._accessToken()
     };
 
     try {
@@ -122,6 +172,30 @@ export class RequestScopeService {
  * Wrapped in try/catch because `localStorage` throws rather than returning null in a private window
  * with site data blocked — and a settings box is not worth breaking the whole application over.
  */
+/**
+ * Reads the remembered token, defaulting to **empty** rather than a generated value.
+ *
+ * Separate from {@link readStored} for exactly that reason: the three ids seed themselves so a tester
+ * who never opens the box still gets a `201` instead of a `400` about a header they have never heard
+ * of. A token has no such safe invention — a fabricated one is refused, and looks real while it is.
+ */
+function readStoredToken(): string {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as StoredScope;
+      if (typeof parsed.accessToken === 'string') {
+        return parsed.accessToken.trim();
+      }
+    }
+  } catch {
+    // `localStorage` throws rather than returning null in a private window with site data blocked,
+    // and a settings box is not worth breaking the whole application over.
+  }
+
+  return '';
+}
+
 function readStored(key: keyof StoredScope): string {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
