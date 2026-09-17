@@ -30,6 +30,65 @@ const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const CONFLICT_RETRY_DELAY_MS = 400;
 
 /**
+ * One renter's share of the fee, as the split table renders it.
+ *
+ * `amount` is the money; `sharePercent` is the same quantity expressed against the fee total. The two
+ * are always consistent with one another and never both authoritative — {@link divideEvenly} fills
+ * both from the fee total and the row count.
+ *
+ * `carriesLeftoverCent` is what the row's Odd/Even badge reads. It marks the rows a leftover cent was
+ * handed to, which is the only thing separating them from the rest, and is worth saying on screen
+ * because an owner comparing two rows of a three-way split will otherwise wonder which one is wrong.
+ */
+export interface TenantShareRow {
+  tenantId: string;
+  name: string;
+  amount: number;
+  sharePercent: number;
+  carriesLeftoverCent: boolean;
+}
+
+/**
+ * Splits `total` across `count` rows **in money**, to the cent (requirement 17).
+ *
+ * **The money is divided, not the percentage.** `$300` across three renters is `100.00` three times.
+ * Dividing `100 / 3 = 33.33%` and multiplying it back would have produced `99.99 / 99.99 / 100.02` —
+ * a different fee from the one the owner authored, on a screen that claims to be dividing theirs.
+ *
+ * **Leftover cents go one each to the first rows, never stacked onto one.** `$100` across six leaves
+ * four cents, so four rows carry `16.67` and two carry `16.66`. Handing all four to the first row
+ * would over-bill that renter by three cents — and would still divide `$300` across three correctly,
+ * which is why the six-renter case has a test of its own.
+ *
+ * Computed in integer cents throughout, because `0.01 * 3` is not `0.03` in binary floating point and
+ * a split that has to total the fee *exactly* cannot be assembled out of values that do not add up.
+ *
+ * @param total The amount to divide, in whole currency units.
+ * @param count How many rows to divide it across.
+ * @returns One amount per row, in the order given, summing to `total` exactly. Empty when `count < 1`.
+ */
+export function divideEvenly(total: number, count: number): number[] {
+  if (count < 1) {
+    return [];
+  }
+
+  const totalCents = Math.round(total * 100);
+
+  // Signed totals are reachable from requirement 18: typed rows can exceed the fee, leaving the
+  // untouched rows a negative remainder to share. Dividing the magnitude keeps the rule symmetric —
+  // the first rows still carry the extra cent — rather than inverting it below zero.
+  const sign = totalCents < 0 ? -1 : 1;
+  const magnitude = Math.abs(totalCents);
+  const base = Math.floor(magnitude / count);
+  const leftover = magnitude - base * count;
+
+  return Array.from(
+    { length: count },
+    (_unused, index) => (sign * (base + (index < leftover ? 1 : 0))) / 100
+  );
+}
+
+/**
  * The **Add Additional Fee** page: appends one fee to an already-saved lease, charged to a chosen
  * subset of that lease's tenants, via `POST /rent/agreements/{id}/additional-charges`.
  *
@@ -113,6 +172,73 @@ export class AddAdditionalChargeComponent {
 
   /** How many tenants are ticked — drives the "shared by all" wording next to the list. */
   readonly selectedCount = computed(() => this.selectedTenantIds().size);
+
+  /**
+   * The fee authored in the panel but **not yet committed** — this page's staging area.
+   *
+   * **Why the panel's Create no longer posts.** The split divides the fee's *money*, so it cannot be
+   * filled in before the fee total exists, and that total is only known once the fee is authored. The
+   * panel is a drawer over a click-to-close dimmer, so nothing behind it can be typed into while it is
+   * open. Create therefore stages the fee and closes the drawer; the split fills in against the staged
+   * total, and this page's own Save is what commits it (requirements 17-19).
+   *
+   * The idempotency key is minted **here**, at staging, rather than at submit: a save the owner repeats
+   * after correcting the split is the same fee, and requirement 16's replay only holds if the second
+   * attempt carries the same key.
+   */
+  readonly pendingCharge = signal<AdditionalChargeCreationRequest | null>(null);
+
+  /**
+   * The staged fee's total, summed from its item amounts — the figure the split has to add up to.
+   *
+   * **`alreadyPaid` is deliberately not subtracted.** It records what the renter has already handed
+   * over, not a reduction in what the fee *is*, and the server validates the shares against the
+   * charge's own total. Netting it off here would refuse a save the server would have accepted.
+   */
+  readonly feeTotal = computed(() =>
+    (this.pendingCharge()?.items ?? []).reduce((sum, item) => sum + Number(item.amount || 0), 0)
+  );
+
+  /**
+   * The ticked renters in **roster order** — which is the order the leftover cents are handed out in.
+   *
+   * Derived by filtering `tenants()` rather than by reading the selection set, because a `Set` iterates
+   * in insertion order: the order the owner happened to click in. Requirement 17 says *"the first
+   * renters in the listed order"*, and the listed order is the one on screen.
+   */
+  private readonly selectedTenantsInOrder = computed(() =>
+    this.tenants().filter((tenant) => this.selectedTenantIds().has(tenant.tenantId))
+  );
+
+  /**
+   * The per-renter split of the staged fee, divided evenly (requirement 17).
+   *
+   * **Empty in two distinct cases, and both are complete states rather than unfinished ones:** nobody
+   * ticked, which means every active renter shares the fee, and no staged fee to divide, which is
+   * simply "not yet". Neither is an error, and neither shows a message.
+   */
+  readonly tenantShares = computed<TenantShareRow[]>(() => {
+    const rows = this.selectedTenantsInOrder();
+    const total = this.feeTotal();
+
+    if (rows.length === 0 || total <= 0) {
+      return [];
+    }
+
+    const amounts = divideEvenly(total, rows.length);
+    const smallest = Math.min(...amounts);
+
+    return rows.map((tenant, index) => ({
+      tenantId: tenant.tenantId,
+      name: this.tenantName(tenant.tenantId),
+      amount: amounts[index],
+      sharePercent: Math.round((amounts[index] / total) * 10000) / 100,
+      carriesLeftoverCent: amounts[index] !== smallest
+    }));
+  });
+
+  /** Whether the fee is being shared by everybody — the state an empty selection encodes. */
+  readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
 
   constructor(private readonly service: RentAgreementsService) {}
 
@@ -207,10 +333,40 @@ export class AddAdditionalChargeComponent {
     this.selectedTenantIds.set(new Set<string>());
   }
 
+  /**
+   * Switches between the two things a fee can be: shared by the whole lease, or split per renter.
+   *
+   * These are the two ends of the same selection rather than a mode of their own — an empty selection
+   * *is* "shared by everyone", which is the server's own encoding (requirement 5). Choosing "split per
+   * renter" from a standing empty selection therefore has to tick somebody, and ticking everybody is
+   * the only choice that changes nothing about who owes the fee while making the split editable.
+   */
+  setSplitMode(mode: 'shared' | 'split'): void {
+    if (mode === 'shared') {
+      this.clearTenantSelection();
+      return;
+    }
+    if (this.selectedTenantIds().size === 0) {
+      this.selectAllTenants();
+    }
+  }
+
   /** The stand-in person for a tenant id — the same one the ADD TENANTS screen shows. */
   tenantName(tenantId: string): string {
     const identity = placeholderTenantIdentity(tenantId);
     return `${identity.firstName} ${identity.lastName}`;
+  }
+
+  /**
+   * The stand-in person's initials, for the split row's avatar.
+   *
+   * Initials rather than a photograph, and not for want of styling: there is no tenant-profile service
+   * wired up, so the name itself is derived from the id. A circle with two letters in it says "a person
+   * this screen only knows by id"; a stock portrait would claim to know who they are.
+   */
+  tenantInitials(tenantId: string): string {
+    const identity = placeholderTenantIdentity(tenantId);
+    return `${identity.firstName.charAt(0)}${identity.lastName.charAt(0)}`.toUpperCase();
   }
 
   openPanel(): void {
@@ -223,16 +379,54 @@ export class AddAdditionalChargeComponent {
   }
 
   /**
-   * Commits the authored fee: the panel's charge at the body root, the ticked tenants alongside it.
+   * Takes the authored fee off the panel and **stages** it, without sending anything.
    *
-   * **The panel is closed only once the server has answered.** A `422` here is routine — the
-   * deposit/rent mixing rule, the recurring-field matrix, a lease that is not active — and closing on
-   * emit would throw away everything the user just typed to hit one.
+   * The split cannot be typed while the panel is open — it is a drawer over a click-to-close dimmer —
+   * and it cannot be filled in before the fee total exists. So Create hands the fee over, the drawer
+   * closes, the split appears beneath it, and {@link saveFee} is what commits (requirements 17-19).
    *
-   * **Re-entrant submissions are dropped rather than queued**, and the `id` below is what makes the
-   * retry safe. This remark used to end *"the panel emits no `id`, so the endpoint's idempotency key is
-   * unavailable and a second POST would create a second charge, not replay the first"* — which was
-   * precisely the gap. The key is now minted here, so the request carries its own.
+   * **Re-staging replaces rather than appends.** Re-opening the drawer on a staged fee (the Edit
+   * action) prefills it with that same fee, so what comes back is a correction of it, not a second one.
+   * The `id` survives that round trip, which is what keeps requirement 16's replay honest: the same
+   * fee saved twice carries the same idempotency key however many times its split was corrected.
+   */
+  onChargeCreated(charge: AdditionalChargeCreationRequest): void {
+    if (!this.agreement() || this.submitting()) {
+      return;
+    }
+
+    this.submitError.set(null);
+    this.pendingCharge.set({ ...charge, id: charge.id ?? this.pendingCharge()?.id ?? crypto.randomUUID() });
+    this.showPanel.set(false);
+  }
+
+  /** Re-opens the drawer on the staged fee, so a mistake in the *fee* is corrected rather than retyped. */
+  editPendingFee(): void {
+    this.submitError.set(null);
+    this.showPanel.set(true);
+  }
+
+  /**
+   * Throws the staged fee away. Nothing has been sent, so there is nothing to undo on the server — and
+   * for the same reason this is the only "delete" this page will ever offer (requirement 12).
+   */
+  discardPendingFee(): void {
+    this.pendingCharge.set(null);
+    this.submitError.set(null);
+    this.showPanel.set(false);
+  }
+
+  /**
+   * Commits the staged fee: its own fields at the body root, the ticked tenants alongside them.
+   *
+   * **The staged fee survives a failure.** A `422` here is routine — the deposit/rent mixing rule, the
+   * recurring-field matrix, a lease that is not active — and clearing the staging area would throw away
+   * everything the owner just authored in order to hit one. Edit re-opens the drawer on it.
+   *
+   * **Re-entrant submissions are dropped rather than queued**, and the staged `id` is what makes the
+   * retry below safe. This remark used to end *"the panel emits no `id`, so the endpoint's idempotency
+   * key is unavailable and a second POST would create a second charge, not replay the first"* — which
+   * was precisely the gap. The key is minted at staging, so the request carries its own.
    *
    * **Why a `409` is retried at all.** A concurrent write to the same lease answers `409`, and nothing
    * about the submission is wrong — another writer simply won the race. It was measured on 2026-09-10
@@ -246,15 +440,15 @@ export class AddAdditionalChargeComponent {
    * retry loop on a write turns one slow request into several. Every other status — the routine `422`s
    * especially — still reaches the user unchanged.
    */
-  onChargeCreated(charge: AdditionalChargeCreationRequest): void {
+  saveFee(): void {
     const agreement = this.agreement();
-    if (!agreement || this.submitting()) {
+    const charge = this.pendingCharge();
+    if (!agreement || !charge || this.submitting()) {
       return;
     }
 
     const request: AddAdditionalChargeRequest = {
       ...charge,
-      id: charge.id ?? crypto.randomUUID(),
       tenantIds: [...this.selectedTenantIds()]
     };
 
@@ -285,6 +479,7 @@ export class AddAdditionalChargeComponent {
           }
 
           this.submitting.set(false);
+          this.pendingCharge.set(null);
           this.showPanel.set(false);
         },
         error: (err: HttpErrorResponse) => {
@@ -340,6 +535,7 @@ export class AddAdditionalChargeComponent {
     this.hasSavedTenants.set(true);
     this.isGroupInvoice.set(false);
     this.selectedTenantIds.set(new Set<string>());
+    this.pendingCharge.set(null);
     this.addedCharges.set([]);
     this.submitError.set(null);
     this.showPanel.set(false);

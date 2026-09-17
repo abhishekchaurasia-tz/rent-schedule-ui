@@ -125,14 +125,140 @@
       }
     </section>
 
-    <section class="fee-actions">
-      <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
-        + ADD ADDITIONAL FEE
-      </button>
-      @if (submitting()) {
-        <span class="submitting-note">Saving the fee…</span>
-      }
-    </section>
+    @if (!pendingCharge()) {
+      <section class="fee-actions">
+        <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
+          + ADD ADDITIONAL FEE
+        </button>
+      </section>
+    }
+
+    <!--
+      The staged fee and its split. Nothing here has been sent: the drawer's Create hands the fee over
+      so the split can be divided against a total that exists, and the Save at the foot of this section
+      is the only thing on the page that posts.
+    -->
+    @if (pendingCharge(); as fee) {
+      <section class="pending-fee">
+        <header class="pending-header">
+          <span class="chip amber">Not saved yet</span>
+          <span class="pending-summary">
+            {{ fee.items.length }} {{ fee.items.length === 1 ? 'line' : 'lines' }} &middot;
+            <strong>{{ feeTotal() | currency }}</strong>
+          </span>
+          <span class="pending-actions">
+            <button type="button" class="link-btn" (click)="editPendingFee()" [disabled]="submitting()">
+              Edit fee
+            </button>
+            <button type="button" class="link-btn danger" (click)="discardPendingFee()" [disabled]="submitting()">
+              Discard
+            </button>
+          </span>
+        </header>
+
+        <div class="split-mode">
+          <label class="mode-choice">
+            <input
+              type="radio"
+              name="splitMode"
+              [checked]="isSharedByEveryone()"
+              (change)="setSplitMode('shared')"
+            />
+            <span>Shared Lease</span>
+          </label>
+          <label class="mode-choice">
+            <input
+              type="radio"
+              name="splitMode"
+              [checked]="!isSharedByEveryone()"
+              (change)="setSplitMode('split')"
+              [disabled]="tenants().length === 0"
+            />
+            <span>Split per Tenant</span>
+          </label>
+        </div>
+
+        @if (isSharedByEveryone()) {
+          <p class="split-shared-note">
+            <strong>{{ feeTotal() | currency }} is charged to the lease and shared by every active
+            renter.</strong>
+            That is a complete instruction, not an unfinished one — and it keeps covering renters added
+            later. Choose <em>Split per Tenant</em> to say what each one owes.
+          </p>
+        } @else {
+          <table class="split-table">
+            <thead>
+              <tr>
+                <th scope="col">Tenants</th>
+                <th scope="col">Shares</th>
+                <th scope="col" class="owes-col">Owes</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (share of tenantShares(); track share.tenantId) {
+                <tr class="split-row">
+                  <td class="split-tenant">
+                    <span class="avatar" aria-hidden="true">{{ tenantInitials(share.tenantId) }}</span>
+                    <span class="split-tenant-main">
+                      <span class="tenant-name">{{ share.name }}</span>
+                      <span class="muted">
+                        @if (isGroupInvoice()) {
+                          On the lease's group invoice
+                        } @else {
+                          Invoice {{ $index + 1 }} of {{ tenantShares().length }}
+                        }
+                      </span>
+                    </span>
+                  </td>
+                  <td>
+                    <!--
+                      The badge names the rows a leftover cent landed on. It exists because the rule it
+                      makes visible is invisible otherwise: an owner reading 33.34 next to 33.33 has no
+                      way to tell a deliberate remainder from a rounding bug.
+                    -->
+                    <span class="chip" [class.amber]="share.carriesLeftoverCent">
+                      {{ share.carriesLeftoverCent ? 'Odd' : 'Even' }}
+                    </span>
+                  </td>
+                  <td class="owes-col">
+                    <span class="owes-amount">{{ share.amount | currency }}</span>
+                    <span class="muted">{{ share.sharePercent | number: '1.2-2' }}%</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+
+          <p class="split-note">
+            <strong>Divided evenly, in money.</strong>
+            {{ feeTotal() | currency }} across {{ tenantShares().length }}
+            {{ tenantShares().length === 1 ? 'renter' : 'renters' }}. Any leftover cents go one each to
+            the renters at the top of the list, so the shares total the fee exactly rather than leaving
+            one renter carrying the rounding.
+            @if (!isGroupInvoice()) {
+              Each share is billed on its own invoice and tracked separately.
+            }
+          </p>
+        }
+
+        <footer class="pending-footer">
+          <span class="pending-total">
+            <strong>{{ feeTotal() | currency }}</strong>
+            <span class="muted">
+              @if (isSharedByEveryone()) {
+                shared by every renter
+              } @else {
+                across {{ tenantShares().length }}
+                {{ tenantShares().length === 1 ? 'renter' : 'renters' }}
+              }
+            </span>
+          </span>
+          <button type="button" class="primary-btn" (click)="saveFee()" [disabled]="submitting()">
+            {{ submitting() ? 'Saving the fee…' : 'SAVE FEE' }}
+          </button>
+        </footer>
+      </section>
+    }
 
 <!--
       Floated above the fee panel while it is open. The panel is a fixed overlay, so an error left in
@@ -217,6 +343,7 @@
 
   @if (showPanel()) {
     <app-additional-charge-panel
+      [initialCharge]="pendingCharge()"
       [propertyOwnerId]="propertyOwnerId"
       [leaseStartDate]="leaseStartDate"
       [leaseEndDate]="leaseEndDate"

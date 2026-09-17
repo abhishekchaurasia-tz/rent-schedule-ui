@@ -21,6 +21,10 @@ describe('AddAdditionalChargeComponent', () => {
 
   const tenantA = '11111111-1111-1111-1111-111111111111';
   const tenantB = '22222222-2222-2222-2222-222222222222';
+  const tenantC = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const tenantD = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const tenantE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const tenantF = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
   const agreement: RentAgreementDetailResponse = {
     agreementId,
@@ -134,6 +138,43 @@ describe('AddAdditionalChargeComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * Stages a fee the way the panel's Create does, then commits it.
+   *
+   * The submit was split into these two halves once the split editor needed a fee total to divide:
+   * the drawer's Create stages, and the page's own Save posts (requirements 17-19).
+   */
+  function stageAndSave(charge: AdditionalChargeCreationRequest = emittedCharge): void {
+    component.onChargeCreated(charge);
+    component.saveFee();
+  }
+
+  /** The panel's emitted charge, re-priced to `total` on its single line. */
+  function feeOf(total: number): AdditionalChargeCreationRequest {
+    return {
+      ...emittedCharge,
+      items: [{ ...emittedCharge.items[0], quantity: 1, rate: total, amount: total }]
+    };
+  }
+
+  /**
+   * A saved roster of the named renters, **in the order given** — which is the order the leftover
+   * cents are handed out in, so these tests list their ids rather than generating them.
+   */
+  function rosterOf(...tenantIds: string[]): AgreementTenantsResponse {
+    return {
+      isGroupInvoice: false,
+      partialPaymentAllowed: true,
+      tenants: tenantIds.map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }))
+    };
+  }
+
   it('creates', () => {
     expect(component).toBeTruthy();
   });
@@ -204,7 +245,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('sends tenantIds: [] when nobody is ticked — the backend meaning of "shared by all"', () => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
     expect(request.request.body.tenantIds).toEqual([]);
@@ -216,7 +257,7 @@ describe('AddAdditionalChargeComponent', () => {
     loadAgreement();
     component.toggleTenant(tenantB);
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
     expect(request.request.body.tenantIds).toEqual([tenantB]);
@@ -227,7 +268,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('mints an idempotency key, so a replay cannot become a second charge', () => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
 
@@ -243,7 +284,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('replays the submission once when the server answers 409, and reports nothing to the user', fakeAsync(() => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     const first = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
     const key = first.request.body.id;
@@ -267,7 +308,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('gives up after one replay, and never retries a business rule', fakeAsync(() => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     httpMock
       .expectOne(`${baseUrl}/${agreementId}/additional-charges`)
@@ -283,7 +324,7 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.submitError()).toBe('Still conflicting.');
 
     // A 422 is the user's to fix, not the network's, so it reaches them on the first answer.
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
     httpMock
       .expectOne(`${baseUrl}/${agreementId}/additional-charges`)
       .flush({ detail: 'The lease is not active.' }, { status: 422, statusText: 'Unprocessable Entity' });
@@ -296,7 +337,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('posts the emitted charge fields at the body root and never sends isManualInvoice', () => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
     expect(request.request.method).toBe('POST');
@@ -308,31 +349,41 @@ describe('AddAdditionalChargeComponent', () => {
     request.flush(createdCharge);
   });
 
-  it('keeps the panel open until the POST succeeds, then closes it and lists the created charge', () => {
+  it('stages the fee on the panel\'s Create and sends nothing until the page\'s own Save', () => {
     loadAgreement();
     component.openPanel();
     expect(component.showPanel()).toBeTrue();
 
     component.onChargeCreated(emittedCharge);
 
+    // The drawer closes and nothing is sent: the split divides the fee's money, so it cannot be
+    // typed before that total exists, nor behind a drawer that covers the page.
+    expect(component.showPanel()).toBeFalse();
+    expect(component.pendingCharge()).not.toBeNull();
+    httpMock.expectNone(`${baseUrl}/${agreementId}/additional-charges`);
+
+    component.saveFee();
+
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(component.showPanel()).withContext('panel closed before the response').toBeTrue();
+    expect(component.pendingCharge())
+      .withContext('staged fee dropped before the response')
+      .not.toBeNull();
     expect(component.submitting()).toBeTrue();
 
     request.flush(createdCharge);
     fixture.detectChanges();
 
-    expect(component.showPanel()).toBeFalse();
+    expect(component.pendingCharge()).toBeNull();
     expect(component.submitting()).toBeFalse();
     expect(component.addedCharges()).toEqual([createdCharge]);
     expect(fixture.nativeElement.textContent).toContain(createdCharge.id);
   });
 
-  it('renders a 422 detail verbatim, keeps the panel open, and keeps the lease loaded', () => {
+  it('renders a 422 detail verbatim, keeps the staged fee, and keeps the lease loaded', () => {
     loadAgreement();
     component.openPanel();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(
       {
@@ -345,26 +396,33 @@ describe('AddAdditionalChargeComponent', () => {
     );
     fixture.detectChanges();
 
-    // The panel is still on screen, so it runs its own catalog fetch — which is itself the proof that
-    // it survived the failure, since a closed panel would never have asked.
-    httpMock.expectOne((request) => request.url.includes('/line-items')).flush([]);
-
     expect(component.submitError()).toBe('A deposit item cannot be mixed with rent items.');
-    expect(component.showPanel()).toBeTrue();
     expect(component.submitting()).toBeFalse();
     expect(component.agreement()).not.toBeNull();
     expect(component.addedCharges().length).toBe(0);
+
+    // The authored fee survives the failure. That is the protection the old "the panel stays open"
+    // behaviour gave, carried over to where the fee now lives: Edit re-opens the drawer on it rather
+    // than making the owner author the whole thing again to hit the same 422.
+    expect(component.pendingCharge()).not.toBeNull();
+
+    component.editPendingFee();
+    fixture.detectChanges();
+
+    expect(component.showPanel()).toBeTrue();
+    // The re-opened drawer runs its own catalog fetch, which is itself the proof it came back.
+    httpMock.expectOne((request) => request.url.includes('/line-items')).flush([]);
   });
 
   it('does not submit twice while a request is already in flight', () => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
     expect(component.submitting()).toBeTrue();
 
-    component.onChargeCreated(emittedCharge);
+    component.saveFee();
 
-    // One and only one — expectOne throws if a second matching request exists.
+    // One and only one — a second click on Save while the first is in flight is dropped, not queued.
     const requests = httpMock.match(`${baseUrl}/${agreementId}/additional-charges`);
     expect(requests.length).toBe(1);
 
@@ -380,7 +438,7 @@ describe('AddAdditionalChargeComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('no tenants saved');
 
     // A shared fee is still addable in that state.
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
     expect(request.request.body.tenantIds).toEqual([]);
     request.flush(createdCharge);
@@ -447,7 +505,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('FR101_SaveReportsUnbilledLines_SurfacesThemAgainstThatCharge', () => {
     loadAgreement();
     component.openPanel();
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush({
       ...createdCharge,
@@ -468,7 +526,7 @@ describe('AddAdditionalChargeComponent', () => {
   it('FR101_SaveReportsNoUnbilledLines_SurfacesNothing', () => {
     loadAgreement();
     component.openPanel();
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
 
     httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(createdCharge);
     fixture.detectChanges();
@@ -479,14 +537,14 @@ describe('AddAdditionalChargeComponent', () => {
   it('FR101_ASecondChargeBillsFine_LeavesTheFirstChargesDisclosureStanding', () => {
     loadAgreement();
 
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
     httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush({
       ...createdCharge,
       unbilledLines: [{ description: 'Reserved bay', amount: 50 }]
     });
 
     const second = { ...createdCharge, id: '99999999-9999-9999-9999-999999999999' };
-    component.onChargeCreated(emittedCharge);
+    stageAndSave();
     httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(second);
     fixture.detectChanges();
 
@@ -494,5 +552,96 @@ describe('AddAdditionalChargeComponent', () => {
     // about the first one, and the owner still has to act on the first.
     expect(component.unbilledFor(createdCharge.id).length).toBe(1);
     expect(component.unbilledFor(second.id)).toEqual([]);
+  });
+  describe('the even per-renter split (FR 17)', () => {
+    /** Sums a split the way the wire does — in cents, so the assertion is exact rather than close. */
+    function totalCents(): number {
+      return component.tenantShares().reduce((sum, share) => sum + Math.round(share.amount * 100), 0);
+    }
+
+    it('divides $300 across three renters as 100.00 each', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(300));
+
+      // The case that separates dividing the money from dividing the percentage: 100/3 = 33.33%,
+      // and multiplying that back across three rows gives 99.99 / 99.99 / 100.02.
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([100, 100, 100]);
+      expect(totalCents()).toBe(30000);
+
+      // The percentage is the derived figure here, and it is derived from the money.
+      expect(component.tenantShares().map((share) => share.sharePercent)).toEqual([33.33, 33.33, 33.33]);
+      expect(component.tenantShares().some((share) => share.carriesLeftoverCent)).toBeFalse();
+    });
+
+    it('spreads four leftover cents one each across six renters', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC, tenantD, tenantE, tenantF));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(100));
+
+      // An implementation that stacks the whole remainder on one row passes the three-renter test
+      // above and fails here — it would over-bill the first renter by three cents.
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([
+        16.67, 16.67, 16.67, 16.67, 16.66, 16.66
+      ]);
+      expect(totalCents()).toBe(10000);
+      expect(component.tenantShares().map((share) => share.carriesLeftoverCent)).toEqual([
+        true, true, true, true, false, false
+      ]);
+    });
+
+    it('re-divides when a renter is unticked', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(300));
+      expect(component.tenantShares().length).toBe(3);
+
+      component.toggleTenant(tenantC);
+
+      expect(component.tenantShares().map((share) => share.tenantId)).toEqual([tenantA, tenantB]);
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([150, 150]);
+      expect(totalCents()).toBe(30000);
+    });
+
+    it('shows no split when nobody is ticked — the shared-by-all case', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.onChargeCreated(feeOf(300));
+      fixture.detectChanges();
+
+      // Not an unfinished state: an empty selection is the instruction "every active renter shares
+      // this fee", so there is nothing to divide and nothing to say about it.
+      expect(component.selectedCount()).toBe(0);
+      expect(component.isSharedByEveryone()).toBeTrue();
+      expect(component.tenantShares()).toEqual([]);
+      expect(fixture.nativeElement.querySelectorAll('.split-row').length).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('shared by every active');
+    });
+
+    it('divides nothing until a fee is staged, and says nothing about it either', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      fixture.detectChanges();
+
+      // Ticking renters before authoring the fee is the ordinary order to work in. There is no total
+      // to divide yet, which is "not yet" rather than an error, so no rows and no message.
+      expect(component.feeTotal()).toBe(0);
+      expect(component.tenantShares()).toEqual([]);
+      expect(fixture.nativeElement.querySelectorAll('.split-row').length).toBe(0);
+    });
+
+    it('renders a row per ticked renter, each with its amount, percentage and Odd/Even badge', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(100));
+      fixture.detectChanges();
+
+      const rows = fixture.nativeElement.querySelectorAll('.split-row');
+      expect(rows.length).toBe(3);
+      expect(rows[0].textContent).toContain(component.tenantName(tenantA));
+      expect(rows[0].textContent).toContain('33.34');
+      expect(rows[0].textContent).toContain('Odd');
+      expect(rows[1].textContent).toContain('33.33');
+      expect(rows[2].textContent).toContain('Even');
+    });
   });
 });
