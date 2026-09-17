@@ -283,7 +283,32 @@
                 </tr>
               }
             </tbody>
+            <tfoot>
+              <tr [class.mismatched]="splitBlocker() !== null">
+                <td colspan="2">Total</td>
+                <td class="owes-col">
+                  <span class="owes-amount">{{ splitTotal() | currency }}</span>
+                  <span class="owes-derived">of {{ feeTotal() | currency }}</span>
+                </td>
+              </tr>
+            </tfoot>
           </table>
+
+          @if (splitBlocker(); as message) {
+            <div class="banner error split-blocker">
+              <strong>This split cannot be saved yet.</strong>
+              <p>{{ message }}</p>
+              <p>
+                Nothing you typed has been changed — the page will not correct your numbers for you.
+                Fix the row that is wrong, or
+                <button type="button" class="link-btn" (click)="resetSplit()">reset to an even split</button>.
+              </p>
+            </div>
+          } @else if (hasTypedShares()) {
+            <p class="split-reset-row">
+              <button type="button" class="link-btn" (click)="resetSplit()">Reset to an even split</button>
+            </p>
+          }
 
           <p class="split-note">
             <strong>Divided evenly, in money — type over any row to change it.</strong>
@@ -308,7 +333,13 @@
               }
             </span>
           </span>
-          <button type="button" class="primary-btn" (click)="saveFee()" [disabled]="submitting()">
+          <button
+            type="button"
+            class="primary-btn"
+            (click)="saveFee()"
+            [disabled]="!canSave()"
+            [title]="splitBlocker() ?? ''"
+          >
             {{ submitting() ? 'Saving the fee…' : 'SAVE FEE' }}
           </button>
         </footer>

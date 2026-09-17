@@ -554,3 +554,19 @@ h1 {
 .row-error {
   color: #b3261e;
 }
+
+/* ---- refusing a split that does not total the fee (requirement 19) ------------------------- */
+
+.split-table tfoot td {
+  font-weight: 600;
+  background: #f7f9fc;
+}
+
+.split-table tfoot .mismatched .owes-amount {
+  color: #b3261e;
+}
+
+.split-blocker,
+.split-reset-row {
+  margin: 0 1rem 0.9rem;
+}

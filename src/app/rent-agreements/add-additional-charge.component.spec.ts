@@ -777,4 +777,165 @@ describe('AddAdditionalChargeComponent', () => {
       expect(rows[1].textContent).toContain('Even');
     });
   });
+  describe('refusing a split that does not total the fee (FR 19)', () => {
+    function stageThreeWaySplit(total = 300): void {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(total));
+    }
+
+    function rowFor(tenantId: string) {
+      return component.tenantShares().find((share) => share.tenantId === tenantId)!;
+    }
+
+    /** Types a split that comes to $290 of the $300 fee — every row authored, ten dollars missing. */
+    function typeShortSplit(): void {
+      component.typeShare(tenantA, '100');
+      component.typeShare(tenantB, '100');
+      component.typeShare(tenantC, '90');
+    }
+
+    it('refuses the save and names the difference when the shares total $290 of a $300 fee', () => {
+      stageThreeWaySplit();
+      typeShortSplit();
+      fixture.detectChanges();
+
+      expect(component.splitTotal()).toBe(290);
+      expect(component.splitBlocker()).toBe(
+        'The shares total $290.00, the fee is $300.00 — $10.00 short.'
+      );
+      expect(component.canSave()).toBeFalse();
+
+      component.saveFee();
+
+      // Refused before the server is asked — the habit requirement 16 established on this page.
+      httpMock.expectNone(`${baseUrl}/${agreementId}/additional-charges`);
+      expect(component.submitting()).toBeFalse();
+      expect(fixture.nativeElement.textContent).toContain('the fee is $300.00');
+    });
+
+    it('keeps every typed row when the total is wrong', () => {
+      stageThreeWaySplit();
+      typeShortSplit();
+
+      component.saveFee();
+
+      // The assertion that fails if the page "helpfully" corrects the owner. An owner who typed three
+      // numbers and got one wrong wants all three still on screen, not two of them rewritten.
+      expect(rowFor(tenantA).text).toBe('100');
+      expect(rowFor(tenantB).text).toBe('100');
+      expect(rowFor(tenantC).text).toBe('90');
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([100, 100, 90]);
+      expect(component.splitTotal()).toBe(290);
+    });
+
+    it('refuses a split that comes to more than the fee, and says so in the other direction', () => {
+      stageThreeWaySplit();
+      component.typeShare(tenantA, '200');
+      component.typeShare(tenantB, '200');
+      component.typeShare(tenantC, '200');
+
+      expect(component.splitBlocker()).toBe(
+        'The shares total $600.00, the fee is $300.00 — $300.00 over.'
+      );
+      expect(component.canSave()).toBeFalse();
+    });
+
+    it('floors the untouched neighbours of an over-typed row at zero, not below it', () => {
+      stageThreeWaySplit();
+
+      component.typeShare(tenantA, '400');
+
+      // A row reading -$50.00 would answer a question nobody asked. The neighbours read $0.00 and the
+      // excess turns up in the refusal instead, which is where an owner can act on it.
+      expect(rowFor(tenantB).amount).toBe(0);
+      expect(rowFor(tenantC).amount).toBe(0);
+      expect(component.splitTotal()).toBe(400);
+      expect(component.splitBlocker()).toBe(
+        'The shares total $400.00, the fee is $300.00 — $100.00 over.'
+      );
+
+      component.saveFee();
+      httpMock.expectNone(`${baseUrl}/${agreementId}/additional-charges`);
+    });
+
+    it('refuses a split holding a row it cannot read, whatever the rest add up to', () => {
+      stageThreeWaySplit();
+      component.typeShare(tenantA, 'one hundred');
+
+      expect(component.splitBlocker()).toBe('One share cannot be read. Correct it to save this fee.');
+      expect(component.canSave()).toBeFalse();
+
+      component.saveFee();
+      httpMock.expectNone(`${baseUrl}/${agreementId}/additional-charges`);
+    });
+
+    it('reset restores the even split', () => {
+      stageThreeWaySplit();
+      typeShortSplit();
+      expect(component.hasTypedShares()).toBeTrue();
+
+      component.resetSplit();
+
+      expect(component.hasTypedShares()).toBeFalse();
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([100, 100, 100]);
+      expect(component.tenantShares().every((share) => share.authoredUnit === 'even')).toBeTrue();
+      expect(component.splitBlocker()).toBeNull();
+      expect(component.canSave()).toBeTrue();
+    });
+
+    it('allows the save when the rows total exactly', () => {
+      stageThreeWaySplit();
+      component.typeShare(tenantA, '200');
+      component.typeShare(tenantB, '50');
+      component.typeShare(tenantC, '50');
+
+      expect(component.splitBlocker()).toBeNull();
+      expect(component.canSave()).toBeTrue();
+
+      component.saveFee();
+
+      httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`).flush(createdCharge);
+      expect(component.addedCharges().length).toBe(1);
+      expect(component.pendingCharge()).toBeNull();
+    });
+
+    it('allows the save with the untouched even split, leftover cent and all', () => {
+      stageThreeWaySplit(100);
+
+      // 33.34 / 33.33 / 33.33 totals $100.00 exactly, which is the whole point of dividing the money
+      // in cents. A split assembled from 33.33 three times would be refused by its own page.
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([33.34, 33.33, 33.33]);
+      expect(component.splitTotal()).toBe(100);
+      expect(component.splitBlocker()).toBeNull();
+    });
+
+    it('has nothing to refuse when the fee is shared by everyone', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.onChargeCreated(feeOf(300));
+
+      // No rows, nothing to total: the server divides a shared fee, so there is no split to check.
+      expect(component.isSharedByEveryone()).toBeTrue();
+      expect(component.splitBlocker()).toBeNull();
+      expect(component.canSave()).toBeTrue();
+    });
+
+    it('offers the reset only once a row has been typed, and only on a click', () => {
+      stageThreeWaySplit();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.split-reset-row')).toBeNull();
+
+      component.typeShare(tenantA, '120');
+      fixture.detectChanges();
+
+      const reset = fixture.nativeElement.querySelector('.split-reset-row .link-btn');
+      expect(reset).not.toBeNull();
+
+      reset.click();
+      fixture.detectChanges();
+
+      expect(component.hasTypedShares()).toBeFalse();
+    });
+  });
 });

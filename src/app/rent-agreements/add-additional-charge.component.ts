@@ -123,7 +123,9 @@ function readTypedShare(
  * Computed in integer cents throughout, because `0.01 * 3` is not `0.03` in binary floating point and
  * a split that has to total the fee *exactly* cannot be assembled out of values that do not add up.
  *
- * @param total The amount to divide, in whole currency units.
+ * @param total The amount to divide, in whole currency units. Never negative — a renter cannot owe
+ *   less than nothing, so the only caller clamps an over-typed split at zero rather than passing
+ *   the shortfall down here.
  * @param count How many rows to divide it across.
  * @returns One amount per row, in the order given, summing to `total` exactly. Empty when `count < 1`.
  */
@@ -132,19 +134,13 @@ export function divideEvenly(total: number, count: number): number[] {
     return [];
   }
 
-  const totalCents = Math.round(total * 100);
-
-  // Signed totals are reachable from requirement 18: typed rows can exceed the fee, leaving the
-  // untouched rows a negative remainder to share. Dividing the magnitude keeps the rule symmetric —
-  // the first rows still carry the extra cent — rather than inverting it below zero.
-  const sign = totalCents < 0 ? -1 : 1;
-  const magnitude = Math.abs(totalCents);
-  const base = Math.floor(magnitude / count);
-  const leftover = magnitude - base * count;
+  const totalCents = Math.max(0, Math.round(total * 100));
+  const base = Math.floor(totalCents / count);
+  const leftover = totalCents - base * count;
 
   return Array.from(
     { length: count },
-    (_unused, index) => (sign * (base + (index < leftover ? 1 : 0))) / 100
+    (_unused, index) => (base + (index < leftover ? 1 : 0)) / 100
   );
 }
 
@@ -290,10 +286,13 @@ export class AddAdditionalChargeComponent {
    * ticked, which means every active renter shares the fee, and no staged fee to divide, which is
    * simply "not yet". Neither is an error, and neither shows a message.
    *
-   * The untouched rows share **what the typed rows have left of the fee**, which can be nothing or
-   * less than nothing. An over-typed split is shown as it is and refused by requirement 19 — not
-   * clamped, which would put a number on screen that nobody typed and that does not total the fee
-   * either.
+   * The untouched rows share **what the typed rows have left of the fee**, which can be nothing.
+   *
+   * **Never less than nothing.** Typing `$400` onto one row of a `$300` fee leaves the other rows a
+   * shortfall to share, and a row reading `-$50.00` would be answering a question nobody asked: a
+   * renter does not owe negative money on a fee. The remainder is floored at zero, the rows read
+   * `$0.00`, and the excess turns up where it belongs — in requirement 19 refusing a split that
+   * totals $400 of a $300 fee, naming both figures.
    */
   readonly tenantShares = computed<TenantShareRow[]>(() => {
     const rows = this.selectedTenantsInOrder();
@@ -320,7 +319,7 @@ export class AddAdditionalChargeComponent {
 
     const claimedCents = [...typed.values()].reduce((sum, share) => sum + share.cents, 0);
     const untouched = rows.filter((tenant) => !typed.has(tenant.tenantId));
-    const evenAmounts = divideEvenly((totalCents - claimedCents) / 100, untouched.length);
+    const evenAmounts = divideEvenly(Math.max(0, totalCents - claimedCents) / 100, untouched.length);
     const smallestEven = evenAmounts.length > 0 ? Math.min(...evenAmounts) : 0;
 
     let evenIndex = 0;
@@ -354,6 +353,53 @@ export class AddAdditionalChargeComponent {
   /** Every row-level complaint currently on screen — the save is blocked while there is one. */
   readonly shareErrors = computed(() =>
     this.tenantShares().filter((share) => share.error !== null)
+  );
+
+  /** What the rows currently add up to, summed in cents so the comparison below is exact. */
+  readonly splitTotal = computed(
+    () => this.tenantShares().reduce((sum, share) => sum + Math.round(share.amount * 100), 0) / 100
+  );
+
+  /**
+   * Why the split cannot be saved, or `null` when it can (requirement 19).
+   *
+   * **Names both figures.** "The shares do not add up" leaves the owner to do the arithmetic the page
+   * has already done; naming the total and the fee points at the row that is wrong.
+   *
+   * **Compared in cents.** `0.01 * 3` is not `0.03` in binary floating point, and a guard that has to
+   * decide "exactly" cannot be built on a comparison that is sometimes off by a fifteenth decimal.
+   *
+   * The shared-by-everyone case has nothing to check: there are no rows, and the server divides.
+   */
+  readonly splitBlocker = computed<string | null>(() => {
+    if (this.pendingCharge() === null || this.tenantShares().length === 0) {
+      return null;
+    }
+
+    const unreadable = this.shareErrors().length;
+    if (unreadable > 0) {
+      return unreadable === 1
+        ? 'One share cannot be read. Correct it to save this fee.'
+        : `${unreadable} shares cannot be read. Correct them to save this fee.`;
+    }
+
+    const splitCents = Math.round(this.splitTotal() * 100);
+    const feeCents = Math.round(this.feeTotal() * 100);
+    if (splitCents === feeCents) {
+      return null;
+    }
+
+    const shares = (splitCents / 100).toFixed(2);
+    const fee = (feeCents / 100).toFixed(2);
+    const gap = (Math.abs(feeCents - splitCents) / 100).toFixed(2);
+    const direction = splitCents > feeCents ? 'over' : 'short';
+
+    return `The shares total $${shares}, the fee is $${fee} — $${gap} ${direction}.`;
+  });
+
+  /** Whether the staged fee can be committed. */
+  readonly canSave = computed(
+    () => this.pendingCharge() !== null && this.splitBlocker() === null && !this.submitting()
   );
 
   /** Whether the fee is being shared by everybody — the state an empty selection encodes. */
@@ -626,6 +672,14 @@ export class AddAdditionalChargeComponent {
     const agreement = this.agreement();
     const charge = this.pendingCharge();
     if (!agreement || !charge || this.submitting()) {
+      return;
+    }
+
+    // Requirement 19. The server refuses the same state with a 422, so this is the page refusing
+    // before it does — the habit requirement 16 already established here. **The typed rows are kept.**
+    // An owner who has typed three numbers and got one wrong wants to see all three, so the message
+    // goes up and the split is left exactly as it is; `resetSplit` is the way back, and only on a click.
+    if (this.splitBlocker() !== null) {
       return;
     }
 
