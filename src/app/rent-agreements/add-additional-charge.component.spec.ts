@@ -644,4 +644,137 @@ describe('AddAdditionalChargeComponent', () => {
       expect(rows[2].textContent).toContain('Even');
     });
   });
+  describe('typing over a share (FR 18)', () => {
+    /** Three renters on a $300 fee — the figures requirement 18 is written in terms of. */
+    function stageThreeWaySplit(total = 300): void {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.selectAllTenants();
+      component.onChargeCreated(feeOf(total));
+    }
+
+    function rowFor(tenantId: string) {
+      return component.tenantShares().find((share) => share.tenantId === tenantId)!;
+    }
+
+    it('typing an amount leaves the percentage derived and marks the row as amount-authored', () => {
+      stageThreeWaySplit();
+
+      component.typeShare(tenantA, '120');
+
+      const typed = rowFor(tenantA);
+      expect(typed.authoredUnit).toBe('amount');
+      expect(typed.amount).toBe(120);
+      // Derived, not typed: 120 of 300 is 40%, and nothing on the row said so.
+      expect(typed.sharePercent).toBe(40);
+      expect(typed.text).withContext('the owner is echoed back verbatim').toBe('120');
+
+      // What is left of the fee goes to the rows nobody has touched.
+      expect(rowFor(tenantB).amount).toBe(90);
+      expect(rowFor(tenantC).amount).toBe(90);
+    });
+
+    it('typing a percentage marks the row as percent-authored and derives the amount', () => {
+      stageThreeWaySplit();
+
+      component.setShareUnit(tenantA, 'percent');
+      component.typeShare(tenantA, '66.67');
+
+      const typed = rowFor(tenantA);
+      expect(typed.authoredUnit).toBe('percent');
+      expect(typed.sharePercent).toBe(66.67);
+      // 66.67% of $300 is 200.01, not 200.00. This is the assertion that makes the two units
+      // non-interchangeable, and the reason the typed one is recorded rather than inferred.
+      expect(typed.amount).toBe(200.01);
+
+      // The remaining $99.99 divides across the untouched rows, odd cent to the first of them.
+      expect(rowFor(tenantB).amount).toBe(50);
+      expect(rowFor(tenantC).amount).toBe(49.99);
+    });
+
+    it('ticking another renter re-divides only the untouched rows', () => {
+      loadAgreement(rosterOf(tenantA, tenantB, tenantC));
+      component.toggleTenant(tenantA);
+      component.toggleTenant(tenantB);
+      component.onChargeCreated(feeOf(300));
+      expect(component.tenantShares().map((share) => share.amount)).toEqual([150, 150]);
+
+      component.typeShare(tenantA, '200');
+      component.toggleTenant(tenantC);
+
+      // An owner who has fixed one number does not expect the page to undo it because they ticked
+      // somebody else. Only B and C move, and they share what A has left of the fee.
+      expect(rowFor(tenantA).amount).withContext('a typed row was re-divided').toBe(200);
+      expect(rowFor(tenantA).authoredUnit).toBe('amount');
+      expect(rowFor(tenantB).amount).toBe(50);
+      expect(rowFor(tenantC).amount).toBe(50);
+    });
+
+    it('switching a row between money and percentage does not move the money', () => {
+      stageThreeWaySplit();
+
+      // The row is at its even $100.00 of $300; asking for it as a percentage should say 33.33%,
+      // not reset it or re-divide it.
+      component.setShareUnit(tenantA, 'percent');
+
+      expect(rowFor(tenantA).authoredUnit).toBe('percent');
+      expect(rowFor(tenantA).text).toBe('33.33');
+      expect(rowFor(tenantA).amount).toBe(99.99);
+
+      component.setShareUnit(tenantA, 'amount');
+
+      expect(rowFor(tenantA).authoredUnit).toBe('amount');
+      expect(rowFor(tenantA).text).toBe('99.99');
+      expect(rowFor(tenantA).amount).toBe(99.99);
+    });
+
+    it('reports a row the page cannot read, and keeps the text on screen', () => {
+      stageThreeWaySplit();
+
+      component.typeShare(tenantA, '12,50');
+
+      expect(rowFor(tenantA).error).toBe('Enter a number.');
+      // Kept verbatim: a value the page cannot read has to stay on screen to be corrected.
+      expect(rowFor(tenantA).text).toBe('12,50');
+      expect(component.shareErrors().length).toBe(1);
+
+      component.typeShare(tenantA, '-40');
+
+      expect(rowFor(tenantA).error).toBe('A share cannot be negative.');
+      expect(rowFor(tenantA).text).toBe('-40');
+
+      // Clearing the box to retype it is not an error — the total simply will not add up yet.
+      component.typeShare(tenantA, '');
+
+      expect(rowFor(tenantA).error).toBeNull();
+      expect(rowFor(tenantA).amount).toBe(0);
+    });
+
+    it('hands one row back to the even split without disturbing the others', () => {
+      stageThreeWaySplit();
+      component.typeShare(tenantA, '200');
+      component.typeShare(tenantB, '50');
+
+      component.resetShareRow(tenantA);
+
+      expect(rowFor(tenantA).authoredUnit).toBe('even');
+      expect(rowFor(tenantB).authoredUnit).withContext('an untouched row was reset too').toBe('amount');
+      expect(rowFor(tenantB).amount).toBe(50);
+      // A and C now share the $250 that B has left of the fee.
+      expect(rowFor(tenantA).amount).toBe(125);
+      expect(rowFor(tenantC).amount).toBe(125);
+    });
+
+    it('renders the typed unit, the derived counterpart and a Typed badge', () => {
+      stageThreeWaySplit();
+      component.typeShare(tenantA, '120');
+      fixture.detectChanges();
+
+      const rows = fixture.nativeElement.querySelectorAll('.split-row');
+      expect(rows[0].querySelector('.share-input').value).toBe('120');
+      expect(rows[0].querySelector('.share-unit').value).toBe('amount');
+      expect(rows[0].querySelector('.owes-derived').textContent).toContain('40.00%');
+      expect(rows[0].textContent).toContain('Typed');
+      expect(rows[1].textContent).toContain('Even');
+    });
+  });
 });

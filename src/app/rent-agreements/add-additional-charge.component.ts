@@ -29,16 +29,35 @@ const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  */
 const CONFLICT_RETRY_DELAY_MS = 400;
 
+/** Which unit a share was typed in. Recorded rather than derived — see {@link TenantShareRow}. */
+export type ShareUnit = 'amount' | 'percent';
+
+/**
+ * One renter's typed-over share: the unit they chose and the text they typed, verbatim.
+ *
+ * **The text is kept as typed rather than as a number.** A value the page cannot read — `12,50`, a
+ * stray minus, a half-finished `1.` — has to stay on screen to be corrected, and requirement 19 is
+ * explicit that the page never silently rewrites what the owner entered.
+ */
+interface TenantShareOverride {
+  unit: ShareUnit;
+  text: string;
+}
+
 /**
  * One renter's share of the fee, as the split table renders it.
  *
- * `amount` is the money; `sharePercent` is the same quantity expressed against the fee total. The two
- * are always consistent with one another and never both authoritative — {@link divideEvenly} fills
- * both from the fee total and the row count.
+ * `amount` is the money and `sharePercent` the same quantity against the fee total. Exactly one of
+ * them is authoritative on any given row, and `authoredUnit` says which: `even` for a row still
+ * carrying its share of the even division, `amount` or `percent` for one the owner typed.
  *
- * `carriesLeftoverCent` is what the row's Odd/Even badge reads. It marks the rows a leftover cent was
- * handed to, which is the only thing separating them from the rest, and is worth saying on screen
- * because an owner comparing two rows of a three-way split will otherwise wonder which one is wrong.
+ * **The two units are not interchangeable, which is why the choice is recorded rather than inferred.**
+ * On a `$300` fee a typed `200.00` and a typed `66.67` are different rows — `66.67%` of `300` is
+ * `200.01` — so the page cannot look at a saved amount and work out what was meant.
+ *
+ * `carriesLeftoverCent` marks the evenly-divided rows a leftover cent was handed to, which is the
+ * only thing separating them from the rest and worth saying out loud: an owner reading `33.34` beside
+ * `33.33` has no way to tell a deliberate remainder from a rounding bug.
  */
 export interface TenantShareRow {
   tenantId: string;
@@ -46,6 +65,47 @@ export interface TenantShareRow {
   amount: number;
   sharePercent: number;
   carriesLeftoverCent: boolean;
+  authoredUnit: ShareUnit | 'even';
+  /** What the row's input shows: the owner's own text on a typed row, the divided figure otherwise. */
+  text: string;
+  /** A complaint about the typed text, or `null`. Blocks the save; never rewrites the row. */
+  error: string | null;
+}
+
+/**
+ * Reads a typed share, in cents, without ever rewriting it.
+ *
+ * An empty box is `0` rather than a complaint: clearing a cell to retype it is the ordinary way to
+ * change one, and a message that appears between two keystrokes teaches the owner nothing. The total
+ * will not add up while it stands empty, and requirement 19 says so in one place instead.
+ *
+ * @param text What the owner typed.
+ * @param unit Which unit they typed it in.
+ * @param totalCents The staged fee, in cents — what a percentage is taken of.
+ * @returns The share in cents, and the row-level message when the text could not be read.
+ */
+function readTypedShare(
+  text: string,
+  unit: ShareUnit,
+  totalCents: number
+): { cents: number; error: string | null } {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { cents: 0, error: null };
+  }
+
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) {
+    return { cents: 0, error: 'Enter a number.' };
+  }
+  if (value < 0) {
+    return { cents: 0, error: 'A share cannot be negative.' };
+  }
+
+  return {
+    cents: unit === 'percent' ? Math.round((totalCents * value) / 100) : Math.round(value * 100),
+    error: null
+  };
 }
 
 /**
@@ -211,11 +271,29 @@ export class AddAdditionalChargeComponent {
   );
 
   /**
-   * The per-renter split of the staged fee, divided evenly (requirement 17).
+   * The rows the owner has typed over, keyed by renter (requirement 18).
+   *
+   * **A typed row is not re-divided when the selection changes** — only the untouched rows absorb it.
+   * An owner who has fixed one number does not expect the page to undo that because they ticked
+   * somebody else, and this map is what remembers which numbers were theirs.
+   */
+  private readonly shareOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
+
+  /** Whether any row has been typed over — what the "reset to even" control is offered for. */
+  readonly hasTypedShares = computed(() => this.shareOverrides().size > 0);
+
+  /**
+   * The per-renter split of the staged fee: typed rows as typed, the rest divided evenly
+   * (requirements 17 and 18).
    *
    * **Empty in two distinct cases, and both are complete states rather than unfinished ones:** nobody
    * ticked, which means every active renter shares the fee, and no staged fee to divide, which is
    * simply "not yet". Neither is an error, and neither shows a message.
+   *
+   * The untouched rows share **what the typed rows have left of the fee**, which can be nothing or
+   * less than nothing. An over-typed split is shown as it is and refused by requirement 19 — not
+   * clamped, which would put a number on screen that nobody typed and that does not total the fee
+   * either.
    */
   readonly tenantShares = computed<TenantShareRow[]>(() => {
     const rows = this.selectedTenantsInOrder();
@@ -225,17 +303,58 @@ export class AddAdditionalChargeComponent {
       return [];
     }
 
-    const amounts = divideEvenly(total, rows.length);
-    const smallest = Math.min(...amounts);
+    const totalCents = Math.round(total * 100);
+    const overrides = this.shareOverrides();
 
-    return rows.map((tenant, index) => ({
-      tenantId: tenant.tenantId,
-      name: this.tenantName(tenant.tenantId),
-      amount: amounts[index],
-      sharePercent: Math.round((amounts[index] / total) * 10000) / 100,
-      carriesLeftoverCent: amounts[index] !== smallest
-    }));
+    const typed = new Map(
+      rows
+        .filter((tenant) => overrides.has(tenant.tenantId))
+        .map((tenant) => {
+          const override = overrides.get(tenant.tenantId)!;
+          return [
+            tenant.tenantId,
+            { ...override, ...readTypedShare(override.text, override.unit, totalCents) }
+          ] as const;
+        })
+    );
+
+    const claimedCents = [...typed.values()].reduce((sum, share) => sum + share.cents, 0);
+    const untouched = rows.filter((tenant) => !typed.has(tenant.tenantId));
+    const evenAmounts = divideEvenly((totalCents - claimedCents) / 100, untouched.length);
+    const smallestEven = evenAmounts.length > 0 ? Math.min(...evenAmounts) : 0;
+
+    let evenIndex = 0;
+
+    return rows.map((tenant) => {
+      const share = typed.get(tenant.tenantId);
+      const cents = share ? share.cents : Math.round(evenAmounts[evenIndex] * 100);
+      const amount = cents / 100;
+      const sharePercent = Math.round((cents / totalCents) * 10000) / 100;
+
+      const row: TenantShareRow = {
+        tenantId: tenant.tenantId,
+        name: this.tenantName(tenant.tenantId),
+        amount,
+        sharePercent,
+        carriesLeftoverCent: !share && amount !== smallestEven,
+        authoredUnit: share ? share.unit : 'even',
+        // A typed row echoes the owner back verbatim; a divided one shows the figure it was given, in
+        // the unit the input is currently set to read.
+        text: share ? share.text : amount.toFixed(2),
+        error: share ? share.error : null
+      };
+
+      if (!share) {
+        evenIndex += 1;
+      }
+      return row;
+    });
   });
+
+  /** Every row-level complaint currently on screen — the save is blocked while there is one. */
+  readonly shareErrors = computed(() =>
+    this.tenantShares().filter((share) => share.error !== null)
+  );
 
   /** Whether the fee is being shared by everybody — the state an empty selection encodes. */
   readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
@@ -367,6 +486,69 @@ export class AddAdditionalChargeComponent {
   tenantInitials(tenantId: string): string {
     const identity = placeholderTenantIdentity(tenantId);
     return `${identity.firstName.charAt(0)}${identity.lastName.charAt(0)}`.toUpperCase();
+  }
+
+  /**
+   * Records what the owner typed into a row, in whichever unit that row is set to (requirement 18).
+   *
+   * The text is stored, not a number: it is echoed straight back into the input, so a value the page
+   * cannot read stays on screen to be corrected rather than being replaced by a zero.
+   */
+  typeShare(tenantId: string, text: string): void {
+    this.shareOverrides.update((overrides) => {
+      const next = new Map(overrides);
+      next.set(tenantId, { unit: overrides.get(tenantId)?.unit ?? 'amount', text });
+      return next;
+    });
+  }
+
+  /**
+   * Switches a row between money and percentage, **carrying the figure across** so what the renter
+   * owes does not move because the owner changed their mind about how to say it.
+   *
+   * Doing this to an untouched row makes it a typed one, at the value it was just divided to. Choosing
+   * a unit for a row *is* taking it over: it is the only reason to touch that control, and a row that
+   * kept re-dividing afterwards would throw the choice away the moment another renter was ticked.
+   */
+  setShareUnit(tenantId: string, unit: ShareUnit): void {
+    const row = this.tenantShares().find((share) => share.tenantId === tenantId);
+    if (!row || row.authoredUnit === unit) {
+      return;
+    }
+
+    // Carried across from whichever figure the row already holds, so the money is unchanged. A row
+    // the page could not read has nothing to carry, so its text goes across untouched.
+    const text =
+      row.error !== null
+        ? row.text
+        : unit === 'percent'
+          ? row.sharePercent.toFixed(2)
+          : row.amount.toFixed(2);
+
+    this.shareOverrides.update((overrides) => {
+      const next = new Map(overrides);
+      next.set(tenantId, { unit, text });
+      return next;
+    });
+  }
+
+  /** Hands one row back to the even division, leaving every other typed row alone. */
+  resetShareRow(tenantId: string): void {
+    this.shareOverrides.update((overrides) => {
+      const next = new Map(overrides);
+      next.delete(tenantId);
+      return next;
+    });
+  }
+
+  /**
+   * Discards every typed row and divides the fee evenly again (requirement 19).
+   *
+   * **Only ever on a click.** A mismatched total keeps what the owner typed; this is the deliberate
+   * way back, not something the page does on their behalf when it dislikes the numbers.
+   */
+  resetSplit(): void {
+    this.shareOverrides.set(new Map());
   }
 
   openPanel(): void {

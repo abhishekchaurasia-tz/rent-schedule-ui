@@ -342,14 +342,18 @@ h1 {
   margin-bottom: 1.25rem;
 }
 
-.pending-header {
+.pending-header,
+.pending-footer {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.7rem 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.88rem;
+}
+
+.pending-header {
   border-bottom: 1px solid #e6eaf2;
   background: #f4f7fd;
-  font-size: 0.88rem;
 }
 
 .pending-summary {
@@ -368,7 +372,6 @@ h1 {
   .link-btn:disabled {
     color: #999;
     cursor: default;
-    text-decoration: none;
   }
 }
 
@@ -388,7 +391,6 @@ h1 {
 
   input:disabled + span {
     color: #999;
-    cursor: default;
   }
 }
 
@@ -480,11 +482,7 @@ h1 {
 }
 
 .pending-footer {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.8rem 1rem;
   border-top: 1px solid #e6eaf2;
   background: #f7f9fc;
 }
@@ -500,4 +498,59 @@ h1 {
   .muted {
     font-size: 0.78rem;
   }
+}
+
+/* ---- typing a share (requirement 18) ------------------------------------------------------- */
+
+.owes-input {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.share-input,
+.share-unit {
+  padding: 0.3rem;
+  border: 1px solid #ccd2dd;
+  border-radius: 3px;
+  font: inherit;
+}
+
+.share-input {
+  width: 4.6rem;
+  text-align: right;
+
+  &.invalid {
+    border-color: #b3261e;
+  }
+}
+
+.share-unit {
+  background: #f4f6f9;
+}
+
+.row-reset {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: 1rem;
+  cursor: pointer;
+
+  &:disabled {
+    color: #c4c9d2;
+    cursor: default;
+  }
+}
+
+.owes-derived,
+.row-error {
+  display: block;
+  font-size: 0.76rem;
+}
+
+.owes-derived {
+  color: #888;
+}
+
+.row-error {
+  color: #b3261e;
 }

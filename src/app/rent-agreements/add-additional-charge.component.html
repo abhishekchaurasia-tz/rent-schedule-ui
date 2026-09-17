@@ -212,17 +212,73 @@
                   </td>
                   <td>
                     <!--
-                      The badge names the rows a leftover cent landed on. It exists because the rule it
-                      makes visible is invisible otherwise: an owner reading 33.34 next to 33.33 has no
-                      way to tell a deliberate remainder from a rounding bug.
+                      The badge names what the row is: typed by the owner, or evenly divided — and if
+                      divided, whether a leftover cent landed on it. That last distinction is invisible
+                      otherwise, and an owner reading 33.34 next to 33.33 has no way to tell a
+                      deliberate remainder from a rounding bug.
                     -->
-                    <span class="chip" [class.amber]="share.carriesLeftoverCent">
-                      {{ share.carriesLeftoverCent ? 'Odd' : 'Even' }}
+                    <span
+                      class="chip"
+                      [class.amber]="share.authoredUnit !== 'even' || share.carriesLeftoverCent"
+                    >
+                      @switch (share.authoredUnit) {
+                        @case ('even') {
+                          {{ share.carriesLeftoverCent ? 'Odd' : 'Even' }}
+                        }
+                        @default {
+                          Typed
+                        }
+                      }
                     </span>
                   </td>
                   <td class="owes-col">
-                    <span class="owes-amount">{{ share.amount | currency }}</span>
-                    <span class="muted">{{ share.sharePercent | number: '1.2-2' }}%</span>
+                    <!--
+                      One box and a unit, not a box per unit. Requirement 18 turns on *which* unit the
+                      owner typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee,
+                      because 66.67% of 300 is 200.01 — so the unit has to be a choice on the record
+                      rather than a guess about which of two boxes was touched last. The other figure
+                      is shown beneath, derived and never typed into.
+                    -->
+                    <span class="owes-input">
+                      <input
+                        type="text"
+                        inputmode="decimal"
+                        class="share-input"
+                        [class.invalid]="share.error"
+                        [value]="share.text"
+                        [attr.aria-label]="'Share for ' + share.name"
+                        (input)="typeShare(share.tenantId, $any($event.target).value)"
+                      />
+                      <select
+                        class="share-unit"
+                        [value]="share.authoredUnit === 'percent' ? 'percent' : 'amount'"
+                        [attr.aria-label]="'Unit for ' + share.name"
+                        (change)="setShareUnit(share.tenantId, $any($event.target).value)"
+                      >
+                        <option value="amount">$</option>
+                        <option value="percent">%</option>
+                      </select>
+                      <button
+                        type="button"
+                        class="row-reset"
+                        (click)="resetShareRow(share.tenantId)"
+                        [disabled]="share.authoredUnit === 'even'"
+                        title="Hand this row back to the even split"
+                        aria-label="Hand this row back to the even split"
+                      >
+                        &#8635;
+                      </button>
+                    </span>
+                    <span class="owes-derived">
+                      @if (share.authoredUnit === 'percent') {
+                        {{ share.amount | currency }}
+                      } @else {
+                        {{ share.sharePercent | number: '1.2-2' }}%
+                      }
+                    </span>
+                    @if (share.error; as message) {
+                      <span class="row-error">{{ message }}</span>
+                    }
                   </td>
                 </tr>
               }
@@ -230,11 +286,10 @@
           </table>
 
           <p class="split-note">
-            <strong>Divided evenly, in money.</strong>
-            {{ feeTotal() | currency }} across {{ tenantShares().length }}
-            {{ tenantShares().length === 1 ? 'renter' : 'renters' }}. Any leftover cents go one each to
-            the renters at the top of the list, so the shares total the fee exactly rather than leaving
-            one renter carrying the rounding.
+            <strong>Divided evenly, in money — type over any row to change it.</strong>
+            Leftover cents go one each to the renters at the top of the list, so the shares total the fee
+            exactly rather than leaving one renter carrying the rounding. A row you type is left alone
+            from then on: ticking another renter re-divides only the rows you have not touched.
             @if (!isGroupInvoice()) {
               Each share is billed on its own invoice and tracked separately.
             }
