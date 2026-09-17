@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { MatDatepickerModule } from '@angular/material/datepicker';
@@ -59,6 +59,20 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
  * `dueDate` then `invoiceNumber` precisely so offset pagination stays stable, and controls that did
  * nothing would be worse than none.
  *
+ * **v7 — the owner is no longer typed into the filter bar.** Backend `02-invoicing.md` v39 (FR 47)
+ * moved `GET /api/v1/invoices`' owner scope to the `PropertyOwnerUid` header, and v41 (FR 49) deleted
+ * the query member outright, so the id this screen collected had stopped reaching the endpoint's
+ * decision — a query string still carrying it is discarded (FR 47b). The list already resolved under
+ * whatever `scopeHeadersInterceptor` sent; the filter bar simply went on naming an owner that might
+ * not be it, which is the failure this repository keeps meeting: a screen that answers confidently
+ * about the wrong scope rather than failing. The field, its two validations and its error line are
+ * gone, and the scope is now shown where it is actually set — the Test scope box on `local`, the
+ * pasted token everywhere else.
+ *
+ * **v8 — the list loads itself.** With the owner no longer typed in, nothing about the first page
+ * depended on the user, so making them press Search to see it asked them to confirm a choice they
+ * had not made. `ngOnInit` runs the search; **Search** re-runs it once filters are narrowed.
+ *
  * **v5** adds per-row **Delete** and **Void** (backend `DELETE /invoices/{id}` and
  * `POST /invoices/{id}/void`, both already implemented). Both require an inline confirmation, are
  * hidden once a row is already `voided` or `deleted`, and a success re-runs the current search rather
@@ -79,7 +93,7 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
   templateUrl: './invoice-list.component.html',
   styleUrl: './invoice-list.component.scss'
 })
-export class InvoiceListComponent {
+export class InvoiceListComponent implements OnInit {
   /** The wire tokens, with the words the design puts on screen. */
   private static readonly StatusPresentations: Record<InvoiceStatus, StatusPresentation> = {
     // "Fully Paid" rather than the wire's own word: it is what the design shows, and it is what a
@@ -124,7 +138,6 @@ export class InvoiceListComponent {
     'deleted'
   ];
 
-  readonly idError = signal<string | null>(null);
   readonly loading = signal(false);
   readonly searchError = signal<string | null>(null);
 
@@ -191,16 +204,12 @@ export class InvoiceListComponent {
 
   readonly filters: FormGroup;
 
-  /** `true` once a search has returned, so the empty state can tell "none matched" from "not yet run". */
-  readonly hasSearched = computed(() => this.result() !== null);
-
   constructor(
     private readonly fb: FormBuilder,
     private readonly invoices: InvoicesService,
     private readonly agreements: RentAgreementsService
   ) {
     this.filters = this.fb.group({
-      propertyOwnerId: [''],
       invoiceNumber: [''],
       // Native `Date`s for the Material datepickers; `toIsoDate` converts them to the wire's
       // "YYYY-MM-DD" in LOCAL time at query-build time.
@@ -212,13 +221,30 @@ export class InvoiceListComponent {
     });
 
     // Requirement 15g. A list already on screen was read as whoever the scope said at the time; after
-    // a token is pasted it is a stale answer that looks like a current one. Guarded on `hasSearched`
-    // so a paste before the first search does not fire a search nobody asked for.
-    reloadOnScopeChange(() => {
-      if (this.hasSearched()) {
-        this.runSearch();
-      }
-    });
+    // a token is pasted it is a stale answer that looks like a current one.
+    //
+    // **Unguarded since v8.** It used to run only once a search had returned, so that a paste before
+    // the first search did not fire a request nobody asked for. Now that the screen loads itself on
+    // open there is no such moment: the one case the guard still caught was a *failed* first load,
+    // where re-reading under the new scope is exactly what a tester pasting a token is asking for.
+    reloadOnScopeChange(() => this.runSearch());
+  }
+
+  /**
+   * Loads the list on open (v8).
+   *
+   * **This screen has nothing left to ask for before it can search.** While the owner id was typed
+   * into the filter bar, an empty list on open was the only honest state — the component could not
+   * know whose invoices to fetch. v7 moved that scope to the `PropertyOwnerUid` header, so the answer
+   * is already determined the moment the route resolves, and making the user press Search to see it
+   * was asking them to confirm a choice they had not made.
+   *
+   * Every filter is optional and starts unset, so this is the endpoint's own default page: page 1,
+   * 50 rows, every status, deleted rows excluded. Pressing **Search** re-runs it with whatever the
+   * user has since narrowed.
+   */
+  ngOnInit(): void {
+    this.runSearch();
   }
 
   /** The rows on screen, or an empty array before the first search. */
@@ -278,24 +304,22 @@ export class InvoiceListComponent {
     return this.result()?.pageNumber ?? this.page;
   }
 
+  /**
+   * Issues the search.
+   *
+   * **There is nothing to validate before sending any more.** Until backend `02-invoicing.md` v39
+   * this method refused to run without a well-formed owner id typed into the filter bar. That guard
+   * outlived the parameter it guarded: v39 (FR 47) moved the owner scope onto the `PropertyOwnerUid`
+   * header, and v41 (FR 49) deleted the query member entirely, so the typed id had stopped reaching
+   * the decision — the list resolved under whatever `scopeHeadersInterceptor` sent, while the filter
+   * bar named a different owner and the screen read as though that were the one on display. Every
+   * filter this screen offers is now genuinely optional, and an empty filter bar is a valid search.
+   */
   private runSearch(): void {
-    const ownerId = String(this.filters.get('propertyOwnerId')!.value ?? '').trim();
-
-    if (!ownerId) {
-      this.idError.set('Enter a property owner id — the list is always scoped to one owner.');
-      return;
-    }
-
-    if (!GUID_PATTERN.test(ownerId)) {
-      this.idError.set('That is not a valid id. It should look like 8f14e45f-ceea-467e-bd9f-000000000001.');
-      return;
-    }
-
-    this.idError.set(null);
     this.searchError.set(null);
     this.loading.set(true);
 
-    this.invoices.search(this.buildQuery(ownerId)).subscribe({
+    this.invoices.search(this.buildQuery()).subscribe({
       next: (page) => {
         this.result.set(page);
         this.page = page.pageNumber;
@@ -315,7 +339,7 @@ export class InvoiceListComponent {
    * Blank members are left `undefined` rather than sent empty — the service drops those, and an empty
    * `invoiceNumber` on the wire would be an exact-match filter for the empty string.
    */
-  private buildQuery(propertyOwnerId: string): InvoiceSearchQuery {
+  private buildQuery(): InvoiceSearchQuery {
     const value = this.filters.value;
     const blankToUndefined = (raw: unknown): string | undefined => {
       const text = String(raw ?? '').trim();
@@ -323,7 +347,6 @@ export class InvoiceListComponent {
     };
 
     return {
-      propertyOwnerId,
       page: this.page,
       pageSize: Number(value.pageSize) || 50,
       invoiceNumber: blankToUndefined(value.invoiceNumber),
@@ -455,11 +478,10 @@ export class InvoiceListComponent {
             `${agreement.agreementId}.`
         );
 
-        // Only when a search has already run: refreshing before one would fire a request with no
-        // owner scope, which the endpoint rejects.
-        if (this.result()) {
-          this.refresh();
-        }
+        // Unconditional since v8: the list loads itself on open, so there is no "before the first
+        // search" left to guard against — and a standalone one-off fee on an active lease raises its
+        // own invoice, which is precisely the row this refresh exists to bring in.
+        this.refresh();
       },
       error: (err: HttpErrorResponse) => {
         this.submittingCharge.set(false);

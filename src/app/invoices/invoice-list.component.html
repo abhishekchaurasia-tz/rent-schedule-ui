@@ -3,7 +3,8 @@
     <div>
       <h1>Invoices</h1>
       <p class="subtitle">
-        One property owner's invoices, filtered and paged. Click any row to correct it.
+        The invoices of whichever property owner this session is scoped to, filtered and paged.
+        Click any row to correct it.
       </p>
     </div>
     <button type="button" class="primary-btn add-invoice-btn" (click)="openAddInvoice()">
@@ -28,18 +29,6 @@
   }
 
   <form [formGroup]="filters" class="filter-bar">
-    <label class="filter owner">
-      <span>Property Owner ID</span>
-      <input
-        type="text"
-        formControlName="propertyOwnerId"
-        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
-        autocomplete="off"
-        spellcheck="false"
-        (keyup.enter)="search()"
-      />
-    </label>
-
     <label class="filter">
       <span>Invoice number</span>
       <input
@@ -125,10 +114,6 @@
     </span>
   </div>
 
-  @if (idError(); as message) {
-    <p class="inline-error">{{ message }}</p>
-  }
-
   @if (searchError(); as message) {
     <div class="banner error">
       <strong>Could not load invoices.</strong>
@@ -152,7 +137,7 @@
     @if (page.items.length === 0) {
       <div class="banner warn">
         <strong>No invoices matched.</strong>
-        <p>Widen the filters, or check that the owner id is the one you meant.</p>
+        <p>Widen the filters, or check that the scope this session runs under is the one you meant.</p>
       </div>
     } @else {
       <div class="table-scroll">
@@ -324,7 +309,11 @@
       </div>
     }
   } @else if (!loading()) {
-    <p class="idle-hint">Enter a property owner id and search to see their invoices.</p>
+    <!--
+      Since v8 the list loads on open, so reaching this branch means that load failed — the error
+      banner above already says how. The only thing left to offer is the retry.
+    -->
+    <p class="idle-hint">Nothing loaded. Press Search to try again.</p>
   }
 
   <!--

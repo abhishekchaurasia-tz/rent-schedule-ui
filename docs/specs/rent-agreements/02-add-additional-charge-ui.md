@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v7 | 2026-09-17 | **The page gains the split editor the backend has been waiting for, and stops sending the tenant array.** New **requirements 17-22**. The backend shipped a per-tenant split on 2026-09-17 (`06-unified-invoice-generation.md` v105: `payerShares`, renamed to `tenantShares` in v109) and **this page has never sent it** — it still sends `tenantIds` and lets the server divide evenly. So the one thing the owner asked for, *typing what each renter owes*, is unreachable from the only screen that can say who pays. This version adds the editor: ticking renters fills an even division, each row is editable in **money or percentage**, and the rows must total the fee before the save is allowed. It also stops reading the echoed `tenantIds`, which backend v109 removes from the response — **the label naming who a fee landed on breaks the day that ships**, so this release must land first. | [2026-09-17T2200-02-the-owner-types-each-share](../../plans/rent-agreements/2026-09-17T2200-02-the-owner-types-each-share.md) |
 | v6 | 2026-09-10 | **The page could not retry a save, and the one status that most deserves a retry is the one it is most likely to get.** New **requirement 16**; the *"idempotency key is out of reach"* constraint is **withdrawn**. `POST …/additional-charges` has keyed replay off the body's `id` since backend FR 57, and answers `200` rather than `201` when it recognises one — but the panel emits no `id`, so the page had nothing to replay with and could only block its own submit while a request was in flight. The page now mints one (`crypto.randomUUID()`) when the panel does not supply it, which costs nothing and makes the submission replayable, and retries **once** on `409` after 400 ms. The `409` is not hypothetical: it was reproduced against the running service by submitting a fee immediately after activating the lease, while that activation's own post-commit issuing pass still held the agreement. That is a lock that clears in well under a second, and the person on this screen has no way to act on being told about it. **Bounded to one attempt, and to `409` alone** — a `422` or a `404` is the user's to fix and reaches them on the first answer, and an unbounded retry on a write turns one slow request into several. | [2026-09-10T1900-02-replay-a-conflicted-fee](../../plans/rent-agreements/2026-09-10T1900-02-replay-a-conflicted-fee.md) |
 | v5 | 2026-09-09 | **A fee could be saved with money on it that will never be billed, and this page said nothing — the third time this repository has discarded a report the backend sends on a success.** New **requirement 15**. `POST …/additional-charges` answers with the saved charge *plus* `unbilledLines`: the lines this save could bill nowhere, because every invoice they could have gone on has already taken a payment, and a paid invoice is corrected with a credit or a void rather than an edit (backend FR 101 / spec 04 v8 FR 41). The backend's own contract says it *"is never null, and never absent, so a client reads it unconditionally"* and that *"the defect being closed is not the refusal but the silence"* — **and `grep -rn "unbilledLines" src/` returned nothing at all.** So the owner entered a fee, saw it land in the committed list, and had no way to learn that part of its money reaches no invoice. **Rendered inside the charge's own card, not as a page banner**, because this page adds fees one after another: a disclosure keyed to the fee stays true while a "latest save" banner is overwritten by the next fee, which the third test pins. It is styled `warn` and leaves `submitError` untouched — the fee *was* saved, and the line stays on it. **The pattern, now recorded rather than rediscovered:** `blockedRemovals` (spec 01 v19), `skippedCycles` (spec 06 v1) and now `unbilledLines` were all reported on a `200` and all dropped. Two more remain unread — the schedule preview's `warnings` and `blocked` — and are named in the plan as the next slices rather than left to be found a fourth time. | [2026-09-09T1600-02-surface-unbilled-lines](../../plans/rent-agreements/2026-09-09T1600-02-surface-unbilled-lines.md) |
 | v4 | 2026-09-01 | **The fee panel drops Semi-Annual when the lease is month-to-month.** A recurring charge's cadence is resolved against the lease window by the same candidate-date endpoint the lease form uses, and it refuses Semesterly + month-to-month — so the option would have produced a `400` mid-form with nothing on screen to explain it. The panel derives the term from `leaseEndDate` (no end date ⇒ month-to-month), exactly as its candidate-date request already does, and resets a disallowed frequency to Monthly at open time, after any prefill. See spec `01` v18 for the shared rule. | [2026-09-01T1000-month-to-month-frequency-options](../../plans/rent-agreements/2026-09-01T1000-month-to-month-frequency-options.md) |
@@ -98,6 +99,52 @@ charge with its real id.
     **once**, after a short delay, reporting nothing to the user unless the replay also fails. It
     shall not retry any other status, and shall not retry more than once.
 
+17. **v7** — When the owner ticks renters for a fee, the page shall fill a **per-renter split**
+    immediately, dividing the fee **evenly in money** and showing each renter's amount and
+    percentage. Untick a renter and the remaining rows re-divide. This is the state the page has
+    always sent to the server implicitly; v7 makes it visible and editable before the save.
+    **The division is of the money, not the percentage.** `$300` across three renters is
+    `100.00 / 100.00 / 100.00`, never `99.99 / 99.99 / 100.02`. When the money does not divide, the
+    leftover cents go **one each to the first renters in the listed order** — `$100` across three is
+    `33.34 / 33.33 / 33.33`, and across six is four rows of `16.67` and two of `16.66`, never one row
+    carrying all four cents.
+18. **v7** — The owner shall be able to **type over any row**, in either money or percentage, and the
+    page shall record **which unit they typed**. Typing an amount leaves that row's percentage
+    derived; typing a percentage leaves its amount derived. The two are not interchangeable: on a
+    `$300` fee, `200.00` typed and `66.67` typed are different rows, because `66.67%` of `300` is
+    `200.01`. The page sends the typed unit as the backend records it — an amount always, and a
+    percentage only when the owner typed one.
+19. **v7** — The page shall **refuse the save** while the rows do not total the fee exactly, naming
+    the difference — *"the shares total $290.00, the fee is $300.00"* — and offering a **reset to an
+    even split**. The typed rows are **kept**, never silently corrected: an owner who has typed three
+    numbers and got one wrong wants to see all three, not have the page overwrite their work. The
+    backend refuses the same state with `422`, so this is the page refusing before the server does,
+    which requirement 16 already established as this page's habit.
+20. **v7** — The page shall send the split as **`tenantShares`** — one entry per renter carrying
+    `tenantId`, `amount`, and `sharePercent` **only when the owner typed a percentage** — and shall
+    **stop sending `tenantIds`**. A fee shared by everybody sends **no `tenantShares`**, which is the
+    instruction *"every current and future active renter shares this fee"*; it is the same meaning the
+    empty `tenantIds` array carried, read off a different shape.
+21. **v7** — The page shall name who a fee landed on from the **saved split**, not from an echoed
+    tenant array. `chargePayerLabel` reads `charge.tenantIds` today; backend v109 removes that field
+    from the response, so the label would silently empty on the day that ships.
+    **This requirement is why the release order is not negotiable.** The backend milestone that drops
+    `tenantIds` from the response is blocked on this page shipping first, and its plan says so by
+    name.
+
+22. **v7** — The **lease editor** shall carry a charge's saved split forward on every terms save,
+    exactly as it carries `tenantIds` today. It **does not gain a split editor** — that screen has no
+    tenant picker and is not getting one; who pays is authored on this page alone.
+    **Why a pass-through screen needs a requirement of its own.** `PUT …/terms` resubmits the
+    complete charge, and an omitted field is not "unchanged" — it is removed. The lease editor
+    already carries `tenantIds` for this reason and says so in its own comment: *a fee charged to two
+    of four tenants would silently become a fee shared by all four the next time the lease screen
+    saved.* The split inherits that hazard the moment it replaces the array.
+    **The server catches it too, and the two are not redundant.** Backend requirement 182, as revised
+    in its v109, refuses a terms save whose charge already holds shares and submits none. That guard
+    turns this from a silent loss into a `422` — which is a visible failure on a screen the owner was
+    not editing the fee from, so the client fix is what keeps the lease editor usable.
+
 ## Constraints
 
 - **Additive only.** `POST …/additional-charges` cannot edit or remove; the page must not imply it can.
@@ -140,12 +187,15 @@ charge with its real id.
 | `startDate` | `string \| null` | Iff recurring | |
 | `endDate` | `string \| null` | Iff recurring and not open-ended | |
 | `hasNoEndDate` | `boolean` | Yes | |
-| `tenantIds` | `string[]` | No | **Empty = shared by every active tenant** (FR-058) |
+| ~~`tenantIds`~~ | `string[]` | No | **Not sent from v7** (requirement 20). The backend accepts and ignores it for one release, then removes it |
+| `tenantShares` | `TenantShareInput[]` | No | **v7.** One entry per renter: `tenantId`, `amount`, and `sharePercent` only when a percentage was typed. **Absent means every active renter shares the fee** — the meaning the empty array carried. Amounts must total the fee exactly, and any percentages must total `100.00` |
 | `items` | `AdditionalChargeItemCreationRequest[]` | Yes | Non-empty |
 
-Response: `RentAgreementAdditionalChargeResponse` — the persisted charge, which also carries
-`tenantIds` echoed back (backend `RentAgreementAdditionalChargeResponse.TenantIds`); the UI model
-gains that field so the added-charge list can render who pays without re-deriving it.
+Response: `RentAgreementAdditionalChargeResponse` — the persisted charge. **Backend v109 removes
+`tenantIds` from it** (requirement 21), so from v7 the page names who a fee landed on from the
+saved split instead. Until that backend release ships the field is still returned; the page must
+not read it, because a page that reads a field scheduled for removal is a page that breaks on a
+deployment it does not control.
 
 ### Class Diagram
 
