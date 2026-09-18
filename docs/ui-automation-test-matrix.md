@@ -224,7 +224,7 @@ rather than automated.
 | 126 | The **Invoices** page offers the same editor (spec `04` v9), loading the roster alongside the lease so the fee step renders once rather than in two stages; an unknown lease still fails on the first step and the roster read is dropped with it | ✅ |
 | 127 | `204` from `GET …/{id}/tenants` (lease exists, step 2 never saved) → **empty** roster, "Split per Tenant" disabled, fee stays charged to the lease and shared by whoever is added later | ✅ |
 | 128 | Round-trip: a saved fee names who it landed on from the response's `tenantShares`, and the charge response model declares **no** `tenantIds` (requirement 21 — a type-level assertion, since a label test passes while the field is merely unread) | ✅ |
-| 129 | **Requirement 22, the pass-through half.** A terms save on the lease editor carries a charge's saved split forward untouched — load a lease whose fee is split `200 / 50 / 50`, change something unrelated, assert all three shares are resubmitted. **No test exists for this today**, in any layer; the server refuses a dropped split with `422`, so the failure is a visible one on a screen the owner was not editing the fee from | ✅ — **gap** |
+| 129 | **Requirement 22, the pass-through half.** A terms save on the lease editor carries a charge's saved split forward untouched — load a lease whose fee is split `200 / 50 / 50`, change something unrelated, assert all three shares are resubmitted. The server refuses a dropped split with `422`, so the failure is a visible one on a screen the owner was not editing the fee from. **Unit-covered since 2026-09-18** (`rent-agreement.models.spec.ts`), after being recorded here as a gap; still no Playwright scenario | ✅ |
 
 ---
 

@@ -356,10 +356,14 @@
           <p class="inline-error">{{ message }}</p>
         }
 
+        <!--
+          This used to send the reader elsewhere: "the fee is charged to every active tenant... to
+          charge only some of them, use the Add Additional Fee screen". Spec 04 v9 removed the reason —
+          the fee panel this step opens carries the same split editor — so the pointer goes with it.
+        -->
         <p class="agreement-panel-note">
-          The fee is charged to <strong>every active tenant</strong> on the lease. To charge only some
-          of them, use the <a routerLink="/rent-agreements/additional-charges">Add Additional Fee</a>
-          screen, which lists the lease's tenants to pick from.
+          The lease's renters load with it, so the next step can charge the fee to
+          <strong>all of them or a chosen few</strong>, and say what each one owes.
         </p>
       </div>
 
