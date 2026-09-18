@@ -906,9 +906,11 @@ describe('AdditionalChargePanelComponent', () => {
       completeTheFee();
       component.create();
 
+      // `alreadyPaid` rides on every share, at 0 here because the fee records none — the server is
+      // left no division of its own to make.
       expect(emitted!.tenantShares).toEqual([
-        { tenantId: tenantA, amount: 150 },
-        { tenantId: tenantB, amount: 150 }
+        { tenantId: tenantA, amount: 150, alreadyPaid: 0 },
+        { tenantId: tenantB, amount: 150, alreadyPaid: 0 }
       ]);
       expect(emitted!.tenantIds).withContext('the retired tenant array was sent').toBeUndefined();
     });

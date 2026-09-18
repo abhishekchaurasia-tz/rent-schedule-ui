@@ -59,8 +59,9 @@
     vertical-align: middle;
   }
 
-  .owes-col {
+  .num-col {
     text-align: right;
+    white-space: nowrap;
   }
 
   tfoot td {
@@ -69,6 +70,10 @@
   }
 
   tfoot .mismatched .owes-amount {
+    color: #b3261e;
+  }
+
+  tfoot .mismatched .cell-derived {
     color: #b3261e;
   }
 }
@@ -137,9 +142,9 @@
   }
 }
 
-.owes-input {
+.cell-input {
   display: inline-flex;
-  gap: 0.25rem;
+  gap: 0.2rem;
 }
 
 .share-input,
@@ -178,18 +183,30 @@
 
 .owes-amount {
   font-weight: 600;
+
+  /* An overpaid renter is a real state the charge itself allows, not an error. */
+  &.overpaid {
+    color: #8a6100;
+  }
 }
 
-.owes-derived,
+.cell-derived,
 .row-error {
   display: block;
   font-size: 0.76rem;
 }
 
-.owes-derived {
+.cell-derived {
   color: #888;
 }
 
 .row-error {
   color: #b3261e;
+}
+
+/* The id beside the name: two stand-in people can draw the same name, and these rows carry money. */
+.tenant-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #9aa0ab;
 }

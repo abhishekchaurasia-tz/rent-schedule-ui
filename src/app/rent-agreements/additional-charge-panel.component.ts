@@ -604,6 +604,16 @@ export class AdditionalChargePanelComponent implements OnInit {
     return this.items.controls.reduce((sum, control) => sum + Number(control.get('amount')!.value || 0), 0);
   }
 
+  /**
+   * What the charge records as already paid, for the split editor to divide.
+   *
+   * Read through a getter rather than passed as a raw control value so the editor follows the box as
+   * it is typed into — the same reason {@link subAmount} is one.
+   */
+  get alreadyPaidTotal(): number {
+    return Number(this.form.get('alreadyPaid')!.value || 0);
+  }
+
   get balanceDue(): number {
     return this.subAmount - Number(this.form.get('alreadyPaid')!.value || 0);
   }

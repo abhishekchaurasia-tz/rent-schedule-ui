@@ -50,6 +50,19 @@ describe('TenantSplitEditorComponent', () => {
     fixture.detectChanges();
   }
 
+  /** The two boxes on a rendered row: the fee share, then what has been paid of it. */
+  function boxes(index: number): { amount: HTMLInputElement; paid: HTMLInputElement } {
+    const inputs = rendered()[index].querySelectorAll('.share-input');
+    return { amount: inputs[0], paid: inputs[1] };
+  }
+
+  /** Types into a box the way a person does, through the DOM. */
+  function typeInto(box: HTMLInputElement, text: string): void {
+    box.value = text;
+    box.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
   function rowFor(tenantId: string) {
     return component.rows().find((row) => row.tenantId === tenantId)!;
   }
@@ -115,7 +128,7 @@ describe('TenantSplitEditorComponent', () => {
 
     expect(rowFor(tenantA).authoredUnit).toBe('amount');
     expect(rowFor(tenantA).amount).toBe(120);
-    expect(rendered()[0].querySelector('.owes-derived').textContent).toContain('40.00%');
+    expect(rendered()[0].querySelector('.cell-derived').textContent).toContain('40.00%');
     expect(rendered()[0].textContent).toContain('Typed');
     expect(rendered()[1].textContent).toContain('Even');
   });
@@ -224,5 +237,124 @@ describe('TenantSplitEditorComponent', () => {
     fixture.detectChanges();
 
     expect(rendered()[0].textContent).toContain('group invoice');
+  });
+  describe('the paid box', () => {
+    it('gives each row its own amount box and paid box', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      expect(rendered()[0].querySelectorAll('.share-input').length).toBe(2);
+      expect(boxes(0).amount.value).toBe('150.00');
+      expect(boxes(0).paid.value).toBe('50.00');
+    });
+
+    it('divides what is already paid as soon as the figure is entered', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      expect(component.rows().map((row) => row.paidAmount)).toEqual([0, 0, 0]);
+
+      // The owner types the charge-level Already Paid box up in the panel; the split follows.
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      expect(component.rows().map((row) => row.paidAmount)).toEqual([33.34, 33.33, 33.33]);
+      expect(component.paidTotal()).toBe(100);
+    });
+
+    it('derives Owes from the two boxes, and never takes it as input', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).paid, '40');
+
+      expect(component.rows().map((row) => row.paidAmount)).toEqual([40, 60]);
+      expect(component.rows().map((row) => row.owes)).toEqual([110, 90]);
+      expect(component.owesTotal()).toBe(200);
+
+      // Three columns, two of them boxes. Owes is read-only by construction.
+      expect(rendered()[0].querySelectorAll('input[type="text"]').length).toBe(2);
+    });
+
+    it('keeps the amount box and the paid box independent', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).amount, '200');
+      typeInto(boxes(1).paid, '80');
+
+      // Fixing what Alice owes must not disturb what Bob has paid, and the reverse.
+      expect(component.rows().map((row) => row.amount)).toEqual([200, 100]);
+      expect(component.rows().map((row) => row.paidAmount)).toEqual([20, 80]);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('refuses the split when the paid amounts do not add up, naming that column', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).paid, '10');
+      typeInto(boxes(1).paid, '10');
+
+      // The fee column is fine, so the message has to name the one that is not.
+      expect(component.blocker()).toBe(
+        'The paid amounts total $20.00, already paid is $100.00 — $80.00 short.'
+      );
+      expect(fixture.nativeElement.textContent).toContain('already paid is $100.00');
+    });
+
+    it('reports the fee column first when both are wrong', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).amount, '10');
+      typeInto(boxes(1).amount, '10');
+      typeInto(boxes(0).paid, '1');
+      typeInto(boxes(1).paid, '1');
+
+      // Two messages at once names neither clearly, and an owner with the fee wrong is usually about
+      // to change the paid figures anyway.
+      expect(component.blocker()).toContain('the fee is $300.00');
+    });
+
+    it('resets a paid box without touching the amount beside it', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 100);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).amount, '200');
+      typeInto(boxes(0).paid, '75');
+
+      const resets = rendered()[0].querySelectorAll('.row-reset');
+      resets[1].click();
+      fixture.detectChanges();
+
+      expect(rowFor(tenantA).paidAmount).toBe(50);
+      expect(rowFor(tenantA).amount).withContext('the amount box was reset too').toBe(200);
+    });
+
+    it('shows a negative Owes for an overpaid renter rather than refusing it', () => {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('alreadyPaid', 400);
+      fixture.detectChanges();
+
+      typeInto(boxes(0).paid, '300');
+
+      // The charge itself allows alreadyPaid to exceed its own total, so a stricter rule per renter
+      // would be one this editor invented. It is shown, not blocked.
+      expect(rowFor(tenantA).owes).toBe(-150);
+      expect(rendered()[0].querySelector('.overpaid')).not.toBeNull();
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('offers no unit selector on the paid box, because the wire carries no paid percentage', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      // One selector per row, on the amount box alone.
+      expect(rendered()[0].querySelectorAll('.share-unit').length).toBe(1);
+    });
   });
 });

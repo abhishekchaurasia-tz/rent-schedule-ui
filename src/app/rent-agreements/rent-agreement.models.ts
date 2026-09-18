@@ -143,11 +143,20 @@ export interface AdditionalChargeCreationRequest {
    *
    * `sharePercent` is present **only** on a row the owner typed as a percentage. Its absence records
    * that they typed an amount, and the two are not interchangeable.
+   *
+   * `alreadyPaid` is each renter's slice of the charge's own already-paid figure.
+   * **`AdditionalChargeTenantShareInput` has accepted it since the split shipped** — confirmed against
+   * the service's OpenAPI document on 2026-09-18 — and nothing here sent it, because spec `02`'s
+   * contract table listed only the three fields above. The field existed on the wire, in the response,
+   * and nowhere in between. It is sent on every share of a split now, even as `0`: the charge carries
+   * one already-paid figure, and a server left to divide it could divide it differently, which is the
+   * hazard requirement 17 exists for.
    */
   tenantShares?: ReadonlyArray<{
     tenantId: string;
     amount: number;
     sharePercent?: number;
+    alreadyPaid?: number;
   }>;
   items: AdditionalChargeItemCreationRequest[];
 }

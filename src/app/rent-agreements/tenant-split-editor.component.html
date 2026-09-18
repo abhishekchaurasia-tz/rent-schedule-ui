@@ -43,7 +43,9 @@
         <tr>
           <th scope="col">Tenants</th>
           <th scope="col">Shares</th>
-          <th scope="col" class="owes-col">Owes</th>
+          <th scope="col" class="num-col">Amount</th>
+          <th scope="col" class="num-col">Paid</th>
+          <th scope="col" class="num-col">Owes</th>
         </tr>
       </thead>
       <tbody>
@@ -62,7 +64,9 @@
               />
               <span class="avatar" aria-hidden="true">{{ row.initials }}</span>
               <span class="split-tenant-main">
-                <span class="tenant-name">{{ row.name }}</span>
+                <span class="tenant-name">
+                  {{ row.name }} <code class="tenant-id">{{ row.shortId }}</code>
+                </span>
                 <span class="muted">
                   @if (!row.selected) {
                     Not charged this fee
@@ -97,22 +101,22 @@
                   }
                 </span>
               </td>
-              <td class="owes-col">
+              <td class="num-col">
                 <!--
                   One box and a unit, not a box per unit. Requirement 18 turns on *which* unit the
                   owner typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee,
                   because 66.67% of 300 is 200.01 — so the unit has to be a choice on the record rather
-                  than a guess about which of two boxes was touched last. The other figure is shown
-                  beneath it, derived and never typed into.
+                  than a guess about which of two boxes was touched last. The counterpart figure is
+                  shown beneath it, derived and never typed into.
                 -->
-                <span class="owes-input">
+                <span class="cell-input">
                   <input
                     type="text"
                     inputmode="decimal"
                     class="share-input"
                     [class.invalid]="share.error"
                     [value]="share.text"
-                    [attr.aria-label]="'Share for ' + share.name"
+                    [attr.aria-label]="'Share of the fee for ' + share.name"
                     (input)="typeShare(share.tenantId, $any($event.target).value)"
                   />
                   <select
@@ -129,13 +133,13 @@
                     class="row-reset"
                     (click)="resetShareRow(share.tenantId)"
                     [disabled]="share.authoredUnit === 'even'"
-                    title="Hand this row back to the even split"
-                    aria-label="Hand this row back to the even split"
+                    title="Hand this amount back to the even split"
+                    aria-label="Hand this amount back to the even split"
                   >
                     &#8635;
                   </button>
                 </span>
-                <span class="owes-derived">
+                <span class="cell-derived">
                   @if (share.authoredUnit === 'percent') {
                     {{ share.amount | currency }}
                   } @else {
@@ -146,19 +150,74 @@
                   <span class="row-error">{{ message }}</span>
                 }
               </td>
+
+              <td class="num-col">
+                <!--
+                  Their slice of what has already been paid on this fee. Money only: the wire carries
+                  `alreadyPaid` per share and no percentage of it, so there is no unit to choose. It
+                  divides by the same rule as the amount beside it, and the rows nobody has touched
+                  absorb the rest — saying one renter has paid $100 of a $150 deposit leaves $50 to the
+                  others rather than re-dividing all three.
+                -->
+                <span class="cell-input">
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    class="share-input"
+                    [class.invalid]="share.paidError"
+                    [value]="share.paidText"
+                    [attr.aria-label]="'Amount paid by ' + share.name"
+                    (input)="typePaid(share.tenantId, $any($event.target).value)"
+                  />
+                  <button
+                    type="button"
+                    class="row-reset"
+                    (click)="resetPaidRow(share.tenantId)"
+                    [disabled]="!share.paidAuthored"
+                    title="Hand this paid amount back to the even split"
+                    aria-label="Hand this paid amount back to the even split"
+                  >
+                    &#8635;
+                  </button>
+                </span>
+                @if (share.paidError; as message) {
+                  <span class="row-error">{{ message }}</span>
+                }
+              </td>
+
+              <td class="num-col">
+                <!--
+                  Derived, never typed: what they owe is what they were charged less what they have
+                  paid of it. Negative when a renter has overpaid, which is shown rather than clamped —
+                  the charge itself allows `alreadyPaid` to exceed its own total, so refusing it per
+                  renter would be a rule this screen invented.
+                -->
+                <span class="owes-amount" [class.overpaid]="share.owes < 0">
+                  {{ share.owes | currency }}
+                </span>
+              </td>
             } @else {
               <td></td>
-              <td class="owes-col muted">&mdash;</td>
+              <td class="num-col muted">&mdash;</td>
+              <td class="num-col muted">&mdash;</td>
+              <td class="num-col muted">&mdash;</td>
             }
           </tr>
         }
       </tbody>
       <tfoot>
-        <tr [class.mismatched]="blocker() !== null">
+        <tr>
           <td colspan="2">Total</td>
-          <td class="owes-col">
+          <td class="num-col" [class.mismatched]="splitTotal() !== feeTotal()">
             <span class="owes-amount">{{ splitTotal() | currency }}</span>
-            <span class="owes-derived">of {{ feeTotal() | currency }}</span>
+            <span class="cell-derived">of {{ feeTotal() | currency }}</span>
+          </td>
+          <td class="num-col" [class.mismatched]="paidTotal() !== alreadyPaid()">
+            <span class="owes-amount">{{ paidTotal() | currency }}</span>
+            <span class="cell-derived">of {{ alreadyPaid() | currency }}</span>
+          </td>
+          <td class="num-col">
+            <span class="owes-amount">{{ owesTotal() | currency }}</span>
           </td>
         </tr>
       </tfoot>
@@ -176,10 +235,11 @@
       </div>
     } @else {
       <p class="split-note">
-        <strong>Divided evenly, in money — type over any row to change it.</strong>
-        Leftover cents go one each to the renters at the top of the list, so the shares total the fee
-        exactly rather than leaving one renter carrying the rounding. A row you type is left alone from
-        then on: ticking another renter re-divides only the rows you have not touched.
+        <strong>Both columns are divided evenly, in money — type over any box to change it.</strong>
+        Leftover cents go one each to the renters at the top of the list, so each column totals its own
+        figure exactly rather than leaving one renter carrying the rounding. A box you type is left
+        alone from then on, and the boxes you have not touched absorb the difference.
+        <em>Owes</em> is what is left after what they have paid, and is never typed into.
       </p>
     }
   }

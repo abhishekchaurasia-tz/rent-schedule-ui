@@ -322,6 +322,7 @@
       <app-tenant-split-editor
         [tenants]="roster"
         [feeTotal]="subAmount"
+        [alreadyPaid]="alreadyPaidTotal"
         [isGroupInvoice]="isGroupInvoice"
         (splitChange)="onSplitChange($event)"
       />

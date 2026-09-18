@@ -57,6 +57,42 @@ export interface TenantShareInput {
   amount: number;
   /** Present **only** when the owner typed a percentage; its absence records that they typed money. */
   sharePercent?: number;
+  /**
+   * That renter's slice of what has already been paid on this fee.
+   *
+   * **Accepted by `AdditionalChargeTenantShareInput` since the split shipped**, and nothing here sent
+   * it until the owner asked for a box to type it in. Spec `02`'s contract table listed only
+   * `tenantId`, `amount` and `sharePercent`, so the field existed on the wire, in the response, and
+   * nowhere in between.
+   *
+   * **Always sent with a split, even as `0`.** The charge carries one `alreadyPaid` figure and the
+   * server would otherwise divide it itself — the same hazard requirement 17 exists for, one division
+   * on screen and a different one stored. Dividing it here and saying so leaves nothing to infer.
+   */
+  alreadyPaid?: number;
+}
+
+/** One renter's row of the split table: their slice of the fee, of what is paid, and what is left. */
+export interface SplitTableRow extends TenantShareRow {
+  /** Their slice of the charge's `alreadyPaid`. */
+  paidAmount: number;
+  /** What the paid box shows — their own text on a typed row, the divided figure otherwise. */
+  paidText: string;
+  /** Whether the owner typed this row's paid amount, so it is left out of re-division. */
+  paidAuthored: boolean;
+  paidError: string | null;
+  /** Their share of the fee less what they have paid of it. Negative when they have overpaid. */
+  owes: number;
+}
+
+/** How {@link splitBlocker} names the thing that does not add up. */
+export interface SplitSubject {
+  /** Plural, sentence-initial — "The shares". */
+  shares: string;
+  /** The figure they must reach — "the fee". */
+  total: string;
+  /** Singular, for the unreadable-row message — "share". */
+  item: string;
 }
 
 /**
@@ -131,9 +167,9 @@ export function readTypedShare(
 /**
  * Builds the split table: typed rows as typed, the rest sharing what is left of the fee.
  *
- * **Returns no rows when there is nothing to divide** — no renters, or no fee yet. Both are complete
- * states rather than errors: an empty selection is the instruction *"every active renter shares this
- * fee"*, and a fee with no total is simply not authored yet.
+ * **Returns no rows only when there is nobody to divide between**, which is the instruction *"every
+ * active renter shares this fee"*. A total of zero still produces rows, every one of them zero: the
+ * paid column divides the charge's `alreadyPaid`, and that is usually nothing at all.
  *
  * **The untouched rows never go below zero.** Typing `$400` onto one row of a `$300` fee leaves the
  * others a shortfall to share, and a row reading `-$50.00` would answer a question nobody asked. The
@@ -150,11 +186,11 @@ export function buildSplitRows(
   total: number,
   overrides: ReadonlyMap<string, TenantShareOverride>
 ): TenantShareRow[] {
-  if (tenants.length === 0 || total <= 0) {
+  if (tenants.length === 0) {
     return [];
   }
 
-  const totalCents = Math.round(total * 100);
+  const totalCents = Math.max(0, Math.round(total * 100));
 
   const typed = new Map(
     tenants
@@ -184,7 +220,9 @@ export function buildSplitRows(
       tenantId: tenant.tenantId,
       name: tenant.name,
       amount,
-      sharePercent: Math.round((cents / totalCents) * 10000) / 100,
+      // Zero divided among renters is zero each, not NaN. Reachable from the paid column, which
+      // starts at the charge's `alreadyPaid` and that is usually 0.
+      sharePercent: totalCents === 0 ? 0 : Math.round((cents / totalCents) * 10000) / 100,
       carriesLeftoverCent: !share && amount !== smallestEven,
       authoredUnit: share ? share.unit : 'even',
       // A typed row echoes the owner back verbatim; a divided one shows the figure it was given.
@@ -211,9 +249,14 @@ export function buildSplitRows(
  * No rows means a fee shared by everybody, which has nothing to check — the server divides that one.
  *
  * @param rows The split as {@link buildSplitRows} produced it.
- * @param total The fee the rows have to add up to.
+ * @param total The figure the rows have to add up to.
+ * @param subject How to name the rows and the figure — the fee by default, or what is already paid.
  */
-export function splitBlocker(rows: readonly TenantShareRow[], total: number): string | null {
+export function splitBlocker(
+  rows: readonly TenantShareRow[],
+  total: number,
+  subject: SplitSubject = { shares: 'The shares', total: 'the fee', item: 'share' }
+): string | null {
   if (rows.length === 0) {
     return null;
   }
@@ -221,8 +264,8 @@ export function splitBlocker(rows: readonly TenantShareRow[], total: number): st
   const unreadable = rows.filter((row) => row.error !== null).length;
   if (unreadable > 0) {
     return unreadable === 1
-      ? 'One share cannot be read. Correct it to save this fee.'
-      : `${unreadable} shares cannot be read. Correct them to save this fee.`;
+      ? `One ${subject.item} cannot be read. Correct it to save this fee.`
+      : `${unreadable} ${subject.item}s cannot be read. Correct them to save this fee.`;
   }
 
   const splitCents = rows.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
@@ -236,7 +279,55 @@ export function splitBlocker(rows: readonly TenantShareRow[], total: number): st
   const gap = (Math.abs(feeCents - splitCents) / 100).toFixed(2);
   const direction = splitCents > feeCents ? 'over' : 'short';
 
-  return `The shares total $${shares}, the fee is $${fee} — $${gap} ${direction}.`;
+  return `${subject.shares} total $${shares}, ${subject.total} is $${fee} — $${gap} ${direction}.`;
+}
+
+/** How {@link splitBlocker} names the paid column. */
+export const PAID_SUBJECT: SplitSubject = {
+  shares: 'The paid amounts',
+  total: 'already paid',
+  item: 'paid amount'
+};
+
+/**
+ * Builds the whole split table: each renter's slice of the fee, of what is already paid, and what
+ * that leaves them owing.
+ *
+ * **Two independent divisions, one rule.** The fee and the already-paid figure are divided by the same
+ * {@link divideEvenly} — money, to the cent, leftover cents one each to the first rows — and each has
+ * its own typed rows, so fixing what one renter owes does not disturb what another has paid.
+ *
+ * @param tenants The renters the split covers, in roster order.
+ * @param feeTotal The fee being divided.
+ * @param alreadyPaid The charge's already-paid figure, divided the same way.
+ * @param amountOverrides Rows whose fee share the owner typed.
+ * @param paidOverrides Rows whose paid amount the owner typed.
+ */
+export function buildSplitTable(
+  tenants: readonly { tenantId: string; name: string }[],
+  feeTotal: number,
+  alreadyPaid: number,
+  amountOverrides: ReadonlyMap<string, TenantShareOverride>,
+  paidOverrides: ReadonlyMap<string, TenantShareOverride>
+): SplitTableRow[] {
+  const feeRows = buildSplitRows(tenants, feeTotal, amountOverrides);
+  const paidRows = buildSplitRows(tenants, alreadyPaid, paidOverrides);
+
+  return feeRows.map((row, index) => {
+    const paid = paidRows[index];
+
+    return {
+      ...row,
+      paidAmount: paid.amount,
+      paidText: paid.text,
+      paidAuthored: paid.authoredUnit !== 'even',
+      paidError: paid.error,
+      // Negative when a renter has paid more of the fee than they owe of it. Shown rather than
+      // clamped, and not refused here: the charge itself allows `alreadyPaid` to exceed its own
+      // total, so a stricter rule per renter would be one this screen invented.
+      owes: Math.round((row.amount - paid.amount) * 100) / 100
+    };
+  });
 }
 
 /**
@@ -251,7 +342,7 @@ export function splitBlocker(rows: readonly TenantShareRow[], total: number): st
  * @returns The `tenantShares` array, or `undefined` when the fee is shared by every renter.
  */
 export function toTenantShareInputs(
-  rows: readonly TenantShareRow[]
+  rows: readonly SplitTableRow[]
 ): TenantShareInput[] | undefined {
   if (rows.length === 0) {
     return undefined;
@@ -260,6 +351,7 @@ export function toTenantShareInputs(
   return rows.map((row) => ({
     tenantId: row.tenantId,
     amount: row.amount,
-    ...(row.authoredUnit === 'percent' ? { sharePercent: row.sharePercent } : {})
+    ...(row.authoredUnit === 'percent' ? { sharePercent: row.sharePercent } : {}),
+    alreadyPaid: row.paidAmount
   }));
 }

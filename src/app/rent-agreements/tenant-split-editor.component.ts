@@ -4,11 +4,12 @@ import { Component, computed, effect, input, output, signal } from '@angular/cor
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { AgreementTenantShareResponse } from './rent-agreement.models';
 import {
+  PAID_SUBJECT,
   ShareUnit,
+  SplitTableRow,
   TenantShareInput,
   TenantShareOverride,
-  TenantShareRow,
-  buildSplitRows,
+  buildSplitTable,
   splitBlocker,
   toTenantShareInputs
 } from './tenant-split.util';
@@ -54,6 +55,15 @@ export class TenantSplitEditorComponent {
   /** The fee being divided, summed from the panel's item amounts. */
   readonly feeTotal = input<number>(0);
 
+  /**
+   * What has already been paid on this fee, divided the same way.
+   *
+   * The charge carries one figure for this and the server would otherwise divide it itself, which is
+   * the hazard requirement 17 exists for — one division shown, a different one stored. Dividing it
+   * here and sending the result leaves nothing to infer.
+   */
+  readonly alreadyPaid = input<number>(0);
+
   /** Whether the lease bills on one shared invoice — wording only, never sent. */
   readonly isGroupInvoice = input<boolean>(false);
 
@@ -67,19 +77,32 @@ export class TenantSplitEditorComponent {
   private readonly selectedTenantIds = signal<ReadonlySet<string>>(new Set<string>());
 
   /**
-   * The rows the owner has typed over, keyed by renter (requirement 18).
+   * The fee shares the owner has typed over, keyed by renter (requirement 18).
    *
    * **A typed row is not re-divided when the selection changes** — only untouched rows absorb it. An
    * owner who has fixed one number does not expect the page to undo that because they ticked somebody
    * else, and this map is what remembers which numbers were theirs.
    */
-  private readonly shareOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
+  private readonly amountOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
+
+  /**
+   * The paid amounts the owner has typed over — a separate map, deliberately.
+   *
+   * The two columns divide two different figures, so fixing what one renter owes must not disturb what
+   * another has paid. One map keyed by renter could not tell the two apart.
+   *
+   * **Money only.** There is no percentage of an already-paid figure on the wire — the share carries
+   * `alreadyPaid`, never an `alreadyPaidPercent` — so this column has no unit to choose.
+   */
+  private readonly paidOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
   /** Whether the fee is shared by everybody — the state an empty selection encodes. */
   readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
 
   /** Whether any row has been typed over — what the "reset to even" control is offered for. */
-  readonly hasTypedShares = computed(() => this.shareOverrides().size > 0);
+  readonly hasTypedShares = computed(
+    () => this.amountOverrides().size > 0 || this.paidOverrides().size > 0
+  );
 
   /** The ticked renters in roster order, named. */
   private readonly selectedTenants = computed(() =>
@@ -88,9 +111,15 @@ export class TenantSplitEditorComponent {
       .map((tenant) => ({ tenantId: tenant.tenantId, name: this.tenantName(tenant.tenantId) }))
   );
 
-  /** The split table (requirements 17 and 18). */
-  readonly rows = computed<TenantShareRow[]>(() =>
-    buildSplitRows(this.selectedTenants(), this.feeTotal(), this.shareOverrides())
+  /** The split table: each renter's slice of the fee, of what is paid, and what that leaves owing. */
+  readonly rows = computed<SplitTableRow[]>(() =>
+    buildSplitTable(
+      this.selectedTenants(),
+      this.feeTotal(),
+      this.alreadyPaid(),
+      this.amountOverrides(),
+      this.paidOverrides()
+    )
   );
 
   /**
@@ -108,17 +137,51 @@ export class TenantSplitEditorComponent {
       name: this.tenantName(tenant.tenantId),
       initials: this.tenantInitials(tenant.tenantId),
       selected: this.selectedTenantIds().has(tenant.tenantId),
+      // The stand-in names are drawn from 16 x 16 combinations, so two renters on one lease can read
+      // as the same person -- observed on a three-way split, two rows both called "Bilal Mensah".
+      // The old roster list showed the id beside the name for exactly this reason; the split table
+      // needs it more, because its rows carry different money.
+      shortId: tenant.tenantId.slice(0, 8),
       share: byTenant.get(tenant.tenantId) ?? null
     }));
   });
 
-  /** What the rows currently add up to. */
+  /** What the fee shares currently add up to. */
   readonly splitTotal = computed(
     () => this.rows().reduce((sum, row) => sum + Math.round(row.amount * 100), 0) / 100
   );
 
-  /** Why the split cannot be saved, or `null` (requirement 19). */
-  readonly blocker = computed(() => splitBlocker(this.rows(), this.feeTotal()));
+  /** What the paid amounts currently add up to. */
+  readonly paidTotal = computed(
+    () => this.rows().reduce((sum, row) => sum + Math.round(row.paidAmount * 100), 0) / 100
+  );
+
+  /** What the renters still owe between them. */
+  readonly owesTotal = computed(
+    () => Math.round((this.splitTotal() - this.paidTotal()) * 100) / 100
+  );
+
+  /**
+   * Why the split cannot be saved, or `null` (requirement 19).
+   *
+   * **Two columns, two things that have to add up**, and the fee is reported first: an owner who has
+   * the fee wrong is usually about to change the paid figures anyway, and two messages at once names
+   * neither clearly.
+   */
+  readonly blocker = computed(() => {
+    const feeRows = this.rows();
+    const fee = splitBlocker(feeRows, this.feeTotal());
+    if (fee !== null) {
+      return fee;
+    }
+
+    const paidRows = feeRows.map((row) => ({
+      ...row,
+      amount: row.paidAmount,
+      error: row.paidError
+    }));
+    return splitBlocker(paidRows, this.alreadyPaid(), PAID_SUBJECT);
+  });
 
   constructor() {
     // One effect rather than an emit inside every handler: the split is a function of the selection,
@@ -172,7 +235,7 @@ export class TenantSplitEditorComponent {
   setSplitMode(mode: 'shared' | 'split'): void {
     if (mode === 'shared') {
       this.selectedTenantIds.set(new Set<string>());
-      this.shareOverrides.set(new Map());
+      this.resetSplit();
       return;
     }
     if (this.selectedTenantIds().size === 0) {
@@ -187,9 +250,24 @@ export class TenantSplitEditorComponent {
    * cannot read stays on screen to be corrected rather than being replaced by a zero.
    */
   typeShare(tenantId: string, text: string): void {
-    this.shareOverrides.update((overrides) => {
+    this.amountOverrides.update((overrides) => {
       const next = new Map(overrides);
       next.set(tenantId, { unit: overrides.get(tenantId)?.unit ?? 'amount', text });
+      return next;
+    });
+  }
+
+  /**
+   * Records what the owner typed into a row's **paid** box.
+   *
+   * Same rule as the fee share, on the other figure: the rows nobody has touched share what is left of
+   * the charge's `alreadyPaid`, so saying one renter has paid $100 of a $150 deposit leaves the rest to
+   * the others rather than re-dividing everything.
+   */
+  typePaid(tenantId: string, text: string): void {
+    this.paidOverrides.update((overrides) => {
+      const next = new Map(overrides);
+      next.set(tenantId, { unit: 'amount', text });
       return next;
     });
   }
@@ -217,16 +295,25 @@ export class TenantSplitEditorComponent {
           ? row.sharePercent.toFixed(2)
           : row.amount.toFixed(2);
 
-    this.shareOverrides.update((overrides) => {
+    this.amountOverrides.update((overrides) => {
       const next = new Map(overrides);
       next.set(tenantId, { unit, text });
       return next;
     });
   }
 
-  /** Hands one row back to the even division, leaving every other typed row alone. */
+  /** Hands one row's fee share back to the even division, leaving every other typed row alone. */
   resetShareRow(tenantId: string): void {
-    this.shareOverrides.update((overrides) => {
+    this.amountOverrides.update((overrides) => {
+      const next = new Map(overrides);
+      next.delete(tenantId);
+      return next;
+    });
+  }
+
+  /** Hands one row's paid amount back to the even division, leaving its fee share as typed. */
+  resetPaidRow(tenantId: string): void {
+    this.paidOverrides.update((overrides) => {
       const next = new Map(overrides);
       next.delete(tenantId);
       return next;
@@ -240,6 +327,7 @@ export class TenantSplitEditorComponent {
    * way back, not something the page does on their behalf when it dislikes the numbers.
    */
   resetSplit(): void {
-    this.shareOverrides.set(new Map());
+    this.amountOverrides.set(new Map());
+    this.paidOverrides.set(new Map());
   }
 }
