@@ -208,15 +208,24 @@ export interface PagedResult<T> {
 /**
  * The criteria `GET /api/v1/invoices` accepts.
  *
- * **Only `propertyOwnerId` is required**, and that is a security control rather than a convenience: no
- * authentication scheme is registered on the API, so an unscoped list would page through every owner's
- * billing data. "All invoices" means all of one owner's.
+ * **Every member is optional, and the owner scope is not among them** — backend `02-invoicing.md`
+ * v39 (FR 47) moved it to the `PropertyOwnerUid` header, v40 (FR 48) made it unbindable, and v41
+ * (FR 49) deleted the property from `SearchInvoicesQuery` and from the published OpenAPI document.
+ * A `propertyOwnerId` still sent in the query string is discarded (FR 47b); the header alone decides
+ * whose invoices come back, and this application supplies it centrally through
+ * `scopeHeadersInterceptor`. "All invoices" still means all of one owner's — the caller just no
+ * longer names that owner here.
  *
- * Every other member is omitted from the query string when absent — an empty `invoiceNumber` sent as
+ * **The security claim this comment used to make is withdrawn, not relocated.** It said requiring an
+ * owner id stopped a caller enumerating another owner's billing data; backend v39's FR 30 correction
+ * states plainly that the rule *"requires the caller to name **an** owner, not to **be** that owner"*,
+ * so enumeration cost one request per owner rather than being prevented. Nothing on this endpoint is
+ * authenticated yet, and a header is as caller-supplied as a query string.
+ *
+ * Every member is omitted from the query string when absent — an empty `invoiceNumber` sent as
  * `""` would be an exact-match filter for the empty string, not the absence of a filter.
  */
 export interface InvoiceSearchQuery {
-  propertyOwnerId: string;
   page?: number;
   /** Defaults to 50 server-side; the endpoint rejects anything above 200. */
   pageSize?: number;

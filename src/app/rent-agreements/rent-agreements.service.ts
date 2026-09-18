@@ -126,12 +126,17 @@ export class RentAgreementsService {
    * has added.
    *
    * The body is the charge itself, not a wrapper around it: the backend reads the charge from the
-   * JSON root. `tenantIds` rides along on it, and an empty array means every active tenant shares the
-   * fee.
+   * JSON root. **Who pays rides along on it as `tenantShares`** — one entry per renter carrying their
+   * amount, the percentage when they typed one, and their slice of what is already paid. **An absent
+   * `tenantShares` means every active renter shares the fee.** This used to read *"`tenantIds` rides
+   * along on it, and an empty array means every active tenant shares the fee"*, which stopped being
+   * true at requirement 20: that array is not sent at all now.
    *
    * The response is the persisted charge with its real ids — `201` when created, `200` when the
-   * request replayed an `id` the lease already held. Both resolve here identically, because the body
-   * is the same charge either way and this app never sends an `id` to replay with.
+   * request replayed an `id` the lease already held. Both resolve here identically, because the body is
+   * the same charge either way. This used to end *"and this app never sends an `id` to replay with"*,
+   * which requirement 16 falsified: the page mints one on every submission, which is what makes its
+   * single `409` retry safe.
    *
    * It also carries `unbilledLines` — the lines this save could bill nowhere. A success, so it is
    * reported rather than thrown; see {@link AddAdditionalChargeResponse}.

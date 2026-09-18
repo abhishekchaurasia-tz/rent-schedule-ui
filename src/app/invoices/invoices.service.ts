@@ -39,6 +39,10 @@ export class InvoicesService {
   /**
    * One filtered, ordered page of a property owner's invoices.
    *
+   * **Which owner is not asked here.** The scope arrives as the `PropertyOwnerUid` header, attached
+   * centrally by `scopeHeadersInterceptor` (backend `02-invoicing.md` v39 FR 47), so this method
+   * takes filters only. A caller cannot vary the scope per request.
+   *
    * **The ordering is the server's and is not selectable**: `dueDate` then `invoiceNumber`. Invoice
    * numbers are unique, so that pair is a *total* order — the only kind that makes offset pagination
    * stable, since a tied ordering can repeat a row on one page and skip it on another.
@@ -87,9 +91,12 @@ export class InvoicesService {
    * empty string, which matches nothing, rather than the absence of a filter. The booleans are sent
    * only when `true` for the same reason — `outstandingOnly=false` is the default the endpoint already
    * applies, and sending it adds a parameter that says nothing.
+   *
+   * **No parameter is mandatory any more**, so this starts empty: an unfiltered search is a bare URL,
+   * and the owner it resolves under rides the header instead.
    */
   private static toParams(query: InvoiceSearchQuery): HttpParams {
-    let params = new HttpParams().set('propertyOwnerId', query.propertyOwnerId);
+    let params = new HttpParams();
 
     const setIfPresent = (name: string, value: string | number | undefined | null) => {
       if (value !== undefined && value !== null && String(value).trim() !== '') {

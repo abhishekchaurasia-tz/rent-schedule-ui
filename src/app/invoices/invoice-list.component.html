@@ -3,7 +3,8 @@
     <div>
       <h1>Invoices</h1>
       <p class="subtitle">
-        One property owner's invoices, filtered and paged. Click any row to correct it.
+        The invoices of whichever property owner this session is scoped to, filtered and paged.
+        Click any row to correct it.
       </p>
     </div>
     <button type="button" class="primary-btn add-invoice-btn" (click)="openAddInvoice()">
@@ -28,18 +29,6 @@
   }
 
   <form [formGroup]="filters" class="filter-bar">
-    <label class="filter owner">
-      <span>Property Owner ID</span>
-      <input
-        type="text"
-        formControlName="propertyOwnerId"
-        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
-        autocomplete="off"
-        spellcheck="false"
-        (keyup.enter)="search()"
-      />
-    </label>
-
     <label class="filter">
       <span>Invoice number</span>
       <input
@@ -125,10 +114,6 @@
     </span>
   </div>
 
-  @if (idError(); as message) {
-    <p class="inline-error">{{ message }}</p>
-  }
-
   @if (searchError(); as message) {
     <div class="banner error">
       <strong>Could not load invoices.</strong>
@@ -152,7 +137,7 @@
     @if (page.items.length === 0) {
       <div class="banner warn">
         <strong>No invoices matched.</strong>
-        <p>Widen the filters, or check that the owner id is the one you meant.</p>
+        <p>Widen the filters, or check that the scope this session runs under is the one you meant.</p>
       </div>
     } @else {
       <div class="table-scroll">
@@ -324,7 +309,11 @@
       </div>
     }
   } @else if (!loading()) {
-    <p class="idle-hint">Enter a property owner id and search to see their invoices.</p>
+    <!--
+      Since v8 the list loads on open, so reaching this branch means that load failed — the error
+      banner above already says how. The only thing left to offer is the retry.
+    -->
+    <p class="idle-hint">Nothing loaded. Press Search to try again.</p>
   }
 
   <!--
@@ -367,10 +356,14 @@
           <p class="inline-error">{{ message }}</p>
         }
 
+        <!--
+          This used to send the reader elsewhere: "the fee is charged to every active tenant... to
+          charge only some of them, use the Add Additional Fee screen". Spec 04 v9 removed the reason —
+          the fee panel this step opens carries the same split editor — so the pointer goes with it.
+        -->
         <p class="agreement-panel-note">
-          The fee is charged to <strong>every active tenant</strong> on the lease. To charge only some
-          of them, use the <a routerLink="/rent-agreements/additional-charges">Add Additional Fee</a>
-          screen, which lists the lease's tenants to pick from.
+          The lease's renters load with it, so the next step can charge the fee to
+          <strong>all of them or a chosen few</strong>, and say what each one owes.
         </p>
       </div>
 
@@ -402,6 +395,8 @@
     }
 
     <app-additional-charge-panel
+      [tenants]="chargeTenants()"
+      [isGroupInvoice]="chargeIsGroupInvoice()"
       [propertyOwnerId]="chargePropertyOwnerId"
       [leaseStartDate]="chargeLeaseStartDate"
       [leaseEndDate]="chargeLeaseEndDate"

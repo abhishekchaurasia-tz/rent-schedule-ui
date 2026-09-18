@@ -72,11 +72,6 @@ h1 {
     }
   }
 
-  &.owner > input {
-    min-width: 320px;
-    font-family: ui-monospace, Consolas, monospace;
-  }
-
   &.narrow > input {
     min-width: 90px;
   }

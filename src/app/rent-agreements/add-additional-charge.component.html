@@ -53,13 +53,7 @@
 
     <section class="tenants-card">
       <div class="card-header">
-        <h2>Charge To</h2>
-        @if (hasSavedTenants() && tenants().length > 0) {
-          <div class="bulk-actions">
-            <button type="button" class="link-btn" (click)="selectAllTenants()">Select all</button>
-            <button type="button" class="link-btn" (click)="clearTenantSelection()">Clear</button>
-          </div>
-        }
+        <h2>Renters on this lease</h2>
       </div>
 
       @if (!hasSavedTenants()) {
@@ -78,14 +72,9 @@
         </div>
       } @else {
         <p class="selection-note">
-          @if (selectedCount() === 0) {
-            <strong>Nobody ticked — the fee is shared by every active tenant.</strong>
-            That is the same thing the server means by an empty list, so this is a complete choice,
-            not an unfinished one. Tick tenants only to charge a subset.
-          } @else {
-            <strong>{{ selectedCount() }} of {{ tenants().length }} tenants ticked.</strong>
-            Only they are charged this fee. Clear the selection to share it across everyone.
-          }
+          Listed for context, with the rent and deposit shares this lease already records.
+          <strong>Who pays the next fee is chosen in the fee panel</strong>, where the split can be
+          divided against the fee's own total — the same editor the Invoices page uses.
         </p>
 
         <p class="invoice-mode">
@@ -95,12 +84,7 @@
 
         <div class="tenant-rows">
           @for (tenant of tenants(); track tenant.tenantId) {
-            <label class="tenant-row" [class.selected]="isTenantSelected(tenant.tenantId)">
-              <input
-                type="checkbox"
-                [checked]="isTenantSelected(tenant.tenantId)"
-                (change)="toggleTenant(tenant.tenantId)"
-              />
+            <div class="tenant-row">
               <span class="tenant-main">
                 <span class="tenant-name">{{ tenantName(tenant.tenantId) }}</span>
                 <code class="tenant-id">{{ tenant.tenantId }}</code>
@@ -119,7 +103,7 @@
                   }
                 </span>
               </span>
-            </label>
+            </div>
           }
         </div>
       }
@@ -134,7 +118,7 @@
       }
     </section>
 
-<!--
+    <!--
       Floated above the fee panel while it is open. The panel is a fixed overlay, so an error left in
       the page flow would sit behind the very form the user has to correct — and this endpoint's
       failures (the deposit/rent mixing rule, the recurring-field matrix, an inactive lease) are
@@ -217,6 +201,8 @@
 
   @if (showPanel()) {
     <app-additional-charge-panel
+      [tenants]="tenants()"
+      [isGroupInvoice]="isGroupInvoice()"
       [propertyOwnerId]="propertyOwnerId"
       [leaseStartDate]="leaseStartDate"
       [leaseEndDate]="leaseEndDate"

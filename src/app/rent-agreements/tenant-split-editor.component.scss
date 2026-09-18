@@ -1,0 +1,212 @@
+/*
+ * The per-renter split editor. `.banner` and `.link-btn` come from src/styles.scss; everything here
+ * is the table and its cells.
+ */
+
+.split-editor {
+  margin: 1rem 0 0;
+  border-top: 1px solid #e6eaf2;
+  padding-top: 0.9rem;
+}
+
+.split-mode {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.mode-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+
+  input:disabled + span {
+    color: #999;
+  }
+}
+
+.reset-all {
+  margin-left: auto;
+}
+
+.split-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #555;
+}
+
+.split-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+
+  th {
+    padding: 0.45rem 0.6rem;
+    background: #eef0f7;
+    color: #5a6478;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  td {
+    padding: 0.55rem 0.6rem;
+    border-top: 1px solid #edeff3;
+    vertical-align: middle;
+  }
+
+  .num-col {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  tfoot td {
+    font-weight: 600;
+    background: #f7f9fc;
+  }
+
+  tfoot .mismatched .owes-amount {
+    color: #b3261e;
+  }
+
+  tfoot .mismatched .cell-derived {
+    color: #b3261e;
+  }
+}
+
+/* An unticked renter stays listed so they can be ticked back, but reads as out of the fee. */
+.roster-row.excluded {
+  .tenant-name,
+  .avatar {
+    color: #8a8f9a;
+  }
+
+  .avatar {
+    background: #eef0f3;
+  }
+}
+
+.split-tenant {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: #dfe4ee;
+  color: #46506b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.split-tenant-main {
+  display: flex;
+  flex-direction: column;
+
+  .muted {
+    font-size: 0.76rem;
+  }
+}
+
+.muted {
+  color: #888;
+}
+
+/* Amber marks a row a leftover cent landed on, or one the owner typed; lilac marks an exact share.
+   A one-cent remainder is deliberate, so neither of them reads as a warning. */
+.chip {
+  display: inline-block;
+  min-width: 3.1rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 3px;
+  background: #eceaf9;
+  color: #4b3fa0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+
+  &.amber {
+    background: #fdf3d7;
+    color: #8a6100;
+  }
+}
+
+.cell-input {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.share-input,
+.share-unit {
+  padding: 0.3rem;
+  border: 1px solid #ccd2dd;
+  border-radius: 3px;
+  font: inherit;
+}
+
+.share-input {
+  width: 4.6rem;
+  text-align: right;
+
+  &.invalid {
+    border-color: #b3261e;
+  }
+}
+
+.share-unit {
+  background: #f4f6f9;
+}
+
+.row-reset {
+  border: none;
+  background: none;
+  color: #1a56db;
+  font-size: 1rem;
+  cursor: pointer;
+
+  &:disabled {
+    color: #c4c9d2;
+    cursor: default;
+  }
+}
+
+.owes-amount {
+  font-weight: 600;
+
+  /* An overpaid renter is a real state the charge itself allows, not an error. */
+  &.overpaid {
+    color: #8a6100;
+  }
+}
+
+.cell-derived,
+.row-error {
+  display: block;
+  font-size: 0.76rem;
+}
+
+.cell-derived {
+  color: #888;
+}
+
+.row-error {
+  color: #b3261e;
+}
+
+/* The id beside the name: two stand-in people can draw the same name, and these rows carry money. */
+.tenant-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.7rem;
+  color: #9aa0ab;
+}

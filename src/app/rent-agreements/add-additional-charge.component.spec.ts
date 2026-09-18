@@ -21,6 +21,10 @@ describe('AddAdditionalChargeComponent', () => {
 
   const tenantA = '11111111-1111-1111-1111-111111111111';
   const tenantB = '22222222-2222-2222-2222-222222222222';
+  const tenantC = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const tenantD = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const tenantE = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const tenantF = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 
   const agreement: RentAgreementDetailResponse = {
     agreementId,
@@ -87,7 +91,7 @@ describe('AddAdditionalChargeComponent', () => {
     isRecurring: false,
     dueDate: '2026-10-01',
     hasNoEndDate: false,
-    tenantIds: [tenantA],
+    tenantShares: [{ tenantId: tenantA, amount: 50 }],
     items: [
       {
         id: '88888888-8888-8888-8888-888888888888',
@@ -134,6 +138,24 @@ describe('AddAdditionalChargeComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * A saved roster of the named renters, **in the order given** — which is the order the leftover
+   * cents are handed out in, so these tests list their ids rather than generating them.
+   */
+  function rosterOf(...tenantIds: string[]): AgreementTenantsResponse {
+    return {
+      isGroupInvoice: false,
+      partialPaymentAllowed: true,
+      tenants: tenantIds.map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }))
+    };
+  }
+
   it('creates', () => {
     expect(component).toBeTruthy();
   });
@@ -154,7 +176,7 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.idError()).toBe('Enter a rent agreement id.');
   });
 
-  it('loads the lease and its tenants concurrently and renders the picker only once both answer', () => {
+  it('loads the lease and its tenants concurrently, rendering neither until both answer', () => {
     component.agreementIdInput.setValue(agreementId);
     component.load();
 
@@ -174,7 +196,7 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.tenants().length).toBe(2);
   });
 
-  it('renders one row per tenant with a stable stand-in name and the recorded shares', () => {
+  it('lists every active renter with a stable stand-in name and the recorded shares', () => {
     loadAgreement();
 
     const rows = fixture.nativeElement.querySelectorAll('.tenant-row');
@@ -182,46 +204,6 @@ describe('AddAdditionalChargeComponent', () => {
     expect(rows[0].textContent).toContain(tenantA);
     expect(rows[0].textContent).toContain(component.tenantName(tenantA));
     expect(component.tenantName(tenantA)).toBe(component.tenantName(tenantA));
-  });
-
-  it('toggles, selects all, and clears the tenant selection', () => {
-    loadAgreement();
-
-    component.toggleTenant(tenantA);
-    expect(component.isTenantSelected(tenantA)).toBeTrue();
-    expect(component.isTenantSelected(tenantB)).toBeFalse();
-
-    component.toggleTenant(tenantA);
-    expect(component.isTenantSelected(tenantA)).toBeFalse();
-
-    component.selectAllTenants();
-    expect(component.selectedTenantIds().size).toBe(2);
-
-    component.clearTenantSelection();
-    expect(component.selectedTenantIds().size).toBe(0);
-  });
-
-  it('sends tenantIds: [] when nobody is ticked — the backend meaning of "shared by all"', () => {
-    loadAgreement();
-
-    component.onChargeCreated(emittedCharge);
-
-    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([]);
-
-    request.flush(createdCharge);
-  });
-
-  it('sends exactly the ticked tenants when some are selected', () => {
-    loadAgreement();
-    component.toggleTenant(tenantB);
-
-    component.onChargeCreated(emittedCharge);
-
-    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([tenantB]);
-
-    request.flush(createdCharge);
   });
 
   it('mints an idempotency key, so a replay cannot become a second charge', () => {
@@ -346,7 +328,8 @@ describe('AddAdditionalChargeComponent', () => {
     fixture.detectChanges();
 
     // The panel is still on screen, so it runs its own catalog fetch — which is itself the proof that
-    // it survived the failure, since a closed panel would never have asked.
+    // it survived the failure, since a closed panel would never have asked. A 422 here is routine, and
+    // closing on emit would throw away the authored fee and its split in order to hit one.
     httpMock.expectOne((request) => request.url.includes('/line-items')).flush([]);
 
     expect(component.submitError()).toBe('A deposit item cannot be mixed with rent items.');
@@ -364,7 +347,7 @@ describe('AddAdditionalChargeComponent', () => {
 
     component.onChargeCreated(emittedCharge);
 
-    // One and only one — expectOne throws if a second matching request exists.
+    // One and only one — a second click on Save while the first is in flight is dropped, not queued.
     const requests = httpMock.match(`${baseUrl}/${agreementId}/additional-charges`);
     expect(requests.length).toBe(1);
 
@@ -379,11 +362,57 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.tenants().length).toBe(0);
     expect(fixture.nativeElement.textContent).toContain('no tenants saved');
 
-    // A shared fee is still addable in that state.
+    // A shared fee is still addable in that state, and it names nobody -- there is nobody to name.
     component.onChargeCreated(emittedCharge);
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([]);
+    expect(request.request.body.tenantShares).toBeUndefined();
     request.flush(createdCharge);
+  });
+
+  it('names the renters a saved fee landed on from its split', () => {
+    loadAgreement();
+
+    const label = component.chargePayerLabel({
+      ...createdCharge,
+      tenantShares: [
+        { tenantId: tenantA, amount: 30 },
+        { tenantId: tenantB, amount: 20 }
+      ]
+    });
+
+    expect(label).toContain(component.tenantName(tenantA));
+    expect(label).toContain(component.tenantName(tenantB));
+  });
+
+  it('says every renter when a saved fee names nobody', () => {
+    loadAgreement();
+
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: [] }))
+      .toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: undefined }))
+      .toBe('All active tenants');
+  });
+
+  it('declares no tenantIds on the charge response model', () => {
+    // A type-level assertion, not a value one. A test that only read the label would pass with the
+    // field still declared and merely unread, and the point of this slice is that nothing can read
+    // it -- the server stops sending it in the same release.
+    const charge: RentAgreementAdditionalChargeResponse = createdCharge;
+
+    expect('tenantIds' in charge).toBeFalse();
+  });
+
+  it('hands the roster to the fee panel, which is what offers the split editor', () => {
+    loadAgreement();
+    component.openPanel();
+    fixture.detectChanges();
+
+    httpMock.expectOne((request) => request.url.includes('/line-items')).flush([]);
+    fixture.detectChanges();
+
+    // Requirement 22 in one assertion: the editor appears because this host passed renters. A host
+    // that passes none — the lease create/edit screens — renders no renter control at all.
+    expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
   });
 
   it('passes the loaded lease through to the fee panel', () => {
@@ -436,8 +465,8 @@ describe('AddAdditionalChargeComponent', () => {
     loadAgreement();
 
     expect(component.chargePayerLabel(createdCharge)).toContain(component.tenantName(tenantA));
-    expect(component.chargePayerLabel({ ...createdCharge, tenantIds: [] })).toBe('All active tenants');
-    expect(component.chargePayerLabel({ ...createdCharge, tenantIds: undefined })).toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: [] })).toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: undefined })).toBe('All active tenants');
   });
 
   it('totals an added charge from its item amounts', () => {

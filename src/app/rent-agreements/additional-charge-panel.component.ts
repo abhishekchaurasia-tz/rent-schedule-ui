@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -29,7 +30,8 @@ import {
   isFrequencyAllowed
 } from '../rent-schedule/frequency-options.util';
 import { toIsoDate } from '../shared/date.util';
-import { AdditionalChargeCreationRequest } from './rent-agreement.models';
+import { AdditionalChargeCreationRequest, AgreementTenantShareResponse } from './rent-agreement.models';
+import { TenantSplitEditorComponent, TenantSplitState } from './tenant-split-editor.component';
 import { LineItemResponse, LineItemScope } from './line-item.models';
 import { LineItemsService } from './line-items.service';
 
@@ -50,7 +52,8 @@ import { LineItemsService } from './line-items.service';
     ReactiveFormsModule,
     MatDatepickerModule,
     MatFormFieldModule,
-    MatInputModule
+    MatInputModule,
+    TenantSplitEditorComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './additional-charge-panel.component.html',
@@ -66,9 +69,17 @@ export class AdditionalChargePanelComponent implements OnInit {
   @Input() depositOnly = false;
 
   /**
-   * The requesting property owner — passed through to `GET /api/v1/line-items` as an explicit query
-   * parameter (the backend has no session/auth mechanism to resolve it from yet). Without this, the
-   * catalog can't be fetched and the item picker stays empty.
+   * The property owner the record on screen belongs to.
+   *
+   * **It is not what the catalog is fetched with, and has not been since v22.** That release moved the
+   * catalog's owner scope onto the `PropertyOwnerUid` header, which `scopeHeadersInterceptor` attaches;
+   * v26 then removed the `if (!this.propertyOwnerId) return;` that was still guarding the fetch. This
+   * comment claimed the opposite of both — *"without this the catalog can't be fetched and the item
+   * picker stays empty"* — which is the single most misleading sentence to leave next to an empty
+   * picker, and it was read that way.
+   *
+   * What it is still used for is {@link ownerScopeMismatch}: comparing the record's owner against the
+   * one the catalog was actually read for.
    */
   @Input() propertyOwnerId: string | null = null;
 
@@ -84,6 +95,24 @@ export class AdditionalChargePanelComponent implements OnInit {
   @Input() leaseStartDate: string | null = null;
   @Input() leaseEndDate: string | null = null;
   @Input() leaseMonthToMonthInvoiceCount: number | null = null;
+
+  /**
+   * The lease's **active** renters, or `null` when the host does not author who pays.
+   *
+   * **This input is the whole of requirement 22.** The split editor below is shared by every screen
+   * that says who pays a fee — the Add Additional Fee page and the Invoices page — and must never
+   * appear on the lease create/edit screens, which author the fee alone. Rather than forking the panel,
+   * those screens simply pass no roster: `null` renders no renter control at all, which is the
+   * behaviour spec `02` requirement 22 requires of them.
+   *
+   * An **empty array** is a different answer from `null`: it means this host does author who pays, and
+   * the lease has nobody saved yet. The fee is charged to the lease and shared by whoever is added
+   * later, and the editor says so.
+   */
+  @Input() tenants: readonly AgreementTenantShareResponse[] | null = null;
+
+  /** Whether the lease bills its renters on one shared invoice — wording only, never sent. */
+  @Input() isGroupInvoice = false;
 
   /**
    * When set, the panel opens pre-filled with this already-created charge instead of a blank form
@@ -103,6 +132,35 @@ export class AdditionalChargePanelComponent implements OnInit {
    * rent/deposit target to pick or a "mixed category" case to guard against.
    */
   readonly lineItems = signal<LineItemResponse[]>([]);
+
+  /**
+   * Why the catalog could not be read, or `null` when it was read.
+   *
+   * **This exists because a failed read and an empty catalog used to be the same sentence.** The fetch
+   * had no error branch, so `lineItems()` simply kept its initial `[]` and the panel said *"No catalog
+   * items are available to pick from yet"* — whether the catalog was empty, the request was refused,
+   * or the Billing service was not running at all. On the lease editor that is the **only** symptom a
+   * stopped service produces: that screen reads nothing from the API before this panel is opened, so
+   * there is no failed load anywhere else on it to give the game away.
+   */
+  readonly catalogError = signal<string | null>(null);
+
+  /**
+   * Whether the catalog read is in flight.
+   *
+   * Tracked for the same reason as the error above: the panel can be opened and a picker clicked while
+   * the request is still out, and "not yet" is not "there are none".
+   */
+  readonly catalogLoading = signal(false);
+
+  /**
+   * The split as the editor last reported it, and why it cannot be saved.
+   *
+   * Held here because {@link create} needs both: the shares go onto the emitted charge, and the
+   * blocker is what refuses the click (requirement 19). It starts as a fee shared by everybody, which
+   * is what an untouched editor means and what a host passing no roster leaves standing.
+   */
+  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null });
 
   /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
   readonly openItemPickerIndex = signal<number | null>(null);
@@ -407,7 +465,57 @@ export class AdditionalChargePanelComponent implements OnInit {
   private loadLineItems(): void {
     const scope: LineItemScope = this.depositOnly ? 'DepositOnly' : 'AllExcludingCredit';
 
-    this.lineItemsService.list(scope).subscribe((items) => this.lineItems.set(items));
+    this.catalogError.set(null);
+    this.catalogLoading.set(true);
+
+    this.lineItemsService.list(scope).subscribe({
+      next: (items) => {
+        this.lineItems.set(items);
+        this.catalogLoading.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        // Emptied rather than left standing. A stale list under an error message invites picking an
+        // entry that was read for a different owner, or from a service that is no longer answering.
+        this.lineItems.set([]);
+        this.catalogLoading.set(false);
+        this.catalogError.set(AdditionalChargePanelComponent.describeCatalogError(err));
+      }
+    });
+  }
+
+  /**
+   * Reads the catalog again after a failure.
+   *
+   * **Only the catalog.** The form beside it may be half filled in, and a service that was down while
+   * someone was typing should not cost them what they typed — the same reasoning that makes
+   * requirement 15g re-read the catalog alone when the scope changes.
+   */
+  retryCatalog(): void {
+    this.loadLineItems();
+  }
+
+  /**
+   * Turns a failed catalog read into something the reader can act on.
+   *
+   * **Three cases, because they send you to three different places.** `status === 0` is nothing
+   * answering at the address at all — the service is not running, or not where `apiBaseUrl` says — and
+   * it is the case that used to be indistinguishable from an empty catalog. An RFC 9457 `detail` is
+   * repeated verbatim, which covers the other trap on the local build: a token pasted into Test scope
+   * replaces the three ids the Billing API reads directly, and it answers *"The PropertyOwnerUid header
+   * is required."* Anything else is reported as its status line.
+   */
+  private static describeCatalogError(err: HttpErrorResponse): string {
+    if (err.status === 0) {
+      return (
+        `Nothing answered at ${environment.apiBaseUrl}. ` +
+        `Check that the Billing service is running.`
+      );
+    }
+
+    const problemDetail = err.error?.detail;
+    return typeof problemDetail === 'string' && problemDetail
+      ? problemDetail
+      : `The request was refused: ${err.status} ${err.statusText}`;
   }
 
   /**
@@ -494,6 +602,16 @@ export class AdditionalChargePanelComponent implements OnInit {
 
   get subAmount(): number {
     return this.items.controls.reduce((sum, control) => sum + Number(control.get('amount')!.value || 0), 0);
+  }
+
+  /**
+   * What the charge records as already paid, for the split editor to divide.
+   *
+   * Read through a getter rather than passed as a raw control value so the editor follows the box as
+   * it is typed into — the same reason {@link subAmount} is one.
+   */
+  get alreadyPaidTotal(): number {
+    return Number(this.form.get('alreadyPaid')!.value || 0);
   }
 
   get balanceDue(): number {
@@ -625,9 +743,21 @@ export class AdditionalChargePanelComponent implements OnInit {
     this.closed.emit();
   }
 
+  /** Records what the split editor reports, so {@link create} can refuse or send it. */
+  onSplitChange(state: TenantSplitState): void {
+    this.splitState.set(state);
+  }
+
   create(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      return;
+    }
+
+    // Requirement 19. The shares have to total the fee exactly before it can be sent, and the server
+    // refuses the same state with a 422 — so this is the panel refusing before it does. The typed rows
+    // are left exactly as they are; the editor's own reset is the only way back, and only on a click.
+    if (this.splitState().blocker !== null) {
       return;
     }
 
@@ -635,7 +765,13 @@ export class AdditionalChargePanelComponent implements OnInit {
     const isRecurring = !!value.isRecurring;
     const ridesRentalInvoice = this.depositOnly ? false : !!value.attachedWithRentalInvoice;
 
+    // Requirement 20. `tenantShares` is absent for a fee shared by everybody rather than empty:
+    // both read the same server-side, but omission says "not specified" where [] says "specified as
+    // nobody". `tenantIds` is not sent at all — the split is what says who pays now.
+    const shares = this.splitState().shares;
+
     const request: AdditionalChargeCreationRequest = {
+      ...(shares === undefined ? {} : { tenantShares: shares }),
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
       attachedWithRentalInvoice: ridesRentalInvoice,

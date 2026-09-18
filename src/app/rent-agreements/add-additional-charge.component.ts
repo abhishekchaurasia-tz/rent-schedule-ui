@@ -42,7 +42,14 @@ const CONFLICT_RETRY_DELAY_MS = 400;
  * may raise the fee's invoice in the same transaction. Those are different operations with different
  * consequences, and mixing them into one screen would make it ambiguous which one a click performed.
  *
- * **What only this page can do:** say *who pays*. `tenantIds` has existed on the wire since the
+ * **Who pays is authored in the fee panel, not here.** This page owned a tenant picker and a split
+ * editor until the Invoices page needed the same one; both now live in
+ * {@link AdditionalChargePanelComponent}, which shows them to any host that hands it a roster and to
+ * no host that does not — which is how the lease create/edit screens still show no renter control at
+ * all (spec `02` requirement 22). What this page still does is load the lease and its roster, and
+ * hand both to the panel.
+ *
+ * **What only this page and the Invoices page can do:** say *who pays*. `tenantIds` has existed on the wire since the
  * backend's FR-058, but no screen has ever sent it, so every fee raised from this UI so far has been
  * shared by every tenant. Here an empty selection still means exactly that — it is the backend's own
  * encoding of "shared" — but a non-empty one finally charges a subset.
@@ -86,12 +93,6 @@ export class AddAdditionalChargeComponent {
   /** Whether the lease bills its tenants on one shared invoice — shown as context, never sent. */
   readonly isGroupInvoice = signal(false);
 
-  /**
-   * Who the next fee is charged to. **Empty is a meaningful state, not an unfinished one:** it is
-   * sent as `tenantIds: []`, which the backend reads as "every active tenant shares this fee".
-   */
-  readonly selectedTenantIds = signal<ReadonlySet<string>>(new Set<string>());
-
   readonly showPanel = signal(false);
   readonly submitting = signal(false);
   readonly submitError = signal<string | null>(null);
@@ -110,9 +111,6 @@ export class AddAdditionalChargeComponent {
    * what was recorded cannot reach an invoice.
    */
   readonly unbilledByCharge = signal<Record<string, UnbilledLineResponse[]>>({});
-
-  /** How many tenants are ticked — drives the "shared by all" wording next to the list. */
-  readonly selectedCount = computed(() => this.selectedTenantIds().size);
 
   constructor(private readonly service: RentAgreementsService) {}
 
@@ -185,28 +183,6 @@ export class AddAdditionalChargeComponent {
     });
   }
 
-  isTenantSelected(tenantId: string): boolean {
-    return this.selectedTenantIds().has(tenantId);
-  }
-
-  toggleTenant(tenantId: string): void {
-    this.selectedTenantIds.update((selected) => {
-      const next = new Set(selected);
-      if (!next.delete(tenantId)) {
-        next.add(tenantId);
-      }
-      return next;
-    });
-  }
-
-  selectAllTenants(): void {
-    this.selectedTenantIds.set(new Set(this.tenants().map((tenant) => tenant.tenantId)));
-  }
-
-  clearTenantSelection(): void {
-    this.selectedTenantIds.set(new Set<string>());
-  }
-
   /** The stand-in person for a tenant id — the same one the ADD TENANTS screen shows. */
   tenantName(tenantId: string): string {
     const identity = placeholderTenantIdentity(tenantId);
@@ -223,16 +199,22 @@ export class AddAdditionalChargeComponent {
   }
 
   /**
-   * Commits the authored fee: the panel's charge at the body root, the ticked tenants alongside it.
+   * Commits the fee the panel authored: its own fields at the body root, the split among them.
    *
    * **The panel is closed only once the server has answered.** A `422` here is routine — the
    * deposit/rent mixing rule, the recurring-field matrix, a lease that is not active — and closing on
-   * emit would throw away everything the user just typed to hit one.
+   * emit would throw away everything the owner just typed in order to hit one.
+   *
+   * **Who pays is already on the charge.** It used to be this page's business: it owned a tenant
+   * picker and a split editor, and merged the result in here. Both moved into the panel when the
+   * Invoices page needed the same editor and the lease editor still needed none — the panel shows it
+   * to whichever host hands it a roster. So this method no longer knows how a fee is divided, only
+   * that it is.
    *
    * **Re-entrant submissions are dropped rather than queued**, and the `id` below is what makes the
    * retry safe. This remark used to end *"the panel emits no `id`, so the endpoint's idempotency key is
    * unavailable and a second POST would create a second charge, not replay the first"* — which was
-   * precisely the gap. The key is now minted here, so the request carries its own.
+   * precisely the gap. The key is minted here, so the request carries its own.
    *
    * **Why a `409` is retried at all.** A concurrent write to the same lease answers `409`, and nothing
    * about the submission is wrong — another writer simply won the race. It was measured on 2026-09-10
@@ -254,8 +236,7 @@ export class AddAdditionalChargeComponent {
 
     const request: AddAdditionalChargeRequest = {
       ...charge,
-      id: charge.id ?? crypto.randomUUID(),
-      tenantIds: [...this.selectedTenantIds()]
+      id: charge.id ?? crypto.randomUUID()
     };
 
     this.submitError.set(null);
@@ -309,13 +290,25 @@ export class AddAdditionalChargeComponent {
     return charge.items.reduce((sum, item) => sum + item.amount, 0);
   }
 
-  /** Who an added charge landed on — the server's echoed `tenantIds`, never re-derived locally. */
+  /**
+   * Who an added charge landed on — read from the fee's **saved split** (requirement 21).
+   *
+   * It used to read an echoed `tenantIds` array. The server stops sending that field, and on the day
+   * that shipped this label would simply have emptied: no error, no failing test, just a screen that
+   * had stopped answering the question it exists to answer.
+   *
+   * **No rows means every active renter**, which is the meaning the empty array carried. The split is
+   * still never re-derived here — it is what the server saved, read back.
+   *
+   * @param charge The saved charge.
+   * @returns The renters it bills, or the shared-by-all phrase.
+   */
   chargePayerLabel(charge: RentAgreementAdditionalChargeResponse): string {
-    const tenantIds = charge.tenantIds ?? [];
-    if (tenantIds.length === 0) {
+    const shares = charge.tenantShares ?? [];
+    if (shares.length === 0) {
       return 'All active tenants';
     }
-    return tenantIds.map((tenantId) => this.tenantName(tenantId)).join(', ');
+    return shares.map((share) => this.tenantName(share.tenantId)).join(', ');
   }
 
   /** How an added charge is billed, in one phrase, for the committed-charges list. */
@@ -339,7 +332,6 @@ export class AddAdditionalChargeComponent {
     this.tenants.set([]);
     this.hasSavedTenants.set(true);
     this.isGroupInvoice.set(false);
-    this.selectedTenantIds.set(new Set<string>());
     this.addedCharges.set([]);
     this.submitError.set(null);
     this.showPanel.set(false);

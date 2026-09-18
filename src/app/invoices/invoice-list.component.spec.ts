@@ -1,10 +1,11 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpClientTestingModule, HttpTestingController, TestRequest } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { environment } from '../../environments/environment';
 import {
   AdditionalChargeCreationRequest,
+  AgreementTenantsResponse,
   RentAgreementDetailResponse
 } from '../rent-agreements/rent-agreement.models';
 import { InvoiceListComponent } from './invoice-list.component';
@@ -14,6 +15,9 @@ describe('InvoiceListComponent', () => {
   let fixture: ComponentFixture<InvoiceListComponent>;
   let component: InvoiceListComponent;
   let httpMock: HttpTestingController;
+
+  /** The request `ngOnInit` issues when the screen opens (v8), already flushed with an empty page. */
+  let autoLoad: TestRequest;
 
   const invoicesUrl = `${environment.apiBaseUrl}/api/v1/invoices`;
   const ownerId = '55555555-5555-5555-5555-555555555555';
@@ -78,6 +82,13 @@ describe('InvoiceListComponent', () => {
     fixture = TestBed.createComponent(InvoiceListComponent);
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
+
+    // v8: the screen searches in `ngOnInit`, so the first change detection issues a request before
+    // any test has done anything. It is captured rather than merely flushed, so the one test that is
+    // *about* the auto-load can assert on it without rebuilding the fixture.
+    fixture.detectChanges();
+    autoLoad = httpMock.expectOne((r) => r.url === invoicesUrl);
+    autoLoad.flush(page([]));
     fixture.detectChanges();
   });
 
@@ -85,9 +96,13 @@ describe('InvoiceListComponent', () => {
     httpMock.verify();
   });
 
-  /** Runs a search for the standard owner and flushes `body`. */
+  /**
+   * Runs a search and flushes `body`.
+   *
+   * No owner is set first: since backend `02-invoicing.md` v39 the scope rides the `PropertyOwnerUid`
+   * header, not the filter bar.
+   */
   function search(body: PagedResult<InvoiceSummaryResponse> = page([paidRow, overdueRow])) {
-    component.filters.get('propertyOwnerId')!.setValue(ownerId);
     component.search();
     const request = httpMock.expectOne((r) => r.url === invoicesUrl);
     request.flush(body);
@@ -99,25 +114,38 @@ describe('InvoiceListComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('refuses a malformed owner id inline and issues no request', () => {
-    component.filters.get('propertyOwnerId')!.setValue('not-a-guid');
-    component.search();
-
-    expect(component.idError()).toContain('valid id');
-    expect(component.result()).toBeNull();
+  /**
+   * The v8 rule. `autoLoad` was captured and flushed in `beforeEach` — reaching this assertion at all
+   * proves one unprompted `GET /invoices` was issued, since `expectOne` would have thrown otherwise.
+   *
+   * The unfiltered request is the assertion that matters: the auto-load must be the endpoint's own
+   * default page, not some narrowed view the user never chose.
+   */
+  it('loads the list on open, with no filters, before the user presses Search', () => {
+    expect(autoLoad.request.method).toBe('GET');
+    expect(autoLoad.request.params.keys()).toEqual(['page', 'pageSize']);
+    expect(autoLoad.request.params.get('page')).toBe('1');
+    expect(component.result()).not.toBeNull();
   });
 
-  it('refuses an empty owner id, since the endpoint is always owner-scoped', () => {
-    component.search();
+  /**
+   * The v7 rule, and the pair of deleted tests it replaces.
+   *
+   * `refuses a malformed owner id inline and issues no request` and `refuses an empty owner id, since
+   * the endpoint is always owner-scoped` both pinned a guard that had outlived its parameter: backend
+   * v39 (FR 47) moved the owner scope to the `PropertyOwnerUid` header and v41 (FR 49) deleted the
+   * query member, so the typed id decided nothing while the screen still refused to search without
+   * it. An empty filter bar is now a valid search, and nothing about the owner leaves on the query
+   * string.
+   */
+  it('searches with no owner on the query string, and an empty filter bar is enough', () => {
+    expect(autoLoad.request.params.has('propertyOwnerId')).toBeFalse();
+    expect(component.filters.contains('propertyOwnerId')).toBeFalse();
 
-    expect(component.idError()).toContain('property owner id');
-  });
-
-  it('searches with the owner scope and renders one row per invoice with the showing counter', () => {
     const request = search(page([paidRow, overdueRow], { totalCount: 12 }));
 
     expect(request.request.method).toBe('GET');
-    expect(request.request.params.get('propertyOwnerId')).toBe(ownerId);
+    expect(request.request.params.has('propertyOwnerId')).toBeFalse();
 
     const rows = fixture.nativeElement.querySelectorAll('tbody tr');
     expect(rows.length).toBe(2);
@@ -136,7 +164,6 @@ describe('InvoiceListComponent', () => {
 
   it('sends the filters the user did set', () => {
     component.filters.patchValue({
-      propertyOwnerId: ownerId,
       invoiceNumber: 'INV-082026-000002',
       dueDateFrom: '2026-08-01',
       dueDateTo: '2026-08-31',
@@ -158,7 +185,6 @@ describe('InvoiceListComponent', () => {
   });
 
   it('sends two selected statuses as two repeated parameters, which the endpoint unions', () => {
-    component.filters.get('propertyOwnerId')!.setValue(ownerId);
     component.toggleStatus('overdue');
     component.toggleStatus('partial_paid');
     component.search();
@@ -290,24 +316,28 @@ describe('InvoiceListComponent', () => {
 
     component.refresh();
     const request = httpMock.expectOne((r) => r.url === invoicesUrl);
-    expect(request.request.params.get('propertyOwnerId')).toBe(ownerId);
+    expect(request.request.params.has('propertyOwnerId')).toBeFalse();
     request.flush(page([paidRow]));
 
     expect(component.lastRefreshedAt()!.getTime()).toBeGreaterThanOrEqual(firstStamp!.getTime());
   });
 
-  it('renders an empty result as "no invoices matched", distinct from not having searched', () => {
-    expect(component.hasSearched()).toBeFalse();
-    expect(fixture.nativeElement.textContent).toContain('Enter a property owner id');
+  /**
+   * v8 replaces the "distinct from not having searched" half of this test, which no longer has a
+   * state to be distinct from: the auto-load in `beforeEach` already flushed an empty page, so the
+   * empty state is what the screen opens on when the owner has no invoices.
+   */
+  it('renders an empty result as "no invoices matched"', () => {
+    expect(fixture.nativeElement.textContent).toContain('No invoices matched');
+
+    search(page([paidRow]));
+    expect(fixture.nativeElement.textContent).not.toContain('No invoices matched');
 
     search(page([]));
-
-    expect(component.hasSearched()).toBeTrue();
     expect(fixture.nativeElement.textContent).toContain('No invoices matched');
   });
 
   it('renders a failed search detail verbatim', () => {
-    component.filters.get('propertyOwnerId')!.setValue(ownerId);
     component.search();
 
     httpMock.expectOne((r) => r.url === invoicesUrl).flush(
@@ -344,6 +374,7 @@ describe('InvoiceListComponent', () => {
     const agreementId = '99999999-9999-9999-9999-999999999999';
     const agreementUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`;
     const chargeUrl = `${agreementUrl}/additional-charges`;
+    const tenantsUrl = `${agreementUrl}/tenants`;
     const lineItemsUrl = `${environment.apiBaseUrl}/api/v1/line-items`;
 
     const agreement = {
@@ -384,12 +415,41 @@ describe('InvoiceListComponent', () => {
       items: [{ id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', amount: 50 }]
     } as never;
 
-    /** Opens the panel and gets past its first step onto the fee form. */
-    function openToFeeStep(): void {
+    const tenantA = '11111111-1111-1111-1111-111111111111';
+    const tenantB = '22222222-2222-2222-2222-222222222222';
+
+    const tenants: AgreementTenantsResponse = {
+      isGroupInvoice: false,
+      partialPaymentAllowed: true,
+      tenants: [
+        { tenantId: tenantA, rentAmount: 600, rentPercent: 50, deposit: 600, depositPercent: 50 },
+        { tenantId: tenantB, rentAmount: 600, rentPercent: 50, deposit: 600, depositPercent: 50 }
+      ]
+    };
+
+    /**
+     * Opens the panel and gets past its first step onto the fee form.
+     *
+     * **Two requests, not one, since spec 04 v9.** The roster is fetched with the lease so this screen
+     * can offer the same split editor as the Add Additional Fee page — until it did, a fee added from
+     * here was charged to every renter with no way to say otherwise.
+     *
+     * @param tenantsBody The saved roster, or `null` for the `204` that means step 2 was never saved.
+     */
+    function openToFeeStep(tenantsBody: AgreementTenantsResponse | null = tenants): void {
       component.openAddInvoice();
       component.addInvoiceAgreementId.setValue(agreementId);
       component.loadAgreementForCharge();
+
       httpMock.expectOne(agreementUrl).flush(agreement);
+
+      const tenantsRequest = httpMock.expectOne(tenantsUrl);
+      if (tenantsBody === null) {
+        tenantsRequest.flush(null, { status: 204, statusText: 'No Content' });
+      } else {
+        tenantsRequest.flush(tenantsBody);
+      }
+
       fixture.detectChanges();
       // The fee panel fetches the catalog as soon as it renders.
       httpMock.expectOne((r) => r.url === lineItemsUrl).flush([]);
@@ -405,8 +465,11 @@ describe('InvoiceListComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('Which lease is this for?');
     });
 
-    it('is available before any search has been run — adding does not depend on the list', () => {
-      expect(component.result()).toBeNull();
+    // FR 16 unchanged; v8 only changes how it is shown. The list is no longer ever un-fetched, so
+    // "before any search" became "over an empty list" — a lease with no invoices yet is still the
+    // case this exists for, and it is exactly the one that can never appear in the rows above.
+    it('is available over an empty list — adding does not depend on what is listed', () => {
+      expect(component.rows).toEqual([]);
 
       component.openAddInvoice();
 
@@ -429,11 +492,17 @@ describe('InvoiceListComponent', () => {
       component.addInvoiceAgreementId.setValue(agreementId);
       component.loadAgreementForCharge();
 
-      httpMock.expectOne(agreementUrl).flush(
+      // Both go out together now, so both are in flight when the lease turns out not to exist.
+      const agreementRequest = httpMock.expectOne(agreementUrl);
+      const tenantsRequest = httpMock.expectOne(tenantsUrl);
+
+      agreementRequest.flush(
         { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Rent agreement not found.' },
         { status: 404, statusText: 'Not Found' }
       );
 
+      // forkJoin drops the roster read the moment the lease fails — there is nothing to split.
+      expect(tenantsRequest.cancelled).toBeTrue();
       expect(component.addInvoiceIdError()).toBe('Rent agreement not found.');
       expect(component.addInvoiceStep()).toBe('agreement');
     });
@@ -480,18 +549,26 @@ describe('InvoiceListComponent', () => {
       // The whole point of adding from this screen: a standalone one-off fee on an active lease raises
       // its own invoice, so the list behind the panel is stale the moment the POST returns.
       const refresh = httpMock.expectOne((r) => r.url === invoicesUrl);
-      expect(refresh.request.params.get('propertyOwnerId')).toBe(ownerId);
+      expect(refresh.request.params.has('propertyOwnerId')).toBeFalse();
       refresh.flush(page([paidRow, overdueRow]));
     });
 
-    it('does not refresh when no search has been run — there is no owner scope to search with', () => {
+    /**
+     * v8 replaces `does not refresh when no search has been run`, which pinned a guard that no longer
+     * has a case: the list loads on open, so a fee is never added over a list that was never fetched.
+     * The refresh is now unconditional, and this proves it happens without a prior manual search.
+     */
+    it('refreshes the list after adding, without a prior manual search', () => {
       openToFeeStep();
 
       component.onChargeCreated(emittedCharge);
       httpMock.expectOne(chargeUrl).flush(createdCharge);
 
       expect(component.chargeSuccess()).not.toBeNull();
-      httpMock.expectNone((r) => r.url === invoicesUrl);
+
+      const refresh = httpMock.expectOne((r) => r.url === invoicesUrl);
+      refresh.flush(page([paidRow]));
+      expect(component.rows.length).toBe(1);
     });
 
     it('keeps the fee panel open on a 422 and renders the detail', () => {
@@ -530,6 +607,9 @@ describe('InvoiceListComponent', () => {
 
       requests[0].flush(createdCharge);
       expect(component.submittingCharge()).toBeFalse();
+
+      // The success path refreshes the list unconditionally since v8; flushed so `verify()` passes.
+      httpMock.expectOne((r) => r.url === invoicesUrl).flush(page([]));
     });
 
     it('closing the panel discards the loaded lease', () => {
@@ -618,7 +698,7 @@ describe('InvoiceListComponent', () => {
 
       // The point of FR 24: the list is re-searched rather than the row patched locally.
       const refresh = httpMock.expectOne((r) => r.url === invoicesUrl);
-      expect(refresh.request.params.get('propertyOwnerId')).toBe(ownerId);
+      expect(refresh.request.params.has('propertyOwnerId')).toBeFalse();
       refresh.flush(page([]));
     });
 

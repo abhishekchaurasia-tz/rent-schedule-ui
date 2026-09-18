@@ -45,12 +45,15 @@ describe('InvoicesService', () => {
     expect(actual?.proposedInvoiceId).toBe('22222222-2222-2222-2222-222222222222');
   });
 
-  it('search() sends the owner scope and omits every absent filter', () => {
-    service.search({ propertyOwnerId: '55555555-5555-5555-5555-555555555555' }).subscribe();
+  // Backend `02-invoicing.md` v39 FR 47 / v41 FR 49: the owner scope is the `PropertyOwnerUid`
+  // header, and the query member no longer exists. A search with no filters is a bare URL.
+  it('search() sends no owner scope and omits every absent filter', () => {
+    service.search({}).subscribe();
 
     const request = httpMock.expectOne((r) => r.url === baseUrl);
     expect(request.request.method).toBe('GET');
-    expect(request.request.params.get('propertyOwnerId')).toBe('55555555-5555-5555-5555-555555555555');
+    expect(request.request.params.has('propertyOwnerId')).toBeFalse();
+    expect(request.request.params.keys()).toEqual([]);
 
     // An empty `invoiceNumber` on the wire is an exact-match filter for the empty string, not the
     // absence of a filter — so a blank must not be sent at all.
@@ -64,7 +67,6 @@ describe('InvoicesService', () => {
   it('search() repeats `status` once per value rather than overwriting it', () => {
     service
       .search({
-        propertyOwnerId: '55555555-5555-5555-5555-555555555555',
         status: ['overdue', 'partial_paid'],
         page: 2,
         pageSize: 25,
