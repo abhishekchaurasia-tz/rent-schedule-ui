@@ -5,11 +5,13 @@ import { FormBuilder, FormControl, FormGroup, ReactiveFormsModule } from '@angul
 import { provideNativeDateAdapter } from '@angular/material/core';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 
 import { toIsoDate } from '../shared/date.util';
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { AdditionalChargePanelComponent } from '../rent-agreements/additional-charge-panel.component';
 import { RentAgreementsService } from '../rent-agreements/rent-agreements.service';
+import { AgreementTenantShareResponse } from '../rent-agreements/rent-agreement.models';
 import {
   AdditionalChargeCreationRequest,
   RentAgreementDetailResponse
@@ -161,6 +163,19 @@ export class InvoiceListComponent implements OnInit {
 
   /** The lease the fee panel is authoring against, once its first step has loaded one. */
   readonly chargeAgreement = signal<RentAgreementDetailResponse | null>(null);
+
+  /**
+   * The lease's **active** renters, handed to the fee panel so it can offer the split editor.
+   *
+   * **`null` until the lease is loaded**, and the panel reads that as "this host does not author who
+   * pays" — which is exactly right before there is a lease. Once loaded it is an array, empty included:
+   * a lease whose step 2 was never saved has nobody to split between, and the editor says so rather
+   * than hiding.
+   */
+  readonly chargeTenants = signal<AgreementTenantShareResponse[] | null>(null);
+
+  /** Whether that lease bills on one shared invoice — passed through for wording only. */
+  readonly chargeIsGroupInvoice = signal(false);
 
   readonly submittingCharge = signal(false);
   readonly chargeError = signal<string | null>(null);
@@ -408,9 +423,22 @@ export class InvoiceListComponent implements OnInit {
     this.chargeError.set(null);
     this.loadingAgreement.set(true);
 
-    this.agreements.getById(agreementId).subscribe({
-      next: (agreement) => {
+    // The roster rides along with the lease (spec 04 v9). Until it did, a fee added from this screen
+    // was charged to every active renter with no way to say otherwise, and the panel pointed at the Add
+    // Additional Fee page for a subset — two screens, one endpoint, and only one of them able to use
+    // the field it sends. Fetched together so the fee step renders once rather than in two stages.
+    //
+    // A 204 means the lease exists but step 2 was never saved, which the service maps to null. That is
+    // still "this host authors who pays", so it becomes an empty roster rather than staying null: the
+    // editor's own wording covers a lease with nobody on it.
+    forkJoin({
+      agreement: this.agreements.getById(agreementId),
+      tenants: this.agreements.getTenants(agreementId)
+    }).subscribe({
+      next: ({ agreement, tenants }) => {
         this.chargeAgreement.set(agreement);
+        this.chargeTenants.set(tenants?.tenants ?? []);
+        this.chargeIsGroupInvoice.set(tenants?.isGroupInvoice ?? false);
         this.loadingAgreement.set(false);
         this.addInvoiceStep.set('fee');
       },

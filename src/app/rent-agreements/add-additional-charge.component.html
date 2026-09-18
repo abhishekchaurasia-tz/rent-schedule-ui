@@ -53,13 +53,7 @@
 
     <section class="tenants-card">
       <div class="card-header">
-        <h2>Charge To</h2>
-        @if (hasSavedTenants() && tenants().length > 0) {
-          <div class="bulk-actions">
-            <button type="button" class="link-btn" (click)="selectAllTenants()">Select all</button>
-            <button type="button" class="link-btn" (click)="clearTenantSelection()">Clear</button>
-          </div>
-        }
+        <h2>Renters on this lease</h2>
       </div>
 
       @if (!hasSavedTenants()) {
@@ -78,14 +72,9 @@
         </div>
       } @else {
         <p class="selection-note">
-          @if (selectedCount() === 0) {
-            <strong>Nobody ticked — the fee is shared by every active tenant.</strong>
-            That is the same thing the server means by an empty list, so this is a complete choice,
-            not an unfinished one. Tick tenants only to charge a subset.
-          } @else {
-            <strong>{{ selectedCount() }} of {{ tenants().length }} tenants ticked.</strong>
-            Only they are charged this fee. Clear the selection to share it across everyone.
-          }
+          Listed for context, with the rent and deposit shares this lease already records.
+          <strong>Who pays the next fee is chosen in the fee panel</strong>, where the split can be
+          divided against the fee's own total — the same editor the Invoices page uses.
         </p>
 
         <p class="invoice-mode">
@@ -95,12 +84,7 @@
 
         <div class="tenant-rows">
           @for (tenant of tenants(); track tenant.tenantId) {
-            <label class="tenant-row" [class.selected]="isTenantSelected(tenant.tenantId)">
-              <input
-                type="checkbox"
-                [checked]="isTenantSelected(tenant.tenantId)"
-                (change)="toggleTenant(tenant.tenantId)"
-              />
+            <div class="tenant-row">
               <span class="tenant-main">
                 <span class="tenant-name">{{ tenantName(tenant.tenantId) }}</span>
                 <code class="tenant-id">{{ tenant.tenantId }}</code>
@@ -119,234 +103,22 @@
                   }
                 </span>
               </span>
-            </label>
+            </div>
           }
         </div>
       }
     </section>
 
-    @if (!pendingCharge()) {
-      <section class="fee-actions">
-        <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
-          + ADD ADDITIONAL FEE
-        </button>
-      </section>
-    }
+    <section class="fee-actions">
+      <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
+        + ADD ADDITIONAL FEE
+      </button>
+      @if (submitting()) {
+        <span class="submitting-note">Saving the fee…</span>
+      }
+    </section>
 
     <!--
-      The staged fee and its split. Nothing here has been sent: the drawer's Create hands the fee over
-      so the split can be divided against a total that exists, and the Save at the foot of this section
-      is the only thing on the page that posts.
-    -->
-    @if (pendingCharge(); as fee) {
-      <section class="pending-fee">
-        <header class="pending-header">
-          <span class="chip amber">Not saved yet</span>
-          <span class="pending-summary">
-            {{ fee.items.length }} {{ fee.items.length === 1 ? 'line' : 'lines' }} &middot;
-            <strong>{{ feeTotal() | currency }}</strong>
-          </span>
-          <span class="pending-actions">
-            <button type="button" class="link-btn" (click)="editPendingFee()" [disabled]="submitting()">
-              Edit fee
-            </button>
-            <button type="button" class="link-btn danger" (click)="discardPendingFee()" [disabled]="submitting()">
-              Discard
-            </button>
-          </span>
-        </header>
-
-        <div class="split-mode">
-          <label class="mode-choice">
-            <input
-              type="radio"
-              name="splitMode"
-              [checked]="isSharedByEveryone()"
-              (change)="setSplitMode('shared')"
-            />
-            <span>Shared Lease</span>
-          </label>
-          <label class="mode-choice">
-            <input
-              type="radio"
-              name="splitMode"
-              [checked]="!isSharedByEveryone()"
-              (change)="setSplitMode('split')"
-              [disabled]="tenants().length === 0"
-            />
-            <span>Split per Tenant</span>
-          </label>
-        </div>
-
-        @if (isSharedByEveryone()) {
-          <p class="split-shared-note">
-            <strong>{{ feeTotal() | currency }} is charged to the lease and shared by every active
-            renter.</strong>
-            That is a complete instruction, not an unfinished one — and it keeps covering renters added
-            later. Choose <em>Split per Tenant</em> to say what each one owes.
-          </p>
-        } @else {
-          <table class="split-table">
-            <thead>
-              <tr>
-                <th scope="col">Tenants</th>
-                <th scope="col">Shares</th>
-                <th scope="col" class="owes-col">Owes</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (share of tenantShares(); track share.tenantId) {
-                <tr class="split-row">
-                  <td class="split-tenant">
-                    <span class="avatar" aria-hidden="true">{{ tenantInitials(share.tenantId) }}</span>
-                    <span class="split-tenant-main">
-                      <span class="tenant-name">{{ share.name }}</span>
-                      <span class="muted">
-                        @if (isGroupInvoice()) {
-                          On the lease's group invoice
-                        } @else {
-                          Invoice {{ $index + 1 }} of {{ tenantShares().length }}
-                        }
-                      </span>
-                    </span>
-                  </td>
-                  <td>
-                    <!--
-                      The badge names what the row is: typed by the owner, or evenly divided — and if
-                      divided, whether a leftover cent landed on it. That last distinction is invisible
-                      otherwise, and an owner reading 33.34 next to 33.33 has no way to tell a
-                      deliberate remainder from a rounding bug.
-                    -->
-                    <span
-                      class="chip"
-                      [class.amber]="share.authoredUnit !== 'even' || share.carriesLeftoverCent"
-                    >
-                      @switch (share.authoredUnit) {
-                        @case ('even') {
-                          {{ share.carriesLeftoverCent ? 'Odd' : 'Even' }}
-                        }
-                        @default {
-                          Typed
-                        }
-                      }
-                    </span>
-                  </td>
-                  <td class="owes-col">
-                    <!--
-                      One box and a unit, not a box per unit. Requirement 18 turns on *which* unit the
-                      owner typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee,
-                      because 66.67% of 300 is 200.01 — so the unit has to be a choice on the record
-                      rather than a guess about which of two boxes was touched last. The other figure
-                      is shown beneath, derived and never typed into.
-                    -->
-                    <span class="owes-input">
-                      <input
-                        type="text"
-                        inputmode="decimal"
-                        class="share-input"
-                        [class.invalid]="share.error"
-                        [value]="share.text"
-                        [attr.aria-label]="'Share for ' + share.name"
-                        (input)="typeShare(share.tenantId, $any($event.target).value)"
-                      />
-                      <select
-                        class="share-unit"
-                        [value]="share.authoredUnit === 'percent' ? 'percent' : 'amount'"
-                        [attr.aria-label]="'Unit for ' + share.name"
-                        (change)="setShareUnit(share.tenantId, $any($event.target).value)"
-                      >
-                        <option value="amount">$</option>
-                        <option value="percent">%</option>
-                      </select>
-                      <button
-                        type="button"
-                        class="row-reset"
-                        (click)="resetShareRow(share.tenantId)"
-                        [disabled]="share.authoredUnit === 'even'"
-                        title="Hand this row back to the even split"
-                        aria-label="Hand this row back to the even split"
-                      >
-                        &#8635;
-                      </button>
-                    </span>
-                    <span class="owes-derived">
-                      @if (share.authoredUnit === 'percent') {
-                        {{ share.amount | currency }}
-                      } @else {
-                        {{ share.sharePercent | number: '1.2-2' }}%
-                      }
-                    </span>
-                    @if (share.error; as message) {
-                      <span class="row-error">{{ message }}</span>
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
-            <tfoot>
-              <tr [class.mismatched]="splitBlocker() !== null">
-                <td colspan="2">Total</td>
-                <td class="owes-col">
-                  <span class="owes-amount">{{ splitTotal() | currency }}</span>
-                  <span class="owes-derived">of {{ feeTotal() | currency }}</span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-
-          @if (splitBlocker(); as message) {
-            <div class="banner error split-blocker">
-              <strong>This split cannot be saved yet.</strong>
-              <p>{{ message }}</p>
-              <p>
-                Nothing you typed has been changed — the page will not correct your numbers for you.
-                Fix the row that is wrong, or
-                <button type="button" class="link-btn" (click)="resetSplit()">reset to an even split</button>.
-              </p>
-            </div>
-          } @else if (hasTypedShares()) {
-            <p class="split-reset-row">
-              <button type="button" class="link-btn" (click)="resetSplit()">Reset to an even split</button>
-            </p>
-          }
-
-          <p class="split-note">
-            <strong>Divided evenly, in money — type over any row to change it.</strong>
-            Leftover cents go one each to the renters at the top of the list, so the shares total the fee
-            exactly rather than leaving one renter carrying the rounding. A row you type is left alone
-            from then on: ticking another renter re-divides only the rows you have not touched.
-            @if (!isGroupInvoice()) {
-              Each share is billed on its own invoice and tracked separately.
-            }
-          </p>
-        }
-
-        <footer class="pending-footer">
-          <span class="pending-total">
-            <strong>{{ feeTotal() | currency }}</strong>
-            <span class="muted">
-              @if (isSharedByEveryone()) {
-                shared by every renter
-              } @else {
-                across {{ tenantShares().length }}
-                {{ tenantShares().length === 1 ? 'renter' : 'renters' }}
-              }
-            </span>
-          </span>
-          <button
-            type="button"
-            class="primary-btn"
-            (click)="saveFee()"
-            [disabled]="!canSave()"
-            [title]="splitBlocker() ?? ''"
-          >
-            {{ submitting() ? 'Saving the fee…' : 'SAVE FEE' }}
-          </button>
-        </footer>
-      </section>
-    }
-
-<!--
       Floated above the fee panel while it is open. The panel is a fixed overlay, so an error left in
       the page flow would sit behind the very form the user has to correct — and this endpoint's
       failures (the deposit/rent mixing rule, the recurring-field matrix, an inactive lease) are
@@ -429,7 +201,8 @@
 
   @if (showPanel()) {
     <app-additional-charge-panel
-      [initialCharge]="pendingCharge()"
+      [tenants]="tenants()"
+      [isGroupInvoice]="isGroupInvoice()"
       [propertyOwnerId]="propertyOwnerId"
       [leaseStartDate]="leaseStartDate"
       [leaseEndDate]="leaseEndDate"

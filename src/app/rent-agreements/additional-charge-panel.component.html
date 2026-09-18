@@ -313,6 +313,19 @@
         </label>
       </div>
     }
+    <!--
+      Who pays, last: everything above decides what the fee is, and the split can only divide a total
+      that already exists. Rendered only when the host handed this panel a roster — the lease
+      create/edit screens pass none and so show no renter control at all (requirement 22).
+    -->
+    @if (tenants; as roster) {
+      <app-tenant-split-editor
+        [tenants]="roster"
+        [feeTotal]="subAmount"
+        [isGroupInvoice]="isGroupInvoice"
+        (splitChange)="onSplitChange($event)"
+      />
+    }
   </form>
 
   @if (openItemPickerIndex() !== null && itemPickerPosition(); as pos) {
@@ -365,7 +378,15 @@
   }
 
   <div class="panel-footer">
-    <button type="button" class="submit-btn" (click)="create()">Create</button>
+    <button
+      type="button"
+      class="submit-btn"
+      (click)="create()"
+      [disabled]="splitState().blocker !== null"
+      [title]="splitState().blocker ?? ''"
+    >
+      Create
+    </button>
     <button type="button" class="cancel-btn" (click)="close()">Cancel</button>
   </div>
 </div>

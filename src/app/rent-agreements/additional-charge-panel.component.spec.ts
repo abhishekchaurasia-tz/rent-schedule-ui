@@ -1,5 +1,6 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { environment } from '../../environments/environment';
 import { toIsoDate } from '../shared/date.util';
@@ -7,6 +8,7 @@ import { RequestScopeService } from '../request-scope.service';
 import { AdditionalChargePanelComponent } from './additional-charge-panel.component';
 import { AdditionalChargeCreationRequest } from './rent-agreement.models';
 import { LineItemResponse } from './line-item.models';
+import { TenantSplitEditorComponent } from './tenant-split-editor.component';
 
 describe('AdditionalChargePanelComponent', () => {
   let fixture: ComponentFixture<AdditionalChargePanelComponent>;
@@ -816,6 +818,144 @@ describe('AdditionalChargePanelComponent', () => {
       fixture.detectChanges();
 
       expect(component.catalogLoading()).toBeFalse();
+    });
+  });
+  describe('who pays, when the host authors it (FR 19, 20 and 22)', () => {
+    const tenantA = '11111111-1111-1111-1111-111111111111';
+    const tenantB = '22222222-2222-2222-2222-222222222222';
+
+    /** The editor instance the panel rendered, reached the way any child component is in a test. */
+    function editor(): TenantSplitEditorComponent {
+      return fixture.debugElement.query(By.directive(TenantSplitEditorComponent)).componentInstance;
+    }
+
+    function rosterOf(...tenantIds: string[]) {
+      return tenantIds.map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }));
+    }
+
+    /** Renders the panel with a roster and one $300 line item already authored. */
+    function openWithRoster(...tenantIds: string[]) {
+      component.tenants = rosterOf(...tenantIds);
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+
+      component.items.at(0).patchValue({
+        lineItemId: parkingItem.id,
+        description: 'Reserved bay',
+        quantity: 1,
+        rate: 300
+      });
+      component.recalculateAmount(0);
+      fixture.detectChanges();
+
+      return fixture.nativeElement.querySelector('app-tenant-split-editor');
+    }
+
+    /** Fills in the one field a one-time charge still needs before Create will run. */
+    function completeTheFee(): void {
+      component.form.patchValue({ dueDate: new Date('2026-10-01T00:00:00') });
+    }
+
+    /**
+     * Requirement 22, in the one assertion that keeps it true.
+     *
+     * The lease create/edit screens host this same panel and must never gain a renter control. They
+     * pass no roster, and that is the whole mechanism — so a change that renders the editor
+     * unconditionally fails here rather than quietly growing a split editor on the lease editor.
+     */
+    it('renders no renter control at all when the host passes no roster', () => {
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+
+      expect(component.tenants).toBeNull();
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Split per Tenant');
+    });
+
+    it('offers the split editor when the host passes a roster', () => {
+      expect(openWithRoster(tenantA, tenantB)).not.toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('Split per Tenant');
+    });
+
+    it('sends no tenantShares for a fee left shared by everyone', () => {
+      openWithRoster(tenantA, tenantB);
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((charge) => (emitted = charge));
+      completeTheFee();
+      component.create();
+
+      // Absent rather than empty: omission says "not specified" where [] says "specified as nobody".
+      expect(emitted).toBeDefined();
+      expect('tenantShares' in emitted!).toBeFalse();
+    });
+
+    it('puts the split on the charge it emits, and never a tenant array', () => {
+      openWithRoster(tenantA, tenantB);
+      editor().setSplitMode('split');
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((charge) => (emitted = charge));
+      completeTheFee();
+      component.create();
+
+      expect(emitted!.tenantShares).toEqual([
+        { tenantId: tenantA, amount: 150 },
+        { tenantId: tenantB, amount: 150 }
+      ]);
+      expect(emitted!.tenantIds).withContext('the retired tenant array was sent').toBeUndefined();
+    });
+
+    /**
+     * Requirement 19, enforced where Create is. The server refuses the same state with a 422, so this
+     * is the panel refusing before it does — and what the owner typed is left exactly as it is.
+     */
+    it('refuses Create while the split does not total the fee', () => {
+      openWithRoster(tenantA, tenantB);
+
+      editor().setSplitMode('split');
+      fixture.detectChanges();
+
+      // BOTH rows, deliberately. Typing only one leaves the other untouched, and an untouched row
+      // absorbs whatever is left of the fee — so a single typed row still totals $300 and is a
+      // perfectly good split. A mismatch needs every row authored, or one over-typed.
+      editor().typeShare(tenantA, '100');
+      editor().typeShare(tenantB, '100');
+      fixture.detectChanges();
+
+      expect(component.splitState().blocker).toBe(
+        'The shares total $200.00, the fee is $300.00 — $100.00 short.'
+      );
+
+      let emitted = false;
+      component.created.subscribe(() => (emitted = true));
+      completeTheFee();
+      component.create();
+
+      expect(emitted).withContext('a mismatched split was emitted').toBeFalse();
+      expect(fixture.nativeElement.querySelector('.submit-btn').disabled).toBeTrue();
+    });
+
+    it('follows the item total when the fee is re-priced under an open split', () => {
+      openWithRoster(tenantA, tenantB);
+      editor().setSplitMode('split');
+      fixture.detectChanges();
+      expect(component.splitState().shares!.map((share) => share.amount)).toEqual([150, 150]);
+
+      component.items.at(0).patchValue({ rate: 100 });
+      component.recalculateAmount(0);
+      fixture.detectChanges();
+
+      // The split divides whatever the fee currently is, not what it was when the editor opened.
+      expect(component.splitState().shares!.map((share) => share.amount)).toEqual([50, 50]);
+      expect(component.splitState().blocker).toBeNull();
     });
   });
 });

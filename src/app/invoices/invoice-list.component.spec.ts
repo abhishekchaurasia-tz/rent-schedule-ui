@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { environment } from '../../environments/environment';
 import {
   AdditionalChargeCreationRequest,
+  AgreementTenantsResponse,
   RentAgreementDetailResponse
 } from '../rent-agreements/rent-agreement.models';
 import { InvoiceListComponent } from './invoice-list.component';
@@ -373,6 +374,7 @@ describe('InvoiceListComponent', () => {
     const agreementId = '99999999-9999-9999-9999-999999999999';
     const agreementUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`;
     const chargeUrl = `${agreementUrl}/additional-charges`;
+    const tenantsUrl = `${agreementUrl}/tenants`;
     const lineItemsUrl = `${environment.apiBaseUrl}/api/v1/line-items`;
 
     const agreement = {
@@ -413,12 +415,41 @@ describe('InvoiceListComponent', () => {
       items: [{ id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', amount: 50 }]
     } as never;
 
-    /** Opens the panel and gets past its first step onto the fee form. */
-    function openToFeeStep(): void {
+    const tenantA = '11111111-1111-1111-1111-111111111111';
+    const tenantB = '22222222-2222-2222-2222-222222222222';
+
+    const tenants: AgreementTenantsResponse = {
+      isGroupInvoice: false,
+      partialPaymentAllowed: true,
+      tenants: [
+        { tenantId: tenantA, rentAmount: 600, rentPercent: 50, deposit: 600, depositPercent: 50 },
+        { tenantId: tenantB, rentAmount: 600, rentPercent: 50, deposit: 600, depositPercent: 50 }
+      ]
+    };
+
+    /**
+     * Opens the panel and gets past its first step onto the fee form.
+     *
+     * **Two requests, not one, since spec 04 v9.** The roster is fetched with the lease so this screen
+     * can offer the same split editor as the Add Additional Fee page — until it did, a fee added from
+     * here was charged to every renter with no way to say otherwise.
+     *
+     * @param tenantsBody The saved roster, or `null` for the `204` that means step 2 was never saved.
+     */
+    function openToFeeStep(tenantsBody: AgreementTenantsResponse | null = tenants): void {
       component.openAddInvoice();
       component.addInvoiceAgreementId.setValue(agreementId);
       component.loadAgreementForCharge();
+
       httpMock.expectOne(agreementUrl).flush(agreement);
+
+      const tenantsRequest = httpMock.expectOne(tenantsUrl);
+      if (tenantsBody === null) {
+        tenantsRequest.flush(null, { status: 204, statusText: 'No Content' });
+      } else {
+        tenantsRequest.flush(tenantsBody);
+      }
+
       fixture.detectChanges();
       // The fee panel fetches the catalog as soon as it renders.
       httpMock.expectOne((r) => r.url === lineItemsUrl).flush([]);
@@ -461,11 +492,17 @@ describe('InvoiceListComponent', () => {
       component.addInvoiceAgreementId.setValue(agreementId);
       component.loadAgreementForCharge();
 
-      httpMock.expectOne(agreementUrl).flush(
+      // Both go out together now, so both are in flight when the lease turns out not to exist.
+      const agreementRequest = httpMock.expectOne(agreementUrl);
+      const tenantsRequest = httpMock.expectOne(tenantsUrl);
+
+      agreementRequest.flush(
         { type: 'about:blank', title: 'Not Found', status: 404, detail: 'Rent agreement not found.' },
         { status: 404, statusText: 'Not Found' }
       );
 
+      // forkJoin drops the roster read the moment the lease fails — there is nothing to split.
+      expect(tenantsRequest.cancelled).toBeTrue();
       expect(component.addInvoiceIdError()).toBe('Rent agreement not found.');
       expect(component.addInvoiceStep()).toBe('agreement');
     });

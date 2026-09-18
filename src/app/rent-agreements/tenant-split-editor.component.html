@@ -1,0 +1,186 @@
+<section class="split-editor">
+  <div class="split-mode">
+    <label class="mode-choice">
+      <input
+        type="radio"
+        name="splitMode"
+        [checked]="isSharedByEveryone()"
+        (change)="setSplitMode('shared')"
+      />
+      <span>Shared Lease</span>
+    </label>
+    <label class="mode-choice">
+      <input
+        type="radio"
+        name="splitMode"
+        [checked]="!isSharedByEveryone()"
+        (change)="setSplitMode('split')"
+        [disabled]="tenants().length === 0"
+      />
+      <span>Split per Tenant</span>
+    </label>
+    @if (!isSharedByEveryone() && hasTypedShares()) {
+      <button type="button" class="link-btn reset-all" (click)="resetSplit()">
+        Reset to an even split
+      </button>
+    }
+  </div>
+
+  @if (isSharedByEveryone()) {
+    <p class="split-note">
+      @if (tenants().length === 0) {
+        <strong>This lease has no renters saved yet, so the fee is charged to the lease itself.</strong>
+        It will be shared by every renter added later.
+      } @else {
+        <strong>Charged to the lease and shared by every active renter.</strong>
+        That is a complete instruction, not an unfinished one — and it keeps covering renters added
+        later. Choose <em>Split per Tenant</em> to say what each one owes.
+      }
+    </p>
+  } @else {
+    <table class="split-table">
+      <thead>
+        <tr>
+          <th scope="col">Tenants</th>
+          <th scope="col">Shares</th>
+          <th scope="col" class="owes-col">Owes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!--
+          The whole roster is listed, not only the ticked renters: an unticked one has to be tickable
+          back, and seeing who is *not* on a fee is half of reading a split.
+        -->
+        @for (row of rosterRows(); track row.tenantId) {
+          <tr class="roster-row" [class.excluded]="!row.selected">
+            <td class="split-tenant">
+              <input
+                type="checkbox"
+                [checked]="row.selected"
+                [attr.aria-label]="'Charge ' + row.name"
+                (change)="toggleTenant(row.tenantId)"
+              />
+              <span class="avatar" aria-hidden="true">{{ row.initials }}</span>
+              <span class="split-tenant-main">
+                <span class="tenant-name">{{ row.name }}</span>
+                <span class="muted">
+                  @if (!row.selected) {
+                    Not charged this fee
+                  } @else if (isGroupInvoice()) {
+                    On the lease's group invoice
+                  } @else {
+                    Billed on its own invoice
+                  }
+                </span>
+              </span>
+            </td>
+
+            @if (row.share; as share) {
+              <td>
+                <!--
+                  The badge names what the row is: typed by the owner, or evenly divided — and if
+                  divided, whether a leftover cent landed on it. That last distinction is invisible
+                  otherwise, and an owner reading 33.34 next to 33.33 has no way to tell a deliberate
+                  remainder from a rounding bug.
+                -->
+                <span
+                  class="chip"
+                  [class.amber]="share.authoredUnit !== 'even' || share.carriesLeftoverCent"
+                >
+                  @switch (share.authoredUnit) {
+                    @case ('even') {
+                      {{ share.carriesLeftoverCent ? 'Odd' : 'Even' }}
+                    }
+                    @default {
+                      Typed
+                    }
+                  }
+                </span>
+              </td>
+              <td class="owes-col">
+                <!--
+                  One box and a unit, not a box per unit. Requirement 18 turns on *which* unit the
+                  owner typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee,
+                  because 66.67% of 300 is 200.01 — so the unit has to be a choice on the record rather
+                  than a guess about which of two boxes was touched last. The other figure is shown
+                  beneath it, derived and never typed into.
+                -->
+                <span class="owes-input">
+                  <input
+                    type="text"
+                    inputmode="decimal"
+                    class="share-input"
+                    [class.invalid]="share.error"
+                    [value]="share.text"
+                    [attr.aria-label]="'Share for ' + share.name"
+                    (input)="typeShare(share.tenantId, $any($event.target).value)"
+                  />
+                  <select
+                    class="share-unit"
+                    [value]="share.authoredUnit === 'percent' ? 'percent' : 'amount'"
+                    [attr.aria-label]="'Unit for ' + share.name"
+                    (change)="setShareUnit(share.tenantId, $any($event.target).value)"
+                  >
+                    <option value="amount">$</option>
+                    <option value="percent">%</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="row-reset"
+                    (click)="resetShareRow(share.tenantId)"
+                    [disabled]="share.authoredUnit === 'even'"
+                    title="Hand this row back to the even split"
+                    aria-label="Hand this row back to the even split"
+                  >
+                    &#8635;
+                  </button>
+                </span>
+                <span class="owes-derived">
+                  @if (share.authoredUnit === 'percent') {
+                    {{ share.amount | currency }}
+                  } @else {
+                    {{ share.sharePercent | number: '1.2-2' }}%
+                  }
+                </span>
+                @if (share.error; as message) {
+                  <span class="row-error">{{ message }}</span>
+                }
+              </td>
+            } @else {
+              <td></td>
+              <td class="owes-col muted">&mdash;</td>
+            }
+          </tr>
+        }
+      </tbody>
+      <tfoot>
+        <tr [class.mismatched]="blocker() !== null">
+          <td colspan="2">Total</td>
+          <td class="owes-col">
+            <span class="owes-amount">{{ splitTotal() | currency }}</span>
+            <span class="owes-derived">of {{ feeTotal() | currency }}</span>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+
+    @if (blocker(); as message) {
+      <div class="banner error" role="status">
+        <p><strong>This split cannot be saved yet.</strong></p>
+        <p>{{ message }}</p>
+        <p>
+          Nothing you typed has been changed — the page will not correct your numbers for you. Fix the
+          row that is wrong, or
+          <button type="button" class="link-btn" (click)="resetSplit()">reset to an even split</button>.
+        </p>
+      </div>
+    } @else {
+      <p class="split-note">
+        <strong>Divided evenly, in money — type over any row to change it.</strong>
+        Leftover cents go one each to the renters at the top of the list, so the shares total the fee
+        exactly rather than leaving one renter carrying the rounding. A row you type is left alone from
+        then on: ticking another renter re-divides only the rows you have not touched.
+      </p>
+    }
+  }
+</section>

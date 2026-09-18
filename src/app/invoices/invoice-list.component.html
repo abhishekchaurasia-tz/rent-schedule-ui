@@ -391,6 +391,8 @@
     }
 
     <app-additional-charge-panel
+      [tenants]="chargeTenants()"
+      [isGroupInvoice]="chargeIsGroupInvoice()"
       [propertyOwnerId]="chargePropertyOwnerId"
       [leaseStartDate]="chargeLeaseStartDate"
       [leaseEndDate]="chargeLeaseEndDate"

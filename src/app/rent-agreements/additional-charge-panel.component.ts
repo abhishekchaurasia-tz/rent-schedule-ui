@@ -30,7 +30,8 @@ import {
   isFrequencyAllowed
 } from '../rent-schedule/frequency-options.util';
 import { toIsoDate } from '../shared/date.util';
-import { AdditionalChargeCreationRequest } from './rent-agreement.models';
+import { AdditionalChargeCreationRequest, AgreementTenantShareResponse } from './rent-agreement.models';
+import { TenantSplitEditorComponent, TenantSplitState } from './tenant-split-editor.component';
 import { LineItemResponse, LineItemScope } from './line-item.models';
 import { LineItemsService } from './line-items.service';
 
@@ -51,7 +52,8 @@ import { LineItemsService } from './line-items.service';
     ReactiveFormsModule,
     MatDatepickerModule,
     MatFormFieldModule,
-    MatInputModule
+    MatInputModule,
+    TenantSplitEditorComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './additional-charge-panel.component.html',
@@ -95,6 +97,24 @@ export class AdditionalChargePanelComponent implements OnInit {
   @Input() leaseMonthToMonthInvoiceCount: number | null = null;
 
   /**
+   * The lease's **active** renters, or `null` when the host does not author who pays.
+   *
+   * **This input is the whole of requirement 22.** The split editor below is shared by every screen
+   * that says who pays a fee — the Add Additional Fee page and the Invoices page — and must never
+   * appear on the lease create/edit screens, which author the fee alone. Rather than forking the panel,
+   * those screens simply pass no roster: `null` renders no renter control at all, which is the
+   * behaviour spec `02` requirement 22 requires of them.
+   *
+   * An **empty array** is a different answer from `null`: it means this host does author who pays, and
+   * the lease has nobody saved yet. The fee is charged to the lease and shared by whoever is added
+   * later, and the editor says so.
+   */
+  @Input() tenants: readonly AgreementTenantShareResponse[] | null = null;
+
+  /** Whether the lease bills its renters on one shared invoice — wording only, never sent. */
+  @Input() isGroupInvoice = false;
+
+  /**
    * When set, the panel opens pre-filled with this already-created charge instead of a blank form
    * — the host's "Edit" action on a row in its running additional-charges list. `create()` still
    * just emits the built request; the host (not this component) decides whether that's a new
@@ -132,6 +152,15 @@ export class AdditionalChargePanelComponent implements OnInit {
    * the request is still out, and "not yet" is not "there are none".
    */
   readonly catalogLoading = signal(false);
+
+  /**
+   * The split as the editor last reported it, and why it cannot be saved.
+   *
+   * Held here because {@link create} needs both: the shares go onto the emitted charge, and the
+   * blocker is what refuses the click (requirement 19). It starts as a fee shared by everybody, which
+   * is what an untouched editor means and what a host passing no roster leaves standing.
+   */
+  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null });
 
   /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
   readonly openItemPickerIndex = signal<number | null>(null);
@@ -704,9 +733,21 @@ export class AdditionalChargePanelComponent implements OnInit {
     this.closed.emit();
   }
 
+  /** Records what the split editor reports, so {@link create} can refuse or send it. */
+  onSplitChange(state: TenantSplitState): void {
+    this.splitState.set(state);
+  }
+
   create(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      return;
+    }
+
+    // Requirement 19. The shares have to total the fee exactly before it can be sent, and the server
+    // refuses the same state with a 422 — so this is the panel refusing before it does. The typed rows
+    // are left exactly as they are; the editor's own reset is the only way back, and only on a click.
+    if (this.splitState().blocker !== null) {
       return;
     }
 
@@ -714,7 +755,13 @@ export class AdditionalChargePanelComponent implements OnInit {
     const isRecurring = !!value.isRecurring;
     const ridesRentalInvoice = this.depositOnly ? false : !!value.attachedWithRentalInvoice;
 
+    // Requirement 20. `tenantShares` is absent for a fee shared by everybody rather than empty:
+    // both read the same server-side, but omission says "not specified" where [] says "specified as
+    // nobody". `tenantIds` is not sent at all — the split is what says who pays now.
+    const shares = this.splitState().shares;
+
     const request: AdditionalChargeCreationRequest = {
+      ...(shares === undefined ? {} : { tenantShares: shares }),
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
       attachedWithRentalInvoice: ridesRentalInvoice,
