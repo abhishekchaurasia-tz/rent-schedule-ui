@@ -128,7 +128,27 @@ export interface AdditionalChargeCreationRequest {
    * Only the Add Additional Fee page fills this in. The lease create/edit screens leave it absent and
    * so keep their pre-existing shared-fee behaviour unchanged.
    */
+  /**
+   * @deprecated Not sent from v7 (spec `02-add-additional-charge-ui.md` requirement 20). The server
+   * accepts and ignores it for one release before removing it; the split below says who pays.
+   */
   tenantIds?: string[];
+
+  /**
+   * The per-renter split (requirement 20) — one entry per ticked renter, in roster order.
+   *
+   * **Absent means every current and future active renter shares the fee**, which is what the empty
+   * `tenantIds` array used to mean. Absent rather than empty on purpose: both read the same on the
+   * server, but omission says *not specified* where `[]` says *specified as nobody*.
+   *
+   * `sharePercent` is present **only** on a row the owner typed as a percentage. Its absence records
+   * that they typed an amount, and the two are not interchangeable.
+   */
+  tenantShares?: ReadonlyArray<{
+    tenantId: string;
+    amount: number;
+    sharePercent?: number;
+  }>;
   items: AdditionalChargeItemCreationRequest[];
 }
 
@@ -256,12 +276,20 @@ export interface RentAgreementAdditionalChargeResponse {
   endDate?: string | null;
   hasNoEndDate: boolean;
   /**
-   * Who the fee is charged to, echoed back on every path that returns a charge — **empty meaning
-   * every active tenant shares it** (backend spec v37 FR-058). Optional on this interface only
-   * because it cannot be re-derived client-side and older responses this app was written against
-   * predate the field; when the server sends it, it is authoritative.
+   * The fee’s saved split — one entry per renter, with the amount they owe and, when the owner
+   * stated it that way, the percentage they typed.
+   *
+   * **Empty or absent means every active renter shares the fee**, which is what an empty
+   * `tenantIds` used to mean. That array is gone from this response (requirement 21): it was
+   * removed server-side in the same release, and reading it here would have emptied the
+   * who-pays label the day that shipped, with nothing failing to say so.
    */
-  tenantIds?: string[];
+  tenantShares?: ReadonlyArray<{
+    tenantId: string;
+    amount: number;
+    sharePercent?: number | null;
+    alreadyPaid?: number;
+  }>;
   items: RentAgreementAdditionalChargeItemResponse[];
   /**
    * Server-computed: this charge has already been attached to an invoice, so it may no longer be
@@ -449,9 +477,19 @@ export function toChargeCreationRequest(
     endDate: charge.endDate,
     hasNoEndDate: charge.hasNoEndDate,
     // Carried across for the same reason as every other field: `PUT …/terms` resubmits the complete
-    // charge, so a fee charged to two of four tenants — which only the Add Additional Fee page can
-    // create — would silently become a fee shared by all four the next time the lease screen saved.
-    tenantIds: charge.tenantIds,
+    // charge, so an omitted field on that route is a REMOVED field, not an unchanged one. A fee
+    // charged to two of four tenants — which only the Add Additional Fee page can create — would
+    // silently become a fee shared by all four the next time the lease screen saved.
+    //
+    // It is the split that carries this now, not the tenant array (requirement 22). The lease editor
+    // gains no way to AUTHOR a split: its fee panel has no renter control and is not getting one.
+    // What it must do is not lose one, and the server refuses a terms save that drops a stored split
+    // rather than resetting it silently.
+    tenantShares: charge.tenantShares?.map((share) => ({
+      tenantId: share.tenantId,
+      amount: share.amount,
+      ...(share.sharePercent == null ? {} : { sharePercent: share.sharePercent })
+    })),
     items: charge.items.map((item) => ({
       id: item.id,
       itemType: item.itemType,

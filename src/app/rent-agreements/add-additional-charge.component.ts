@@ -683,9 +683,30 @@ export class AddAdditionalChargeComponent {
       return;
     }
 
+    const shares = this.tenantShares();
+
+    // Requirement 20. The split is what says who pays, and the tenant array is not sent at all --
+    // the server retires it in the same release (backend requirement 189).
+    //
+    // A fee shared by everybody sends NO tenantShares rather than an empty list. Both read the same
+    // server-side, but omitting it states "not specified" where an empty array states "specified as
+    // nobody", and those are different sentences about the same fee.
+    //
+    // sharePercent rides only on a row the owner typed AS a percentage. Sending the derived figure
+    // on every row would tell the server they stated something they did not, and the two are not
+    // interchangeable: on a 300 fee, 200.00 typed and 66.67 typed are different rows, because
+    // 66.67 per cent of 300 is 200.01.
     const request: AddAdditionalChargeRequest = {
       ...charge,
-      tenantIds: [...this.selectedTenantIds()]
+      ...(shares.length === 0
+        ? {}
+        : {
+            tenantShares: shares.map((share) => ({
+              tenantId: share.tenantId,
+              amount: share.amount,
+              ...(share.authoredUnit === 'percent' ? { sharePercent: share.sharePercent } : {})
+            }))
+          })
     };
 
     this.submitError.set(null);
@@ -740,13 +761,25 @@ export class AddAdditionalChargeComponent {
     return charge.items.reduce((sum, item) => sum + item.amount, 0);
   }
 
-  /** Who an added charge landed on — the server's echoed `tenantIds`, never re-derived locally. */
+  /**
+   * Who an added charge landed on — read from the fee's **saved split** (requirement 21).
+   *
+   * It used to read an echoed `tenantIds` array. The server stops sending that field, and on the day
+   * that shipped this label would simply have emptied: no error, no failing test, just a screen that
+   * had stopped answering the question it exists to answer.
+   *
+   * **No rows means every active renter**, which is the meaning the empty array carried. The split is
+   * still never re-derived here — it is what the server saved, read back.
+   *
+   * @param charge The saved charge.
+   * @returns The renters it bills, or the shared-by-all phrase.
+   */
   chargePayerLabel(charge: RentAgreementAdditionalChargeResponse): string {
-    const tenantIds = charge.tenantIds ?? [];
-    if (tenantIds.length === 0) {
+    const shares = charge.tenantShares ?? [];
+    if (shares.length === 0) {
       return 'All active tenants';
     }
-    return tenantIds.map((tenantId) => this.tenantName(tenantId)).join(', ');
+    return shares.map((share) => this.tenantName(share.tenantId)).join(', ');
   }
 
   /** How an added charge is billed, in one phrase, for the committed-charges list. */

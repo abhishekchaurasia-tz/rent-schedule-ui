@@ -170,18 +170,18 @@ correct** before they are editable.
 
 **Requirements:** 20. **Depends on:** Milestone 3. **First slice that changes the request.**
 
-- [ ] Send `tenantShares`, with `sharePercent` **only** on rows the owner typed as a percentage.
-- [ ] Stop sending `tenantIds`.
-- [ ] A fee shared by everybody sends **no `tenantShares`** — not an empty array, which the backend
+- [x] Send `tenantShares`, with `sharePercent` **only** on rows the owner typed as a percentage.
+- [x] Stop sending `tenantIds`.
+- [x] A fee shared by everybody sends **no `tenantShares`** — not an empty array, which the backend
       reader treats the same but which states the meaning less clearly.
 
 **Tests**
 
-- [ ] `sends tenantShares and no tenantIds`.
-- [ ] `omits sharePercent on amount-authored rows` — asserted on the property being **absent**, not
+- [x] `sends tenantShares and no tenantIds`.
+- [x] `omits sharePercent on amount-authored rows` — asserted on the property being **absent**, not
       null.
-- [ ] `sends no tenantShares when nobody is ticked`.
-- [ ] `the sent amounts total the fee` — a property assertion over several fee totals and renter counts.
+- [x] `sends no tenantShares when nobody is ticked`.
+- [x] `the sent amounts total the fee` — a property assertion over several fee totals and renter counts.
 
 | Flow Card | |
 |---|---|
@@ -206,17 +206,17 @@ correct** before they are editable.
 that day the label naming who a fee landed on silently empties — a wrong-looking screen with no error
 and no failing test.
 
-- [ ] `chargePayerLabel` names renters from the **saved split**, falling back to *"every renter"* when
+- [x] `chargePayerLabel` names renters from the **saved split**, falling back to *"every renter"* when
       the charge names nobody.
-- [ ] Remove `tenantIds` from the UI's charge response model, so nothing can read it again.
-- [ ] Tell the service team this has shipped — their Milestone 5 is waiting on it, together with
+- [x] Remove `tenantIds` from the UI's charge response model, so nothing can read it again.
+- [x] Tell the service team this has shipped — their Milestone 5 is waiting on it, together with
       Milestone 6 below.
 
 **Tests**
 
-- [ ] `names renters from the saved split`.
-- [ ] `says every renter when the charge names nobody`.
-- [ ] `the charge response model declares no tenantIds` — a **type-level** assertion. A test that only
+- [x] `names renters from the saved split`.
+- [x] `says every renter when the charge names nobody`.
+- [x] `the charge response model declares no tenantIds` — a **type-level** assertion. A test that only
       checks the label would still pass with the field present and unread, and the point of this slice
       is that nothing can read it.
 
@@ -247,20 +247,20 @@ The lease editor authors nothing about who pays, and gains nothing here. It **re
 on a terms save, and an omitted field on that route is a removed field. It carries `tenantIds` today
 for exactly this reason; the split inherits the hazard the moment it replaces the array.
 
-- [ ] Add `tenantShares` to the charge model the lease editor reads and resubmits.
-- [ ] Carry it in the terms mapper beside `tenantIds`, and **keep the comment explaining why** — it is
+- [x] Add `tenantShares` to the charge model the lease editor reads and resubmits.
+- [x] Carry it in the terms mapper beside `tenantIds`, and **keep the comment explaining why** — it is
       the only place in the client that records this hazard, and it was written after the hazard was
       real.
-- [ ] Do **not** add a tenant picker, a split table, or any editing affordance to
+- [x] Do **not** add a tenant picker, a split table, or any editing affordance to
       `additional-charge-panel.component`. Who pays stays authored on one screen.
 
 **Tests**
 
-- [ ] `carries a charge's saved split through a terms save untouched` — load a lease whose fee is split
+- [x] `carries a charge's saved split through a terms save untouched` — load a lease whose fee is split
       `200 / 50 / 50`, save the lease changing something else entirely, assert the resubmitted body
       still carries all three shares.
-- [ ] `carries no split for a charge that has none` — the shared-by-all case is unchanged.
-- [ ] `the lease editor panel renders no tenant control` — a guard against this milestone quietly
+- [x] `carries no split for a charge that has none` — the shared-by-all case is unchanged.
+- [x] `the lease editor panel renders no tenant control` — a guard against this milestone quietly
       growing into the editor the spec says it must not become.
 
 | Flow Card | |

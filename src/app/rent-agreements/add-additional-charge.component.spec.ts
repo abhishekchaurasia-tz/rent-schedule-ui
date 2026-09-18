@@ -91,7 +91,7 @@ describe('AddAdditionalChargeComponent', () => {
     isRecurring: false,
     dueDate: '2026-10-01',
     hasNoEndDate: false,
-    tenantIds: [tenantA],
+    tenantShares: [{ tenantId: tenantA, amount: 50 }],
     items: [
       {
         id: '88888888-8888-8888-8888-888888888888',
@@ -242,25 +242,96 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.selectedTenantIds().size).toBe(0);
   });
 
-  it('sends tenantIds: [] when nobody is ticked — the backend meaning of "shared by all"', () => {
+  it('sends no tenantShares when nobody is ticked — the backend meaning of "shared by all"', () => {
     loadAgreement();
 
     stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([]);
+
+    // Omitted, not empty. Both read the same on the server, but omission states "not specified"
+    // rather than "specified as nobody", and it is what requirement 20 asks for.
+    expect(request.request.body.tenantShares).toBeUndefined();
+    expect(request.request.body.tenantIds).toBeUndefined();
 
     request.flush(createdCharge);
   });
 
-  it('sends exactly the ticked tenants when some are selected', () => {
+  it('omits sharePercent on a row the owner typed as an amount', () => {
+    loadAgreement();
+    component.toggleTenant(tenantA);
+    component.toggleTenant(tenantB);
+    component.setShareUnit(tenantA, 'amount');
+    component.typeShare(tenantA, '30');
+    component.setShareUnit(tenantB, 'amount');
+    component.typeShare(tenantB, '20');
+
+    stageAndSave();
+
+    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+    const shares = request.request.body.tenantShares as Array<Record<string, unknown>>;
+
+    // Absent, not null: null would be a stated percentage of nothing. The unit the owner typed is
+    // what the server stores, and an amount-authored row has no percentage to state.
+    expect('sharePercent' in shares[0]).toBeFalse();
+    expect(shares[0]['amount']).toBe(30);
+
+    request.flush(createdCharge);
+  });
+
+  it('sends sharePercent on a row the owner typed as a percentage', () => {
+    loadAgreement();
+    component.toggleTenant(tenantA);
+    component.toggleTenant(tenantB);
+    // The fee is staged BEFORE the percentages are typed, because a percentage is of something:
+    // with no fee on the page yet, 70 per cent resolves against zero and the split totals nothing.
+    component.onChargeCreated(emittedCharge);
+
+    component.setShareUnit(tenantA, 'percent');
+    component.typeShare(tenantA, '70');
+    component.setShareUnit(tenantB, 'percent');
+    component.typeShare(tenantB, '30');
+
+    component.saveFee();
+
+    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+    const shares = request.request.body.tenantShares as Array<Record<string, unknown>>;
+
+    expect(shares[0]['sharePercent']).toBe(70);
+    expect(shares[0]['amount']).toBe(35);
+
+    request.flush(createdCharge);
+  });
+
+  it('sends amounts that total the fee exactly', () => {
+    loadAgreement();
+    component.toggleTenant(tenantA);
+    component.toggleTenant(tenantB);
+
+    stageAndSave(feeOf(100.01));
+
+    const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
+    const shares = request.request.body.tenantShares as Array<{ amount: number }>;
+
+    // Summed in cents, because 50.01 + 50.00 in floating point is not 100.01.
+    const cents = shares.reduce((sum, share) => sum + Math.round(share.amount * 100), 0);
+    expect(cents).toBe(10001);
+
+    request.flush(createdCharge);
+  });
+
+  it('sends a split naming exactly the ticked tenants, and no tenantIds', () => {
     loadAgreement();
     component.toggleTenant(tenantB);
 
     stageAndSave();
 
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([tenantB]);
+
+    expect(request.request.body.tenantShares).toEqual([
+      { tenantId: tenantB, amount: 50 }
+    ]);
+    expect(request.request.body.tenantIds).toBeUndefined();
 
     request.flush(createdCharge);
   });
@@ -437,11 +508,44 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.tenants().length).toBe(0);
     expect(fixture.nativeElement.textContent).toContain('no tenants saved');
 
-    // A shared fee is still addable in that state.
+    // A shared fee is still addable in that state, and it names nobody -- there is nobody to name.
     stageAndSave();
     const request = httpMock.expectOne(`${baseUrl}/${agreementId}/additional-charges`);
-    expect(request.request.body.tenantIds).toEqual([]);
+    expect(request.request.body.tenantShares).toBeUndefined();
     request.flush(createdCharge);
+  });
+
+  it('names the renters a saved fee landed on from its split', () => {
+    loadAgreement();
+
+    const label = component.chargePayerLabel({
+      ...createdCharge,
+      tenantShares: [
+        { tenantId: tenantA, amount: 30 },
+        { tenantId: tenantB, amount: 20 }
+      ]
+    });
+
+    expect(label).toContain(component.tenantName(tenantA));
+    expect(label).toContain(component.tenantName(tenantB));
+  });
+
+  it('says every renter when a saved fee names nobody', () => {
+    loadAgreement();
+
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: [] }))
+      .toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: undefined }))
+      .toBe('All active tenants');
+  });
+
+  it('declares no tenantIds on the charge response model', () => {
+    // A type-level assertion, not a value one. A test that only read the label would pass with the
+    // field still declared and merely unread, and the point of this slice is that nothing can read
+    // it -- the server stops sending it in the same release.
+    const charge: RentAgreementAdditionalChargeResponse = createdCharge;
+
+    expect('tenantIds' in charge).toBeFalse();
   });
 
   it('passes the loaded lease through to the fee panel', () => {
@@ -494,8 +598,8 @@ describe('AddAdditionalChargeComponent', () => {
     loadAgreement();
 
     expect(component.chargePayerLabel(createdCharge)).toContain(component.tenantName(tenantA));
-    expect(component.chargePayerLabel({ ...createdCharge, tenantIds: [] })).toBe('All active tenants');
-    expect(component.chargePayerLabel({ ...createdCharge, tenantIds: undefined })).toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: [] })).toBe('All active tenants');
+    expect(component.chargePayerLabel({ ...createdCharge, tenantShares: undefined })).toBe('All active tenants');
   });
 
   it('totals an added charge from its item amounts', () => {

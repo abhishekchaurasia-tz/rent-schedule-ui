@@ -108,7 +108,7 @@ describe('RentAgreementsService', () => {
     expect(error).toBeTruthy();
   });
 
-  it('addAdditionalCharge() posts the charge at the BODY ROOT, tenantIds included', () => {
+  it('addAdditionalCharge() posts the charge at the BODY ROOT, split included', () => {
     const agreementId = '44444444-4444-4444-4444-444444444444';
     const request: AddAdditionalChargeRequest = {
       notes: 'Parking',
@@ -117,7 +117,7 @@ describe('RentAgreementsService', () => {
       isRecurring: false,
       dueDate: '2026-09-01',
       hasNoEndDate: false,
-      tenantIds: ['66666666-6666-6666-6666-666666666666'],
+      tenantShares: [{ tenantId: '66666666-6666-6666-6666-666666666666', amount: 50 }],
       items: [
         {
           lineItemId: '77777777-7777-7777-7777-777777777777',
@@ -141,7 +141,9 @@ describe('RentAgreementsService', () => {
     // required field and come back a 400.
     expect(req.request.body).toEqual(request);
     expect(req.request.body.charge).toBeUndefined();
-    expect(req.request.body.tenantIds).toEqual(['66666666-6666-6666-6666-666666666666']);
+    expect(req.request.body.tenantShares).toEqual([
+      { tenantId: '66666666-6666-6666-6666-666666666666', amount: 50 }
+    ]);
 
     const expectedResponse: RentAgreementAdditionalChargeResponse = {
       id: '88888888-8888-8888-8888-888888888888',
@@ -152,7 +154,7 @@ describe('RentAgreementsService', () => {
       isRecurring: false,
       dueDate: '2026-09-01',
       hasNoEndDate: false,
-      tenantIds: ['66666666-6666-6666-6666-666666666666'],
+      tenantShares: [{ tenantId: '66666666-6666-6666-6666-666666666666', amount: 50 }],
       items: [
         {
           id: '99999999-9999-9999-9999-999999999999',
