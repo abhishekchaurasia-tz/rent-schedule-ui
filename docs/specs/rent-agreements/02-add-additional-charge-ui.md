@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v8 | 2026-09-18 | **The split editor moves into the fee panel, so the Invoices page gets the same one and the lease editor still gets none.** **FR 4 and FR 5 are corrected; FR 8 is restored; the *"panel is reused, not forked"* constraint is replaced.** *Raised by the user 2026-09-18, asking why the two screens that add a fee do not look alike.* **Both post to the same endpoint with the same field available, and only one of them could use it.** v7 put the tenant picker and the split on this **page**, because the fee panel is shared with the lease create/edit screens and requirement 22 says those must never gain a renter control. The Invoices page hosts that same panel, so it ended up with no way to say who pays at all — spec `04` FR 19 made that deliberate and pointed the user here for a subset. Two screens, one API, one of them able to send `tenantShares`. **The editor now lives in the panel behind a `tenants` input**, and that input is the whole of requirement 22: a host that passes a roster gets the editor, a host that passes none renders no renter control at all. The lease screens pass none. What was an architectural arrangement is now a single assertion, so a change that renders the editor unconditionally fails a test rather than quietly growing a split editor on the lease editor. **FR 8 stands again.** v7 could not satisfy it: the split divides the fee's money, the total lived inside the panel, and the panel is a drawer over a click-to-close dimmer — so nothing behind it could be typed into and Create had to *stage* the fee for a second, page-level Save. Inside the panel the total is already there, so Create posts once again and this page drops its picker, its staged-fee card, its split signals and its submit guard. **FR 4 moves rather than dies:** the selection is still per-row with the two modes, but it happens in the panel; this page keeps the roster as read-only context, which is all FR 3 ever asked for. **FR 5 is corrected** — an empty selection still means *every active renter shares this fee*, but it is now expressed by sending no `tenantShares`, not by `tenantIds: []`, which v7 FR 20 had already stopped sending. **The arithmetic moves to `tenant-split.util.ts`** because three screens divide a fee now and the rules are the part that must not differ between them; the control surface moves to `tenant-split-editor.component`, which also returns this page's stylesheet to under its budget. **No backend change, no contract change** — the same body, from one more screen. | — |
 | v7 | 2026-09-17 | **The page gains the split editor the backend has been waiting for, and stops sending the tenant array.** New **requirements 17-22**. The backend shipped a per-tenant split on 2026-09-17 (`06-unified-invoice-generation.md` v105: `payerShares`, renamed to `tenantShares` in v109) and **this page has never sent it** — it still sends `tenantIds` and lets the server divide evenly. So the one thing the owner asked for, *typing what each renter owes*, is unreachable from the only screen that can say who pays. This version adds the editor: ticking renters fills an even division, each row is editable in **money or percentage**, and the rows must total the fee before the save is allowed. It also stops reading the echoed `tenantIds`, which backend v109 removes from the response — **the label naming who a fee landed on breaks the day that ships**, so this release must land first. | [2026-09-17T2200-02-the-owner-types-each-share](../../plans/rent-agreements/2026-09-17T2200-02-the-owner-types-each-share.md) |
 | v6 | 2026-09-10 | **The page could not retry a save, and the one status that most deserves a retry is the one it is most likely to get.** New **requirement 16**; the *"idempotency key is out of reach"* constraint is **withdrawn**. `POST …/additional-charges` has keyed replay off the body's `id` since backend FR 57, and answers `200` rather than `201` when it recognises one — but the panel emits no `id`, so the page had nothing to replay with and could only block its own submit while a request was in flight. The page now mints one (`crypto.randomUUID()`) when the panel does not supply it, which costs nothing and makes the submission replayable, and retries **once** on `409` after 400 ms. The `409` is not hypothetical: it was reproduced against the running service by submitting a fee immediately after activating the lease, while that activation's own post-commit issuing pass still held the agreement. That is a lock that clears in well under a second, and the person on this screen has no way to act on being told about it. **Bounded to one attempt, and to `409` alone** — a `422` or a `404` is the user's to fix and reaches them on the first answer, and an unbounded retry on a write turns one slow request into several. | [2026-09-10T1900-02-replay-a-conflicted-fee](../../plans/rent-agreements/2026-09-10T1900-02-replay-a-conflicted-fee.md) |
 | v5 | 2026-09-09 | **A fee could be saved with money on it that will never be billed, and this page said nothing — the third time this repository has discarded a report the backend sends on a success.** New **requirement 15**. `POST …/additional-charges` answers with the saved charge *plus* `unbilledLines`: the lines this save could bill nowhere, because every invoice they could have gone on has already taken a payment, and a paid invoice is corrected with a credit or a void rather than an edit (backend FR 101 / spec 04 v8 FR 41). The backend's own contract says it *"is never null, and never absent, so a client reads it unconditionally"* and that *"the defect being closed is not the refusal but the silence"* — **and `grep -rn "unbilledLines" src/` returned nothing at all.** So the owner entered a fee, saw it land in the committed list, and had no way to learn that part of its money reaches no invoice. **Rendered inside the charge's own card, not as a page banner**, because this page adds fees one after another: a disclosure keyed to the fee stays true while a "latest save" banner is overwritten by the next fee, which the third test pins. It is styled `warn` and leaves `submitError` untouched — the fee *was* saved, and the line stays on it. **The pattern, now recorded rather than rediscovered:** `blockedRemovals` (spec 01 v19), `skippedCycles` (spec 06 v1) and now `unbilledLines` were all reported on a `200` and all dropped. Two more remain unread — the schedule preview's `warnings` and `blocked` — and are named in the plan as the next slices rather than left to be found a fourth time. | [2026-09-09T1600-02-surface-unbilled-lines](../../plans/rent-agreements/2026-09-09T1600-02-surface-unbilled-lines.md) |
@@ -55,11 +56,17 @@ charge with its real id.
    `tenantId`, its recorded rent share and its recorded deposit share, and a stable stand-in name
    derived from the id — the same derivation the ADD TENANTS screen uses, so the same tenant reads
    as the same person on both screens.
-4. The system shall let the user select **any number** of those tenants, including none and all,
-   with per-row checkboxes plus "Select all" and "Clear" actions.
-5. The system shall treat an empty selection as *"every active tenant shares this fee"* — sending
-   `tenantIds: []`, which is the backend's own meaning for the empty list (FR-058) — and shall say so
-   on screen, so an empty selection is never mistaken for an unfinished one.
+4. ~~The system shall let the user select **any number** of those tenants, including none and all,
+   with per-row checkboxes plus "Select all" and "Clear" actions.~~ **Corrected in v8 — the selection
+   moved into the fee panel.** It is still per-row and still allows none and all, but it is made in
+   `app-tenant-split-editor` beside the fee it divides, because the split needs that fee's total and the
+   Invoices page needs the same control. This page renders the roster as **read-only context** (FR 3)
+   and hands it to the panel.
+5. The system shall treat an empty selection as *"every active tenant shares this fee"* and shall say
+   so on screen, so an empty selection is never mistaken for an unfinished one. **Corrected in v8:** it
+   is carried by sending **no `tenantShares`** (requirement 20), not by `tenantIds: []` — that array
+   stopped being sent at v7, and this clause still named it. Both mean the same thing to the server;
+   omission states *not specified* where an empty list states *specified as nobody*.
 6. When the tenants endpoint answers `204 No Content` (the lease exists but step 2 was never saved),
    the system shall say so, offer a link to that lease's ADD TENANTS screen, and still allow a
    shared fee to be added; it shall not present a tenant picker with nothing in it.
@@ -67,9 +74,14 @@ charge with its real id.
    the loaded lease's `propertyOwnerId`, `startDate` and `endDate` so the panel's catalog fetch and
    its candidate-date selects work exactly as they do on the lease screen.
 8. On the panel's `created` event the system shall `POST /rent/agreements/{id}/additional-charges`
-   **once**, with the panel's charge fields at the body root plus the selected `tenantIds`, and shall
-   close the panel only after the request succeeds — a failed submission keeps the authored fee on
-   screen instead of discarding it.
+   **once**, with the panel's charge fields at the body root — **the split among them** (requirement 20)
+   — and shall close the panel only after the request succeeds; a failed submission keeps the authored
+   fee on screen instead of discarding it.
+   **Breached by v7 and restored in v8, which is worth recording.** v7 put the split on this page, so
+   Create could only *stage* the fee and a second page-level Save posted it: the split divides the fee's
+   money, and the page could not see a total that lived inside the panel. Moving the editor into the
+   panel removed the reason, not just the symptom — the total is beside the split now, and one click
+   both authors and sends.
 9. The system shall render each successfully added charge in a running list on the page — its server
    id, its category, its items and total, its recurrence, and who it was charged to — so a manager
    adding several fees in a row can see what has already been committed.
@@ -153,9 +165,14 @@ charge with its real id.
 - **No tenant-profile service exists.** The tenants endpoint stores shares against a `tenantId` and
   carries no personal fields, so every name/email on this screen is a local stand-in derived from the
   id (the same gap the ADD TENANTS screen documents). Only the `tenantId` leaves the screen.
-- **The panel is reused, not forked.** `AdditionalChargePanelComponent` keeps its current inputs and
-  its `created`/`closed` outputs; the tenant selection lives on the host page, not in the panel, so
-  the lease screen is unaffected.
+- **The panel is reused, not forked** — and from v8 it is the panel that owns the tenant selection.
+  `AdditionalChargePanelComponent` gains two inputs, `tenants` and `isGroupInvoice`, and keeps its
+  `created`/`closed` outputs; `created` now carries `tenantShares`.
+  **A `null` roster is what keeps the lease screens unaffected**, and it is a stronger guarantee than
+  the old arrangement. Keeping the picker on the host page protected them by construction — there was
+  no renter control in the panel to leak — but it also left the Invoices page unable to split a fee it
+  was posting to the very endpoint that accepts one. The input inverts that: the lease screens pass no
+  roster and render nothing, which is a condition a test can pin, and requirement 22 has one.
 - ~~**Idempotency key is out of reach.**~~ **Withdrawn in v6.** The panel still emits no `id`, but the
   page mints one, so the submission is replayable and requirement 16's retry is safe. The in-flight
   block stays — it stops a second *distinct* submission, which a retry never is.
