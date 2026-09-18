@@ -196,14 +196,15 @@ describe('AddAdditionalChargeComponent', () => {
     expect(component.tenants().length).toBe(2);
   });
 
-  it('lists every active renter with a stable stand-in name and the recorded shares', () => {
+  it('lists no renters of its own — the fee panel is where they are shown and ticked', () => {
     loadAgreement();
 
-    const rows = fixture.nativeElement.querySelectorAll('.tenant-row');
-    expect(rows.length).toBe(2);
-    expect(rows[0].textContent).toContain(tenantA);
-    expect(rows[0].textContent).toContain(component.tenantName(tenantA));
-    expect(component.tenantName(tenantA)).toBe(component.tenantName(tenantA));
+    // The page loads the roster and hands it to the panel; it does not render a second copy. A
+    // read-only list beside the editor that lists the same people was duplication, and the duplicate
+    // is the one that goes stale.
+    expect(component.tenants().length).toBe(2);
+    expect(fixture.nativeElement.querySelectorAll('.tenant-row').length).toBe(0);
+    expect(fixture.nativeElement.textContent).not.toContain(tenantA);
   });
 
   it('mints an idempotency key, so a replay cannot become a second charge', () => {

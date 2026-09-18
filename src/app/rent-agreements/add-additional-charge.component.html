@@ -51,63 +51,27 @@
       </span>
     </section>
 
-    <section class="tenants-card">
-      <div class="card-header">
-        <h2>Renters on this lease</h2>
+    <!--
+      No roster list on the page. The fee panel's split editor lists every renter with a checkbox each,
+      so a second read-only copy here said the same thing twice — and a duplicate is the copy that goes
+      stale. What stays is the state an owner needs *before* opening the panel: a lease with nobody on
+      it, and where to go and fix that.
+    -->
+    @if (!hasSavedTenants()) {
+      <div class="banner warn">
+        <strong>This lease has no tenants saved yet.</strong>
+        <p>
+          Step 2 of the lease wizard was never completed, so there is nobody to charge individually.
+          You can still add a fee — it will be shared by every tenant added later — or
+          <a [routerLink]="['/rent-agreements', lease.agreementId, 'tenants']">add the tenants first</a>.
+        </p>
       </div>
-
-      @if (!hasSavedTenants()) {
-        <div class="banner warn">
-          <strong>This lease has no tenants saved yet.</strong>
-          <p>
-            Step 2 of the lease wizard was never completed, so there is nobody to charge individually.
-            You can still add a fee — it will be shared by every tenant added later — or
-            <a [routerLink]="['/rent-agreements', lease.agreementId, 'tenants']">add the tenants first</a>.
-          </p>
-        </div>
-      } @else if (tenants().length === 0) {
-        <div class="banner warn">
-          <strong>This lease's saved tenant roster is empty.</strong>
-          <p>Any fee added here is recorded against the lease and shared by every tenant added later.</p>
-        </div>
-      } @else {
-        <p class="selection-note">
-          Listed for context, with the rent and deposit shares this lease already records.
-          <strong>Who pays the next fee is chosen in the fee panel</strong>, where the split can be
-          divided against the fee's own total — the same editor the Invoices page uses.
-        </p>
-
-        <p class="invoice-mode">
-          This lease bills its tenants
-          <strong>{{ isGroupInvoice() ? 'on one group invoice' : 'individually' }}</strong>.
-        </p>
-
-        <div class="tenant-rows">
-          @for (tenant of tenants(); track tenant.tenantId) {
-            <div class="tenant-row">
-              <span class="tenant-main">
-                <span class="tenant-name">{{ tenantName(tenant.tenantId) }}</span>
-                <code class="tenant-id">{{ tenant.tenantId }}</code>
-              </span>
-              <span class="tenant-shares">
-                <span>
-                  Rent {{ tenant.rentAmount | currency }}
-                  @if (tenant.rentPercent !== null) {
-                    <span class="muted">({{ tenant.rentPercent }}%)</span>
-                  }
-                </span>
-                <span>
-                  Deposit {{ tenant.deposit | currency }}
-                  @if (tenant.depositPercent !== null) {
-                    <span class="muted">({{ tenant.depositPercent }}%)</span>
-                  }
-                </span>
-              </span>
-            </div>
-          }
-        </div>
-      }
-    </section>
+    } @else if (tenants().length === 0) {
+      <div class="banner warn">
+        <strong>This lease's saved tenant roster is empty.</strong>
+        <p>Any fee added here is recorded against the lease and shared by every tenant added later.</p>
+      </div>
+    }
 
     <section class="fee-actions">
       <button type="button" class="primary-btn" (click)="openPanel()" [disabled]="submitting()">
