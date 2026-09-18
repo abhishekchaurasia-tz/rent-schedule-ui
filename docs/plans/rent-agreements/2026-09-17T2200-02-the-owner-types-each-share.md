@@ -73,21 +73,21 @@ A signal deriving one row per ticked renter, with the money divided evenly, rend
 editing yet, and nothing changes in what is sent — this slice is about the numbers being **visible and
 correct** before they are editable.
 
-- [ ] A `tenantShares` computed signal in `add-additional-charge.component.ts`, deriving from
+- [x] A `tenantShares` computed signal in `add-additional-charge.component.ts`, deriving from
       `selectedTenantIds()` and the fee total.
-- [ ] A `divideEvenly(total, count)` helper: whole cents each, remainder **one cent each to the first
+- [x] A `divideEvenly(total, count)` helper: whole cents each, remainder **one cent each to the first
       rows**, never stacked on one.
-- [ ] The split table in `add-additional-charge.component.html`, showing name, amount and percentage.
+- [x] The split table in `add-additional-charge.component.html`, showing name, amount and percentage.
 
 **Tests**
 
-- [ ] `divides $300 across three renters as 100.00 each` — the case that fails if the percentage is
+- [x] `divides $300 across three renters as 100.00 each` — the case that fails if the percentage is
       divided instead of the money.
-- [ ] `spreads four leftover cents one each across six renters` — `16.67` four times, then `16.66`
+- [x] `spreads four leftover cents one each across six renters` — `16.67` four times, then `16.66`
       twice. An implementation handing the whole remainder to one row passes the three-renter test and
       fails here.
-- [ ] `re-divides when a renter is unticked`.
-- [ ] `shows no split when nobody is ticked` — the shared-by-all case.
+- [x] `re-divides when a renter is unticked`.
+- [x] `shows no split when nobody is ticked` — the shared-by-all case.
 
 | Flow Card | |
 |---|---|
@@ -108,17 +108,17 @@ correct** before they are editable.
 
 **Requirements:** 18. **Depends on:** Milestone 1.
 
-- [ ] Both cells become inputs; editing one derives the other for display.
-- [ ] Record **which unit was typed** per row — the flag requirement 20 sends.
-- [ ] A typed row is not re-divided when another renter is ticked; only untouched rows absorb the
+- [x] Both cells become inputs; editing one derives the other for display.
+- [x] Record **which unit was typed** per row — the flag requirement 20 sends.
+- [x] A typed row is not re-divided when another renter is ticked; only untouched rows absorb the
       change. An owner who has fixed one number does not expect the page to undo it.
 
 **Tests**
 
-- [ ] `typing an amount leaves the percentage derived and marks the row as amount-authored`.
-- [ ] `typing a percentage marks the row as percent-authored and derives the amount` — `66.67%` of
+- [x] `typing an amount leaves the percentage derived and marks the row as amount-authored`.
+- [x] `typing a percentage marks the row as percent-authored and derives the amount` — `66.67%` of
       `$300` shows `200.01`, not `200.00`.
-- [ ] `ticking another renter re-divides only the untouched rows`.
+- [x] `ticking another renter re-divides only the untouched rows`.
 
 | Flow Card | |
 |---|---|
@@ -139,17 +139,17 @@ correct** before they are editable.
 
 **Requirements:** 19. **Depends on:** Milestone 2.
 
-- [ ] Block submission while `Σ amounts ≠ fee total`, naming both figures.
-- [ ] A **reset to even split** control, which discards typed rows deliberately and only on click.
-- [ ] **Keep the typed rows** on a mismatch.
+- [x] Block submission while `Σ amounts ≠ fee total`, naming both figures.
+- [x] A **reset to even split** control, which discards typed rows deliberately and only on click.
+- [x] **Keep the typed rows** on a mismatch.
 
 **Tests**
 
-- [ ] `refuses the save and names the difference when the shares total $290 of a $300 fee`.
-- [ ] `keeps every typed row when the total is wrong` — the assertion that fails if the page
+- [x] `refuses the save and names the difference when the shares total $290 of a $300 fee`.
+- [x] `keeps every typed row when the total is wrong` — the assertion that fails if the page
       "helpfully" corrects the owner's numbers.
-- [ ] `reset restores the even split`.
-- [ ] `allows the save when the rows total exactly`.
+- [x] `reset restores the even split`.
+- [x] `allows the save when the rows total exactly`.
 
 | Flow Card | |
 |---|---|
@@ -277,6 +277,22 @@ for exactly this reason; the split inherits the hazard the moment it replaces th
 **STOP — review checkpoint.**
 
 ---
+
+> ## Milestones 1 to 3 were done and left unticked, and that is its own defect
+>
+> **Ticked 2026-09-18 after checking each item against the code**, not from memory. Every symbol the
+> three milestones call for is present — the `tenantShares` computed signal, `divideEvenly`, the
+> per-row `authoredUnit` flag, the reset control, the split table — and all eleven named tests exist
+> and pass, in a suite of **394** green.
+>
+> **This is the same defect as the service plan's Milestone 5, pointing the other way.** There, three
+> boxes claimed work that had never been written, and the claim held until a payload the client
+> actually sends was tried against the live rule and came back `422`. Here the boxes denied work that
+> had been. Both make the plan useless as a record: one hides a gap, the other hides progress, and
+> neither can be told from the code without reading all of it.
+>
+> **A box is ticked when its item has been verified, and only then.** Ticking on completion of a
+> milestone rather than on completion of an item is what produced both halves of this.
 
 ## 3. Scope & Context Rules
 
