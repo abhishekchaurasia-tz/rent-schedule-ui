@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -66,9 +67,17 @@ export class AdditionalChargePanelComponent implements OnInit {
   @Input() depositOnly = false;
 
   /**
-   * The requesting property owner — passed through to `GET /api/v1/line-items` as an explicit query
-   * parameter (the backend has no session/auth mechanism to resolve it from yet). Without this, the
-   * catalog can't be fetched and the item picker stays empty.
+   * The property owner the record on screen belongs to.
+   *
+   * **It is not what the catalog is fetched with, and has not been since v22.** That release moved the
+   * catalog's owner scope onto the `PropertyOwnerUid` header, which `scopeHeadersInterceptor` attaches;
+   * v26 then removed the `if (!this.propertyOwnerId) return;` that was still guarding the fetch. This
+   * comment claimed the opposite of both — *"without this the catalog can't be fetched and the item
+   * picker stays empty"* — which is the single most misleading sentence to leave next to an empty
+   * picker, and it was read that way.
+   *
+   * What it is still used for is {@link ownerScopeMismatch}: comparing the record's owner against the
+   * one the catalog was actually read for.
    */
   @Input() propertyOwnerId: string | null = null;
 
@@ -103,6 +112,26 @@ export class AdditionalChargePanelComponent implements OnInit {
    * rent/deposit target to pick or a "mixed category" case to guard against.
    */
   readonly lineItems = signal<LineItemResponse[]>([]);
+
+  /**
+   * Why the catalog could not be read, or `null` when it was read.
+   *
+   * **This exists because a failed read and an empty catalog used to be the same sentence.** The fetch
+   * had no error branch, so `lineItems()` simply kept its initial `[]` and the panel said *"No catalog
+   * items are available to pick from yet"* — whether the catalog was empty, the request was refused,
+   * or the Billing service was not running at all. On the lease editor that is the **only** symptom a
+   * stopped service produces: that screen reads nothing from the API before this panel is opened, so
+   * there is no failed load anywhere else on it to give the game away.
+   */
+  readonly catalogError = signal<string | null>(null);
+
+  /**
+   * Whether the catalog read is in flight.
+   *
+   * Tracked for the same reason as the error above: the panel can be opened and a picker clicked while
+   * the request is still out, and "not yet" is not "there are none".
+   */
+  readonly catalogLoading = signal(false);
 
   /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
   readonly openItemPickerIndex = signal<number | null>(null);
@@ -407,7 +436,57 @@ export class AdditionalChargePanelComponent implements OnInit {
   private loadLineItems(): void {
     const scope: LineItemScope = this.depositOnly ? 'DepositOnly' : 'AllExcludingCredit';
 
-    this.lineItemsService.list(scope).subscribe((items) => this.lineItems.set(items));
+    this.catalogError.set(null);
+    this.catalogLoading.set(true);
+
+    this.lineItemsService.list(scope).subscribe({
+      next: (items) => {
+        this.lineItems.set(items);
+        this.catalogLoading.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        // Emptied rather than left standing. A stale list under an error message invites picking an
+        // entry that was read for a different owner, or from a service that is no longer answering.
+        this.lineItems.set([]);
+        this.catalogLoading.set(false);
+        this.catalogError.set(AdditionalChargePanelComponent.describeCatalogError(err));
+      }
+    });
+  }
+
+  /**
+   * Reads the catalog again after a failure.
+   *
+   * **Only the catalog.** The form beside it may be half filled in, and a service that was down while
+   * someone was typing should not cost them what they typed — the same reasoning that makes
+   * requirement 15g re-read the catalog alone when the scope changes.
+   */
+  retryCatalog(): void {
+    this.loadLineItems();
+  }
+
+  /**
+   * Turns a failed catalog read into something the reader can act on.
+   *
+   * **Three cases, because they send you to three different places.** `status === 0` is nothing
+   * answering at the address at all — the service is not running, or not where `apiBaseUrl` says — and
+   * it is the case that used to be indistinguishable from an empty catalog. An RFC 9457 `detail` is
+   * repeated verbatim, which covers the other trap on the local build: a token pasted into Test scope
+   * replaces the three ids the Billing API reads directly, and it answers *"The PropertyOwnerUid header
+   * is required."* Anything else is reported as its status line.
+   */
+  private static describeCatalogError(err: HttpErrorResponse): string {
+    if (err.status === 0) {
+      return (
+        `Nothing answered at ${environment.apiBaseUrl}. ` +
+        `Check that the Billing service is running.`
+      );
+    }
+
+    const problemDetail = err.error?.detail;
+    return typeof problemDetail === 'string' && problemDetail
+      ? problemDetail
+      : `The request was refused: ${err.status} ${err.statusText}`;
   }
 
   /**

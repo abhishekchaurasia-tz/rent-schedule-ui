@@ -24,7 +24,21 @@
   <form [formGroup]="form" class="panel-body">
     <h3>Invoice Item Details</h3>
 
-    @if (lineItems().length === 0) {
+    <!--
+      Three states, not one. Until this panel told them apart, a stopped Billing service, a refused
+      request and a genuinely empty catalog all read as "no catalog items yet" — and on the lease
+      editor, which reads nothing from the API before this panel opens, that was the only symptom a
+      stopped service produced anywhere on the screen.
+    -->
+    @if (catalogError(); as message) {
+      <div class="banner error" role="status">
+        <p><strong>The item catalog could not be loaded.</strong></p>
+        <p>{{ message }}</p>
+        <p>
+          <button type="button" class="link-btn" (click)="retryCatalog()">Try again</button>
+        </p>
+      </div>
+    } @else if (!catalogLoading() && lineItems().length === 0) {
       <div class="banner error">
         No catalog items are available to pick from yet.
       </div>
@@ -335,7 +349,14 @@
               {{ lineItem.name }}
             </button>
           }
-          @if (lineItems().length === 0) {
+          @if (catalogError()) {
+            <p class="item-picker-error">
+              Could not load the catalog.
+              <button type="button" class="link-btn" (click)="retryCatalog()">Try again</button>
+            </p>
+          } @else if (catalogLoading()) {
+            <p class="item-picker-empty">Loading…</p>
+          } @else if (lineItems().length === 0) {
             <p class="item-picker-empty">No catalog items available.</p>
           }
         </div>

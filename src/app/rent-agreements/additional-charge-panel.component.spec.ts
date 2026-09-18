@@ -709,4 +709,113 @@ describe('AdditionalChargePanelComponent', () => {
 
     expect(closedCount).toBe(1);
   });
+  describe('a catalog that could not be read is not an empty catalog', () => {
+    /** Fails the catalog GET fired from ngOnInit, the way the real service does. */
+    function failLineItems(status: number, statusText: string, body: Object | null = null): void {
+      httpMock.expectOne((request) => request.url === baseUrl).flush(body, { status, statusText });
+      fixture.detectChanges();
+    }
+
+    /**
+     * The defect this closes. The fetch had no error branch at all, so `lineItems()` kept its initial
+     * `[]` and the panel said *"No catalog items are available to pick from yet"* for a stopped
+     * service, a refused request and a genuinely empty catalog alike.
+     *
+     * **The lease editor is where that mattered.** It reads nothing from the API before this panel is
+     * opened, so an empty picker was the only symptom a stopped Billing service produced anywhere on
+     * the screen — which is exactly how it was mistaken for a binding bug.
+     */
+    it('says the catalog could not be loaded, not that it is empty', () => {
+      fixture.detectChanges();
+      failLineItems(0, 'Unknown Error');
+
+      expect(component.catalogError()).not.toBeNull();
+      expect(component.catalogLoading()).toBeFalse();
+
+      const text = fixture.nativeElement.textContent;
+      expect(text).toContain('could not be loaded');
+      expect(text).not.toContain('No catalog items are available to pick from yet');
+    });
+
+    it('names the address nothing answered at when the service is not running', () => {
+      fixture.detectChanges();
+
+      // `status === 0` is what the browser reports for ERR_CONNECTION_REFUSED — the case that used to
+      // be indistinguishable from an empty catalog.
+      failLineItems(0, 'Unknown Error');
+
+      expect(component.catalogError()).toContain(environment.apiBaseUrl);
+      expect(component.catalogError()).toContain('Billing service is running');
+    });
+
+    it('repeats the problem detail verbatim when the request was refused', () => {
+      fixture.detectChanges();
+
+      // The other trap on the local build: a token pasted into Test scope replaces the three ids the
+      // Billing API reads directly, and it refuses the read for the one it needs.
+      failLineItems(400, 'Bad Request', {
+        type: 'about:blank',
+        title: 'Validation Error',
+        status: 400,
+        detail: 'The PropertyOwnerUid header is required.'
+      });
+
+      expect(component.catalogError()).toBe('The PropertyOwnerUid header is required.');
+      expect(fixture.nativeElement.textContent).toContain('The PropertyOwnerUid header is required.');
+    });
+
+    it('falls back to the status line when the failure carries no detail', () => {
+      fixture.detectChanges();
+      failLineItems(500, 'Internal Server Error');
+
+      expect(component.catalogError()).toBe('The request was refused: 500 Internal Server Error');
+    });
+
+    it('reads the catalog again on Try again, and clears the message once it answers', () => {
+      fixture.detectChanges();
+      failLineItems(0, 'Unknown Error');
+
+      const retry = fixture.nativeElement.querySelector('.banner.error .link-btn');
+      expect(retry).not.toBeNull();
+
+      retry.click();
+      fixture.detectChanges();
+
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+
+      expect(component.catalogError()).toBeNull();
+      expect(component.lineItems()).toEqual([parkingItem]);
+      expect(fixture.nativeElement.textContent).not.toContain('could not be loaded');
+    });
+
+    it('empties a stale catalog when a later read fails', () => {
+      fixture.detectChanges();
+      flushLineItems([parkingItem, petFeeItem]);
+      fixture.detectChanges();
+      expect(component.lineItems().length).toBe(2);
+
+      component.retryCatalog();
+      failLineItems(0, 'Unknown Error');
+
+      // Left standing under an error message, the old list invites picking an entry that was read for
+      // a different owner, or from a service that is no longer answering.
+      expect(component.lineItems()).toEqual([]);
+      expect(component.catalogError()).not.toBeNull();
+    });
+
+    it('says nothing at all about emptiness while the read is still in flight', () => {
+      fixture.detectChanges();
+
+      // The panel can be opened and a picker clicked before the answer arrives. "Not yet" is not
+      // "there are none", and the old template could only say the latter.
+      expect(component.catalogLoading()).toBeTrue();
+      expect(fixture.nativeElement.textContent).not.toContain('No catalog items are available');
+
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+
+      expect(component.catalogLoading()).toBeFalse();
+    });
+  });
 });
