@@ -14,10 +14,16 @@ Legend for **Automatable now**:
 
 ## 0. Current State Snapshot (baseline before this work)
 
-- Framework: Playwright (`playwright.config.ts`), two projects: `ui` (headed, baseURL `:4300`) and `api` (baseURL `:5169`). No page-object/fixture layer exists yet.
-- Existing specs:
+- Framework: Playwright (`playwright.config.ts`), two projects: `ui` (headed, baseURL `:4300`) and `api` (baseURL `:5169`).
+- ~~No page-object/fixture layer exists yet.~~ **Corrected 2026-09-18** — `e2e/pages/` (`rent-agreement-create.page.ts`, `additional-charge-panel.ts`) and `e2e/fixtures/rent-schedule.fixtures.ts` are in place and used by the specs below.
+- Existing specs, **as of 2026-09-18** (the four listed at baseline have become seven files and 102 tests):
   - `e2e/ui/rent-agreement-create.spec.ts` — 4 tests (basic create flow, calendar popup, API-error surfaced in UI, Custom-frequency date-picker swap).
+  - `e2e/ui/additional-charge-panel.spec.ts` — 10 tests (§3.3 scenarios 79-81, 96, and the item picker). **Stubs `GET /api/v1/line-items`**, so it covers the picker given a `200` and never exercises the interceptor or the service.
+  - `e2e/ui/rent-schedule-frequency-config.spec.ts` — 11 tests.
   - `e2e/api/rent-schedule.api.spec.ts` — 4 tests (preview success, end-before-start rejection, first-rental-due-date-options, create-agreement-from-preview).
+  - `e2e/api/rent-agreement-validation.api.spec.ts` — 31 tests.
+  - `e2e/api/rent-schedule-preview-validation.api.spec.ts` — 35 tests.
+  - `e2e/api/rent-schedule-options-validation.api.spec.ts` — 7 tests.
 - Gap: the BE alone enumerates 190+ distinct rule branches across rent-schedule generation, rent-agreement creation, and additional-charge/invoicing rules. Current UI suite covers roughly 4-5 of them end-to-end.
 
 ---
@@ -158,6 +164,7 @@ Legend for **Automatable now**:
 | 82 | Charge item: quantity ≤ 0 → error |
 | 83 | Charge item: rate ≤ 0 → error |
 | 84 | Charge item: amount auto-calculated as quantity × rate; manually editing amount to mismatch → error (no rounding tolerance — test an off-by-0.01 case) |
+| — | **Scenarios 85-87 describe a control the panel no longer has (noted 2026-09-18).** The per-item Rent/Deposit category picker is gone: the category is server-derived from the items, and the deposit-only catalog is selected by the panel's `depositOnly` input rather than per row. Re-read them against `additional-charge-panel.component.html` before writing tests from them. |
 | 85 | Charge with existing catalog item (`lineItemId` selected from a picker) → `newItemCategory` field hidden/ignored |
 | 86 | Charge with brand-new item name → category required, must be Rent or Deposit |
 | 87 | New item, category = Deposit, current user is a non-system/regular property owner → error ("deposit items must be system-defined") — verify UI either hides "Deposit" as an option for new items or surfaces the server error clearly |
@@ -178,6 +185,46 @@ Legend for **Automatable now**:
 | 98 | After save, schedule rows / charges / items each display server-generated IDs distinct from any client-side temp IDs used during form editing |
 | 99 | After save, number of persisted rows/charges/items matches what was entered 1:1, same order |
 | 100 | `LeaseTermType` displayed correctly derives from presence/absence of end date (Fixed vs Month-to-Month) without the user directly picking it as a separate persisted field beyond the form selection |
+
+---
+
+### 3.5 Who pays a fee — the split editor (`tenant-split-editor.component.ts`)
+
+Added 2026-09-18, covering spec `02-add-additional-charge-ui.md` **requirements 17–23** and spec
+`04-invoice-list-ui.md` v9. Filed under §3 because the editor is a child of §3.3's panel, but the
+endpoint behind it is **`POST /rent/agreements/{id}/additional-charges`**, not `POST /rent-agreements`
+— and on the lease create/edit screens this editor must not appear at all (scenario 125).
+
+**Coverage note.** Every ✅ below already has a unit or component test — in
+`tenant-split.util.spec.ts` (the arithmetic), `tenant-split-editor.component.spec.ts` (the control
+surface) or `additional-charge-panel.component.spec.ts` (what reaches the wire). What none of them has
+yet is a **Playwright** scenario, which is what this matrix tracks. They are listed as automatable
+rather than automated.
+
+| # | Scenario | Automatable now? |
+|---|---|---|
+| 108 | Fee left on **Shared Lease**: no `tenantShares` on the request at all (absent, not `[]`) and the screen says every active renter shares it | ✅ |
+| 109 | **Split per Tenant** on a $300 three-renter fee fills `100.00 / 100.00 / 100.00`; the percentages are derived *from* the money, never the reverse (dividing `100/3 = 33.33%` and multiplying back would give `99.99 / 99.99 / 100.02`) | ✅ |
+| 110 | Leftover cents go **one each to the renters at the top of the list**: `$100` across three is `33.34 / 33.33 / 33.33`, across six is four rows of `16.67` and two of `16.66` — never one row carrying all four cents. **Regression guard against the "last tenant absorbs rounding" rule** written off in §5, which is the inverse of what ships | ✅ |
+| 111 | Unticking a renter re-divides the remaining rows; the unticked renter stays listed, reads as "Not charged this fee", and can be ticked back | ✅ |
+| 112 | Typing an **amount** leaves that row's percentage derived and records the row as amount-authored | ✅ |
+| 113 | Typing a **percentage**: `66.67%` of a `$300` fee is `200.01`, not `200.00`, and `sharePercent` is sent **only** on that row — asserted on the property being *absent* elsewhere, not null | ✅ |
+| 114 | Switching a row between `$` and `%` carries its figure across, so what the renter owes does not move because the owner changed how they say it | ✅ |
+| 115 | A typed row is **not** re-divided when another renter is ticked — only untouched rows absorb the change | ✅ |
+| 116 | Non-numeric (`12,50`, `one hundred`) or negative text in **either** box → row-level message, the text kept on screen verbatim, save blocked. An **empty** box is `0` with no message (clearing to retype is ordinary) | ✅ |
+| 117 | Over-typing one row (`$400` on a `$300` fee) floors the untouched rows at `$0.00` rather than showing a negative share, and refuses with *"The shares total $400.00, the fee is $300.00 — $100.00 over."* | ✅ |
+| 118 | Shares totalling `$290` of a `$300` fee → save refused naming **both** figures and the gap; **every typed row is kept** and nothing is silently corrected (the assertion that fails if the screen "helpfully" fixes the owner's numbers) | ✅ |
+| 119 | **Reset to an even split** — per row and for the whole split — discards typed rows only on an explicit click, never automatically on a mismatch | ✅ |
+| 120 | **Paid** box: the charge's `alreadyPaid` divides by the same rule as the amounts, and each share carries its own `alreadyPaid` on the request — **always, even as `0`**, so the server is left no division of its own to make | ✅ |
+| 121 | The **Amount** and **Paid** columns are independent: typing what one renter owes does not disturb what another has paid, and the reverse | ✅ |
+| 122 | **Owes** is derived from the two boxes and is never an input; a renter who has paid more than they owe shows a **negative** Owes rather than being refused (the charge itself allows `alreadyPaid` to exceed its own total) | ✅ |
+| 123 | The paid column failing to add up is refused **naming that column** (*"The paid amounts total $20.00, already paid is $100.00 — $80.00 short."*), and the **fee is named first** when both columns are wrong | ✅ |
+| 124 | The paid box has **no unit selector** — there is no `alreadyPaidPercent` on the wire, so `$`/`%` belongs to the amount box alone | ✅ |
+| 125 | **Requirement 22 guard.** The lease create/edit screens host the same fee panel and pass **no roster**, so they render no renter control at all — no split editor, no "Split per Tenant". A change that renders it unconditionally must fail here | ✅ |
+| 126 | The **Invoices** page offers the same editor (spec `04` v9), loading the roster alongside the lease so the fee step renders once rather than in two stages; an unknown lease still fails on the first step and the roster read is dropped with it | ✅ |
+| 127 | `204` from `GET …/{id}/tenants` (lease exists, step 2 never saved) → **empty** roster, "Split per Tenant" disabled, fee stays charged to the lease and shared by whoever is added later | ✅ |
+| 128 | Round-trip: a saved fee names who it landed on from the response's `tenantShares`, and the charge response model declares **no** `tenantIds` (requirement 21 — a type-level assertion, since a label test passes while the field is merely unread) | ✅ |
+| 129 | **Requirement 22, the pass-through half.** A terms save on the lease editor carries a charge's saved split forward untouched — load a lease whose fee is split `200 / 50 / 50`, change something unrelated, assert all three shares are resubmitted. **No test exists for this today**, in any layer; the server refuses a dropped split with `422`, so the failure is a visible one on a screen the owner was not editing the fee from | ✅ — **gap** |
 
 ---
 
@@ -202,7 +249,8 @@ These exist only in domain models or legacy/superseded spec docs; no working end
 - Invoice auto-generation job (schedule row → Invoice) — `ScheduleStatus` transitions (Planned → Invoiced/Skipped/Cancelled) have no triggering code yet.
 - Agreement activation flow (`AgreementActivation`, `RentalStatus` Active/InProcess/Terminate transitions) — no API endpoint.
 - Payment application / removal (`Invoice.ApplyPayment` / `RemovePayment`, status recalculation, Void freeze behavior) — domain-only.
-- Group-invoice rounding ("last tenant absorbs rounding"), late-fee double-charge guard, credit/reversal line items, legacy invoice statuses (`sent_and_recd`, etc.) — described only in a superseded legacy doc; current domain model has no equivalent statuses/fields.
+- ~~Group-invoice rounding ("last tenant absorbs rounding")~~ — **no longer out of scope, and the rule is the opposite one (2026-09-18).** Rounding across renters ships in the split editor, and it spreads leftover cents **one each to the renters at the top of the list**, explicitly never stacking them on a single row: `$100` across six is four rows of `16.67` and two of `16.66`. Leaving this listed as unimplemented, next to a rule the code inverts, is how a correct implementation gets "fixed" back to the wrong one. See §3.5 scenario 110.
+- Late-fee double-charge guard, credit/reversal line items, legacy invoice statuses (`sent_and_recd`, etc.) — described only in a superseded legacy doc; current domain model has no equivalent statuses/fields.
 - Direct `POST /line-items` catalog creation and `(propertyOwnerId, name)` uniqueness enforcement — no create endpoint exists; only indirectly created via the additional-charge item-provisioning path.
 
 ---
