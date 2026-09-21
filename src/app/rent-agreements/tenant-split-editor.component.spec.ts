@@ -118,7 +118,7 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares).toBeUndefined();
   });
 
-  it('reads what is typed into a row, in the unit that row is set to', () => {
+  it('reads what is typed into a row, in the unit the split is set to', () => {
     splitAcross(300, tenantA, tenantB, tenantC);
 
     const input = rendered()[0].querySelector('.share-input');
@@ -133,20 +133,43 @@ describe('TenantSplitEditorComponent', () => {
     expect(rendered()[1].textContent).toContain('Even');
   });
 
-  it('switches a row to a percentage without moving the money', () => {
+  it('switches the whole split to percentages, converting every typed row', () => {
     splitAcross(300, tenantA, tenantB, tenantC);
-
-    const unit = rendered()[0].querySelector('.share-unit');
-    unit.value = 'percent';
-    unit.dispatchEvent(new Event('change'));
+    component.typeShare(tenantA, '150');
+    component.typeShare(tenantB, '90');
     fixture.detectChanges();
 
-    // The row was at its even $100.00 of $300; asking to see it as a percentage says 33.33%, and the
-    // cent it loses to that rounding is the point — it is now a stated percentage, not a stated amount.
-    expect(rowFor(tenantA).authoredUnit).toBe('percent');
-    expect(rowFor(tenantA).text).toBe('33.33');
-    expect(rowFor(tenantA).amount).toBe(99.99);
-    expect(reported!.shares![0].sharePercent).toBe(33.33);
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    // Both typed rows carry across into the new unit; the untouched row is still dividing what they
+    // leave and has no figure of its own to convert.
+    expect(rowFor(tenantA).text).toBe('50.00');
+    expect(rowFor(tenantB).text).toBe('30.00');
+    expect(rowFor(tenantC).authoredUnit).toBe('even');
+    expect(rowFor(tenantA).amount).toBe(150);
+    expect(rowFor(tenantB).amount).toBe(90);
+    expect(rowFor(tenantC).amount).toBe(60);
+  });
+
+  it('states a percentage on every row once the split is in percent, never on only some', () => {
+    // The v11 defect, at the component. Before it, this reported one sharePercent of 50 and the
+    // service refused the save 422 -- the percentages a request STATES must total exactly 100.
+    splitAcross(300, tenantA, tenantB);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '70');
+    fixture.detectChanges();
+
+    expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([70, 30]);
+    expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
+  });
+
+  it('states no percentage on any row while the split is in money', () => {
+    splitAcross(300, tenantA, tenantB);
+    component.typeShare(tenantA, '210');
+    fixture.detectChanges();
+
+    expect(reported!.shares!.every((share) => !('sharePercent' in share))).toBeTrue();
   });
 
   it('hands one row back to the even split without disturbing the others', () => {
@@ -353,8 +376,11 @@ describe('TenantSplitEditorComponent', () => {
     it('offers no unit selector on the paid box, because the wire carries no paid percentage', () => {
       splitAcross(300, tenantA, tenantB);
 
-      // One selector per row, on the amount box alone.
-      expect(rendered()[0].querySelectorAll('.share-unit').length).toBe(1);
+      // No unit control inside a row at all as of v11 -- the unit is the split's, chosen once above
+      // the table. What this case has always guarded still holds and holds harder: the paid column
+      // has no unit to choose, because there is no alreadyPaidPercent on the wire (requirement 23).
+      expect(rendered()[0].querySelectorAll('.share-unit').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('.split-unit').length).toBe(1);
     });
   });
 });

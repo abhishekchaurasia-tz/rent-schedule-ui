@@ -86,6 +86,16 @@ export class TenantSplitEditorComponent {
   private readonly amountOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
   /**
+   * The unit the **whole split** is typed in (requirement 18, as corrected in v11).
+   *
+   * One value for the table, not one per row, because the service sums the percentages a request
+   * states and requires exactly `100.00` — a mixture states some of them and totals a hundred only
+   * by coincidence. Holding it here is what stops the page from building a body that cannot be
+   * accepted.
+   */
+  readonly splitUnit = signal<ShareUnit>('amount');
+
+  /**
    * The paid amounts the owner has typed over — a separate map, deliberately.
    *
    * The two columns divide two different figures, so fixing what one renter owes must not disturb what
@@ -118,7 +128,8 @@ export class TenantSplitEditorComponent {
       this.feeTotal(),
       this.alreadyPaid(),
       this.amountOverrides(),
-      this.paidOverrides()
+      this.paidOverrides(),
+      this.splitUnit()
     )
   );
 
@@ -188,7 +199,10 @@ export class TenantSplitEditorComponent {
     // the typed rows and the fee total, and the last of those changes without anything here being
     // called at all — the owner edits an item's rate in the panel above.
     effect(() => {
-      this.splitChange.emit({ shares: toTenantShareInputs(this.rows()), blocker: this.blocker() });
+      this.splitChange.emit({
+        shares: toTenantShareInputs(this.rows(), this.splitUnit()),
+        blocker: this.blocker()
+      });
     });
   }
 
@@ -244,7 +258,7 @@ export class TenantSplitEditorComponent {
   }
 
   /**
-   * Records what the owner typed into a row, in whichever unit that row is set to (requirement 18).
+   * Records what the owner typed into a row, read in the split's unit (requirement 18).
    *
    * The text is stored, not a number: it is echoed straight back into the input, so a value the page
    * cannot read stays on screen to be corrected rather than being replaced by a zero.
@@ -252,7 +266,7 @@ export class TenantSplitEditorComponent {
   typeShare(tenantId: string, text: string): void {
     this.amountOverrides.update((overrides) => {
       const next = new Map(overrides);
-      next.set(tenantId, { unit: overrides.get(tenantId)?.unit ?? 'amount', text });
+      next.set(tenantId, { text });
       return next;
     });
   }
@@ -267,39 +281,57 @@ export class TenantSplitEditorComponent {
   typePaid(tenantId: string, text: string): void {
     this.paidOverrides.update((overrides) => {
       const next = new Map(overrides);
-      next.set(tenantId, { unit: 'amount', text });
+      next.set(tenantId, { text });
       return next;
     });
   }
 
   /**
-   * Switches a row between money and percentage, **carrying the figure across** so what the renter
-   * owes does not move because the owner changed their mind about how to say it.
+   * Switches the **whole split** between money and percentage, carrying every typed row's figure
+   * across into the new unit (requirement 18, as corrected in v11).
    *
-   * Doing this to an untouched row makes it a typed one, at the value it was just divided to. Choosing
-   * a unit for a row *is* taking it over: it is the only reason to touch that control, and a row that
-   * kept re-dividing afterwards would throw the choice away the moment another renter was ticked.
+   * **One control for the table, because the unit is not a property of a row.** v7 put a selector on
+   * each row, which let the owner state one renter's share as a percentage and leave the rest as
+   * money — a body the service always refuses, because it sums the percentages a request states and
+   * requires exactly `100.00`. Converting every typed row together is what keeps the payload to the
+   * two shapes that can be accepted.
+   *
+   * **Untouched rows stay untouched.** They are still dividing what the typed rows leave, and a row
+   * nobody has typed has no figure of its own to convert.
+   *
+   * **The amounts can move by a cent, and requirement 24 is about saying so.** An even `$300` three
+   * ways is `100.00` each, and `33.33 %` of `300` is `99.99` — `100.00 / 100.00 / 100.00` simply has
+   * no expression as three percentages of `300`. This method does not yet disclose that; FR 24 is a
+   * separate milestone behind an open question about how loudly to.
    */
-  setShareUnit(tenantId: string, unit: ShareUnit): void {
-    const row = this.rows().find((candidate) => candidate.tenantId === tenantId);
-    if (!row || row.authoredUnit === unit) {
+  setSplitUnit(unit: ShareUnit): void {
+    if (this.splitUnit() === unit) {
       return;
     }
 
-    // Carried across from whichever figure the row already holds. A row the page could not read has
-    // nothing to carry, so its text goes across untouched.
-    const text =
-      row.error !== null
-        ? row.text
-        : unit === 'percent'
-          ? row.sharePercent.toFixed(2)
-          : row.amount.toFixed(2);
+    const rows = new Map(this.rows().map((row) => [row.tenantId, row] as const));
 
     this.amountOverrides.update((overrides) => {
-      const next = new Map(overrides);
-      next.set(tenantId, { unit, text });
+      const next = new Map<string, TenantShareOverride>();
+
+      for (const [tenantId] of overrides) {
+        const row = rows.get(tenantId);
+        // A row the page could not read has nothing to carry, so its text goes across untouched and
+        // stays on screen to be corrected.
+        next.set(tenantId, {
+          text:
+            !row || row.error !== null
+              ? (overrides.get(tenantId)!.text ?? '')
+              : unit === 'percent'
+                ? row.sharePercent.toFixed(2)
+                : row.amount.toFixed(2)
+        });
+      }
+
       return next;
     });
+
+    this.splitUnit.set(unit);
   }
 
   /** Hands one row's fee share back to the even division, leaving every other typed row alone. */

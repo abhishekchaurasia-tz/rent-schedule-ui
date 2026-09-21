@@ -19,14 +19,20 @@
 export type ShareUnit = 'amount' | 'percent';
 
 /**
- * One renter's typed-over share: the unit they chose and the text they typed, verbatim.
+ * One renter's typed-over share: the text they typed, verbatim.
  *
  * **The text is kept as typed rather than parsed into a number.** A value the page cannot read —
  * `12,50`, a stray minus, a half-finished `1.` — has to stay on screen to be corrected, and
  * requirement 19 is explicit that the page never silently rewrites what the owner entered.
+ *
+ * **It carries no unit of its own, and that is requirement 18 as v11 corrects it.** The unit belongs
+ * to the split, not the row. While each row chose for itself the owner could state one renter's share
+ * as a percentage and leave the rest as money — and the service sums the percentages a request
+ * *states* and requires exactly `100.00`, so a single stated `70` was a guaranteed `422` from a
+ * screen whose amounts added up perfectly. Removing the field is what makes that payload
+ * unrepresentable rather than merely refused somewhere downstream.
  */
 export interface TenantShareOverride {
-  unit: ShareUnit;
   text: string;
 }
 
@@ -43,8 +49,17 @@ export interface TenantShareRow {
    * `33.33` has no way to tell a deliberate remainder from a rounding bug.
    */
   carriesLeftoverCent: boolean;
-  /** `even` while the row still carries its share of the division; otherwise the unit typed. */
+  /** `even` while the row still carries its share of the division; otherwise the split's unit. */
   authoredUnit: ShareUnit | 'even';
+  /**
+   * The percentage the owner actually typed, or `null` on a row they did not type.
+   *
+   * **Kept because the derived {@link sharePercent} is not it.** That one is computed back from the
+   * rounded cents, so a split authored as `33.334 / 33.333 / 33.333` re-derives as three `33.33`s
+   * totalling `99.99` — refused by the service for a reason the owner never typed. What went on the
+   * wire has to be what they entered.
+   */
+  typedPercent: number | null;
   /** What the row's input shows: the owner's own text on a typed row, the divided figure otherwise. */
   text: string;
   /** A complaint about the typed text, or `null`. Blocks the save; never rewrites the row. */
@@ -180,11 +195,14 @@ export function readTypedShare(
  *   cents are handed out in (requirement 17 says "the first renters in the listed order").
  * @param total The fee being divided, in whole currency units.
  * @param overrides The rows the owner has typed over, keyed by renter.
+ * @param unit The unit **the whole split** is typed in (requirement 18, as corrected in v11). Every
+ *   typed row is read in it; no row carries a unit of its own.
  */
 export function buildSplitRows(
   tenants: readonly { tenantId: string; name: string }[],
   total: number,
-  overrides: ReadonlyMap<string, TenantShareOverride>
+  overrides: ReadonlyMap<string, TenantShareOverride>,
+  unit: ShareUnit = 'amount'
 ): TenantShareRow[] {
   if (tenants.length === 0) {
     return [];
@@ -199,7 +217,7 @@ export function buildSplitRows(
         const override = overrides.get(tenant.tenantId)!;
         return [
           tenant.tenantId,
-          { ...override, ...readTypedShare(override.text, override.unit, totalCents) }
+          { ...override, ...readTypedShare(override.text, unit, totalCents) }
         ] as const;
       })
   );
@@ -224,7 +242,14 @@ export function buildSplitRows(
       // starts at the charge's `alreadyPaid` and that is usually 0.
       sharePercent: totalCents === 0 ? 0 : Math.round((cents / totalCents) * 10000) / 100,
       carriesLeftoverCent: !share && amount !== smallestEven,
-      authoredUnit: share ? share.unit : 'even',
+      authoredUnit: share ? unit : 'even',
+      // Only a typed row in a percentage split has one. A row the page could not read has no number
+      // to keep, and an untouched row was never typed at all -- both fall back to the derived figure
+      // when the split goes on the wire, which is the honest value for a row nobody authored.
+      typedPercent:
+        share && unit === 'percent' && share.error === null && share.text.trim() !== ''
+          ? Number(share.text.trim())
+          : null,
       // A typed row echoes the owner back verbatim; a divided one shows the figure it was given.
       text: share ? share.text : amount.toFixed(2),
       error: share ? share.error : null
@@ -302,16 +327,19 @@ export const PAID_SUBJECT: SplitSubject = {
  * @param alreadyPaid The charge's already-paid figure, divided the same way.
  * @param amountOverrides Rows whose fee share the owner typed.
  * @param paidOverrides Rows whose paid amount the owner typed.
+ * @param unit The unit the **fee** column is typed in. The paid column is always money — there is no
+ *   `alreadyPaidPercent` on the wire, so it has no unit to choose (requirement 23).
  */
 export function buildSplitTable(
   tenants: readonly { tenantId: string; name: string }[],
   feeTotal: number,
   alreadyPaid: number,
   amountOverrides: ReadonlyMap<string, TenantShareOverride>,
-  paidOverrides: ReadonlyMap<string, TenantShareOverride>
+  paidOverrides: ReadonlyMap<string, TenantShareOverride>,
+  unit: ShareUnit = 'amount'
 ): SplitTableRow[] {
-  const feeRows = buildSplitRows(tenants, feeTotal, amountOverrides);
-  const paidRows = buildSplitRows(tenants, alreadyPaid, paidOverrides);
+  const feeRows = buildSplitRows(tenants, feeTotal, amountOverrides, unit);
+  const paidRows = buildSplitRows(tenants, alreadyPaid, paidOverrides, 'amount');
 
   return feeRows.map((row, index) => {
     const paid = paidRows[index];
@@ -336,13 +364,25 @@ export function buildSplitTable(
  * **A fee shared by everybody sends nothing at all**, not an empty array: both read the same on the
  * server, but omission says *not specified* where `[]` says *specified as nobody*.
  *
- * `sharePercent` rides only on a row the owner typed **as** a percentage. Sending the derived figure
- * on every row would tell the server they stated something they did not.
+ * **`sharePercent` rides on every row or on none, decided by the split's unit** — v11's correction,
+ * and the reason this function had a defect rather than a preference. v7 attached it per row, to the
+ * rows the owner had typed as percentages. The service sums the percentages a request *states* and
+ * requires exactly `100.00`, so a two-renter fee with one row switched to `%` stated a single `70`
+ * and was refused `422`, while the page showed `210.00 / 90.00` against a `$300` fee and enabled
+ * Save. Nothing in a per-row unit can produce a stated set totalling a hundred except by accident.
  *
+ * **A typed row sends what was typed**, not {@link TenantShareRow.sharePercent}, which is derived
+ * back from the rounded cents: `33.334` typed re-derives as `33.33`, and three of those total
+ * `99.99`. A row nobody typed has no such figure and sends the derived one, which is the honest
+ * value for a share the page worked out itself.
+ *
+ * @param rows The split as {@link buildSplitTable} produced it.
+ * @param unit The unit the split is typed in.
  * @returns The `tenantShares` array, or `undefined` when the fee is shared by every renter.
  */
 export function toTenantShareInputs(
-  rows: readonly SplitTableRow[]
+  rows: readonly SplitTableRow[],
+  unit: ShareUnit = 'amount'
 ): TenantShareInput[] | undefined {
   if (rows.length === 0) {
     return undefined;
@@ -351,7 +391,7 @@ export function toTenantShareInputs(
   return rows.map((row) => ({
     tenantId: row.tenantId,
     amount: row.amount,
-    ...(row.authoredUnit === 'percent' ? { sharePercent: row.sharePercent } : {}),
+    ...(unit === 'percent' ? { sharePercent: row.typedPercent ?? row.sharePercent } : {}),
     alreadyPaid: row.paidAmount
   }));
 }

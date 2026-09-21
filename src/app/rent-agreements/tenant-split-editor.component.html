@@ -26,6 +26,37 @@
     }
   </div>
 
+  @if (!isSharedByEveryone()) {
+    <!--
+      The unit for the whole split, not for a row. v7 put this selector on every row, which let the
+      owner say one renter's share in percent and leave the rest in money — and the service sums the
+      percentages a request states and requires exactly 100.00, so that body was always refused while
+      this page happily enabled Save. One control is what makes the refused combination impossible to
+      build (requirement 18, corrected in v11).
+    -->
+    <div class="split-unit" role="group" aria-label="Unit for every share">
+      <span class="split-unit-label">Enter shares in</span>
+      <label class="unit-choice">
+        <input
+          type="radio"
+          name="splitUnit"
+          [checked]="splitUnit() === 'amount'"
+          (change)="setSplitUnit('amount')"
+        />
+        <span>Money ($)</span>
+      </label>
+      <label class="unit-choice">
+        <input
+          type="radio"
+          name="splitUnit"
+          [checked]="splitUnit() === 'percent'"
+          (change)="setSplitUnit('percent')"
+        />
+        <span>Percentage (%)</span>
+      </label>
+    </div>
+  }
+
   @if (isSharedByEveryone()) {
     <p class="split-note">
       @if (tenants().length === 0) {
@@ -103,11 +134,16 @@
               </td>
               <td class="num-col">
                 <!--
-                  One box and a unit, not a box per unit. Requirement 18 turns on *which* unit the
-                  owner typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee,
-                  because 66.67% of 300 is 200.01 — so the unit has to be a choice on the record rather
-                  than a guess about which of two boxes was touched last. The counterpart figure is
-                  shown beneath it, derived and never typed into.
+                  One box, read in the split's unit. Requirement 18 turns on *which* unit the owner
+                  typed — a typed 200.00 and a typed 66.67 are different rows on a $300 fee, because
+                  66.67% of 300 is 200.01 — so the unit has to be a choice on the record rather than
+                  a guess about which of two boxes was touched last.
+
+                  v11 moved that choice off the row and onto the table. A unit per row let the owner
+                  state one renter's share as a percentage and leave the rest as money, and the
+                  service sums the percentages a request states and requires exactly 100.00 — so a
+                  single stated 70 was a guaranteed 422 from a screen whose amounts added up. The
+                  counterpart figure is still shown beneath, derived and never typed into.
                 -->
                 <span class="cell-input">
                   <input
@@ -119,15 +155,6 @@
                     [attr.aria-label]="'Share of the fee for ' + share.name"
                     (input)="typeShare(share.tenantId, $any($event.target).value)"
                   />
-                  <select
-                    class="share-unit"
-                    [value]="share.authoredUnit === 'percent' ? 'percent' : 'amount'"
-                    [attr.aria-label]="'Unit for ' + share.name"
-                    (change)="setShareUnit(share.tenantId, $any($event.target).value)"
-                  >
-                    <option value="amount">$</option>
-                    <option value="percent">%</option>
-                  </select>
                   <button
                     type="button"
                     class="row-reset"
@@ -140,7 +167,7 @@
                   </button>
                 </span>
                 <span class="cell-derived">
-                  @if (share.authoredUnit === 'percent') {
+                  @if (splitUnit() === 'percent') {
                     {{ share.amount | currency }}
                   } @else {
                     {{ share.sharePercent | number: '1.2-2' }}%

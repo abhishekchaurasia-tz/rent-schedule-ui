@@ -1,5 +1,6 @@
 import {
   PAID_SUBJECT,
+  ShareUnit,
   TenantShareOverride,
   buildSplitRows,
   buildSplitTable,
@@ -35,9 +36,10 @@ describe('tenant-split.util', () => {
     feeTotal: number,
     alreadyPaid: number,
     amountOverrides: Map<string, TenantShareOverride>,
-    paidOverrides: Map<string, TenantShareOverride> = new Map()
+    paidOverrides: Map<string, TenantShareOverride> = new Map(),
+    unit: ShareUnit = 'amount'
   ) {
-    return buildSplitTable(tenants, feeTotal, alreadyPaid, amountOverrides, paidOverrides);
+    return buildSplitTable(tenants, feeTotal, alreadyPaid, amountOverrides, paidOverrides, unit);
   }
 
   /** Sums a split the way the wire does — in cents, so the assertion is exact rather than close. */
@@ -123,7 +125,7 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows(
         [alice, bob, carol],
         300,
-        typed([alice.tenantId, { unit: 'amount', text: '120' }])
+        typed([alice.tenantId, { text: '120' }])
       );
 
       expect(rows[0].authoredUnit).toBe('amount');
@@ -141,7 +143,8 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows(
         [alice, bob, carol],
         300,
-        typed([alice.tenantId, { unit: 'percent', text: '66.67' }])
+        typed([alice.tenantId, { text: '66.67' }]),
+        'percent'
       );
 
       expect(rows[0].authoredUnit).toBe('percent');
@@ -155,7 +158,7 @@ describe('tenant-split.util', () => {
     });
 
     it('re-divides only the untouched rows when the roster grows', () => {
-      const overrides = typed([alice.tenantId, { unit: 'amount', text: '200' }]);
+      const overrides = typed([alice.tenantId, { text: '200' }]);
 
       expect(buildSplitRows([alice, bob], 300, overrides).map((row) => row.amount)).toEqual([200, 100]);
 
@@ -169,7 +172,7 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows(
         [alice, bob, carol],
         300,
-        typed([alice.tenantId, { unit: 'amount', text: '400' }])
+        typed([alice.tenantId, { text: '400' }])
       );
 
       // A row reading -$50.00 would answer a question nobody asked. The excess turns up in the
@@ -181,7 +184,7 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows(
         [alice, bob],
         300,
-        typed([alice.tenantId, { unit: 'amount', text: '12,50' }])
+        typed([alice.tenantId, { text: '12,50' }])
       );
 
       expect(rows[0].error).toBe('Enter a number.');
@@ -212,9 +215,9 @@ describe('tenant-split.util', () => {
         [alice, bob, carol],
         300,
         typed(
-          [alice.tenantId, { unit: 'amount', text: '100' }],
-          [bob.tenantId, { unit: 'amount', text: '100' }],
-          [carol.tenantId, { unit: 'amount', text: '90' }]
+          [alice.tenantId, { text: '100' }],
+          [bob.tenantId, { text: '100' }],
+          [carol.tenantId, { text: '90' }]
         )
       );
 
@@ -227,7 +230,7 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows(
         [alice, bob, carol],
         300,
-        typed([alice.tenantId, { unit: 'amount', text: '400' }])
+        typed([alice.tenantId, { text: '400' }])
       );
 
       expect(splitBlocker(rows, 300)).toBe(
@@ -239,7 +242,7 @@ describe('tenant-split.util', () => {
       const one = buildSplitRows(
         [alice, bob],
         300,
-        typed([alice.tenantId, { unit: 'amount', text: 'lots' }])
+        typed([alice.tenantId, { text: 'lots' }])
       );
       expect(splitBlocker(one, 300)).toBe('One share cannot be read. Correct it to save this fee.');
 
@@ -247,8 +250,8 @@ describe('tenant-split.util', () => {
         [alice, bob],
         300,
         typed(
-          [alice.tenantId, { unit: 'amount', text: 'lots' }],
-          [bob.tenantId, { unit: 'amount', text: '-5' }]
+          [alice.tenantId, { text: 'lots' }],
+          [bob.tenantId, { text: '-5' }]
         )
       );
       expect(splitBlocker(two, 300)).toBe('2 shares cannot be read. Correct them to save this fee.');
@@ -265,9 +268,9 @@ describe('tenant-split.util', () => {
         [alice, bob, carol],
         300,
         typed(
-          [alice.tenantId, { unit: 'amount', text: '200' }],
-          [bob.tenantId, { unit: 'amount', text: '50' }],
-          [carol.tenantId, { unit: 'amount', text: '50' }]
+          [alice.tenantId, { text: '200' }],
+          [bob.tenantId, { text: '50' }],
+          [carol.tenantId, { text: '50' }]
         )
       );
 
@@ -288,7 +291,7 @@ describe('tenant-split.util', () => {
 
     it('omits sharePercent on a row the owner typed as an amount', () => {
       const [share] = toTenantShareInputs(
-        table([alice], 300, 0, typed([alice.tenantId, { unit: 'amount', text: '300' }]))
+        table([alice], 300, 0, typed([alice.tenantId, { text: '300' }]))
       )!;
 
       expect(share).toEqual({ tenantId: alice.tenantId, amount: 300, alreadyPaid: 0 });
@@ -298,7 +301,8 @@ describe('tenant-split.util', () => {
 
     it('sends sharePercent on a row the owner typed as a percentage', () => {
       const [share] = toTenantShareInputs(
-        table([alice], 300, 0, typed([alice.tenantId, { unit: 'percent', text: '100' }]))
+        table([alice], 300, 0, typed([alice.tenantId, { text: '100' }]), new Map(), 'percent'),
+        'percent'
       )!;
 
       expect(share).toEqual({
@@ -307,6 +311,73 @@ describe('tenant-split.util', () => {
         sharePercent: 100,
         alreadyPaid: 0
       });
+    });
+
+    // --- v11: the unit belongs to the split -----------------------------------
+    //
+    // Every case below uses TWO renters, deliberately. The only percentage test this file had used
+    // one renter at 100 %, which is the single value that cannot fail the service's total-one-hundred
+    // rule -- so the defect these cover shipped under a green suite.
+
+    it('sends sharePercent on every row of a percentage split, not only the typed ones', () => {
+      // The defect, stated as a test. Alice is typed at 70 % and Bob divides the rest; before v11 only
+      // Alice carried a percentage, the service summed the stated ones to 70, and the save was
+      // refused 422 from a screen showing 210.00 / 90.00 against a $300 fee.
+      const shares = toTenantShareInputs(
+        table([alice, bob], 300, 0, typed([alice.tenantId, { text: '70' }]), new Map(), 'percent'),
+        'percent'
+      )!;
+
+      expect(shares.map((share) => share.sharePercent)).toEqual([70, 30]);
+      expect(shares.map((share) => share.amount)).toEqual([210, 90]);
+    });
+
+    it('sends sharePercent on no row of a money split, including the rows the owner typed', () => {
+      const shares = toTenantShareInputs(
+        table([alice, bob], 300, 0, typed([alice.tenantId, { text: '210' }]))
+      )!;
+
+      expect(shares.every((share) => !('sharePercent' in share))).toBeTrue();
+      expect(shares.map((share) => share.amount)).toEqual([210, 90]);
+    });
+
+    it('sends the percentage the owner typed, not one re-derived from the rounded amount', () => {
+      // 33.334 % of 300 rounds to 100.00, and 100.00 of 300 derives back to 33.33. Sending the
+      // derived figure would turn a split the owner made total 100.000 into three 33.33s totalling
+      // 99.99 -- the service's refusal, for a number nobody entered.
+      const shares = toTenantShareInputs(
+        table(
+          [alice, bob, carol],
+          300,
+          0,
+          typed(
+            [alice.tenantId, { text: '33.334' }],
+            [bob.tenantId, { text: '33.333' }],
+            [carol.tenantId, { text: '33.333' }]
+          ),
+          new Map(),
+          'percent'
+        ),
+        'percent'
+      )!;
+
+      expect(shares.map((share) => share.sharePercent)).toEqual([33.334, 33.333, 33.333]);
+      // The derived figures, which is what used to go: three 33.33s.
+      expect(shares.map((share) => share.amount)).toEqual([100, 100, 100]);
+    });
+
+    it('reads every typed row in the unit the split is set to, not one number meaning two things', () => {
+      // 70 typed in a percentage split is 70 % of the fee on both rows, never $70 on one of them.
+      const rows = table(
+        [alice, bob],
+        300,
+        0,
+        typed([alice.tenantId, { text: '70' }], [bob.tenantId, { text: '30' }]),
+        new Map(),
+        'percent'
+      );
+
+      expect(rows.map((row) => row.amount)).toEqual([210, 90]);
     });
 
     it('omits sharePercent on an evenly divided row, which nobody typed either way', () => {
@@ -354,7 +425,7 @@ describe('tenant-split.util', () => {
         300,
         150,
         typed(),
-        typed([alice.tenantId, { unit: 'amount', text: '100' }])
+        typed([alice.tenantId, { text: '100' }])
       );
 
       // Saying one renter has paid $100 of $150 leaves $50 to the others, not a fresh three-way split.
@@ -369,8 +440,8 @@ describe('tenant-split.util', () => {
         [alice, bob],
         300,
         100,
-        typed([alice.tenantId, { unit: 'amount', text: '200' }]),
-        typed([bob.tenantId, { unit: 'amount', text: '80' }])
+        typed([alice.tenantId, { text: '200' }]),
+        typed([bob.tenantId, { text: '80' }])
       );
 
       // Fixing what Alice owes must not disturb what Bob has paid, and the reverse.
@@ -385,7 +456,7 @@ describe('tenant-split.util', () => {
         300,
         400,
         typed(),
-        typed([alice.tenantId, { unit: 'amount', text: '300' }])
+        typed([alice.tenantId, { text: '300' }])
       );
 
       // The charge itself lets alreadyPaid exceed its own total, so refusing it per renter would be a
@@ -399,7 +470,7 @@ describe('tenant-split.util', () => {
         300,
         100,
         typed(),
-        typed([alice.tenantId, { unit: 'amount', text: 'half' }])
+        typed([alice.tenantId, { text: 'half' }])
       );
 
       expect(rows[0].paidError).toBe('Enter a number.');
@@ -414,8 +485,8 @@ describe('tenant-split.util', () => {
         100,
         typed(),
         typed(
-          [alice.tenantId, { unit: 'amount', text: '10' }],
-          [bob.tenantId, { unit: 'amount', text: '10' }]
+          [alice.tenantId, { text: '10' }],
+          [bob.tenantId, { text: '10' }]
         )
       );
 
