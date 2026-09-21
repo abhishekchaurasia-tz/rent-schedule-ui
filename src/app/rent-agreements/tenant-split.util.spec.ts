@@ -109,7 +109,12 @@ describe('tenant-split.util', () => {
       const rows = buildSplitRows([alice, bob, carol], 300, typed());
 
       expect(rows.map((row) => row.amount)).toEqual([100, 100, 100]);
-      expect(rows.map((row) => row.sharePercent)).toEqual([33.33, 33.33, 33.33]);
+      // v11: the percentages are divided by the same residue rule as the money, to the six places
+      // numeric(9,6) stores. Rounding each one on its own gave 33.33 three times -- 99.99, which the
+      // service refuses -- and it is the same arithmetic that moved a cent when the unit changed,
+      // because 33.33% of 300 is 99.99 and not 100.00.
+      expect(rows.map((row) => row.sharePercent)).toEqual([33.333334, 33.333333, 33.333333]);
+      expect(rows.reduce((sum, row) => sum + row.sharePercent, 0)).toBe(100);
       expect(rows.every((row) => row.authoredUnit === 'even')).toBeTrue();
       expect(rows.some((row) => row.carriesLeftoverCent)).toBeFalse();
     });

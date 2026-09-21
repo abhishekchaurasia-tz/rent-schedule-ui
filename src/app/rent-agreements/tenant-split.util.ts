@@ -144,6 +144,89 @@ export function divideEvenly(total: number, count: number): number[] {
 }
 
 /**
+ * How many decimal places a percentage is carried to — and it is not an arbitrary choice.
+ *
+ * `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so six places is exactly what the
+ * service stores, losslessly. A figure the page carries to more precision than the column holds would
+ * be rounded on the way in, and the stored set would no longer total the hundred the page checked.
+ */
+const PERCENT_PLACES = 1_000_000;
+
+/**
+ * Divides `100` across the rows in proportion to the money, to six places (requirement 24).
+ *
+ * **The same rule as the money, on the other figure**: whole units each, the leftover handed **one at
+ * a time to the first rows in listed order**. That is what makes the percentages total exactly `100`
+ * while each one still resolves back to the cent it came from.
+ *
+ * **Why it has to be a division and not a rounding.** Taking each row's percentage on its own —
+ * `Math.round(cents / total * 10000) / 100`, which is what v7 did — gives `33.33` three times on a
+ * `$300` fee: `99.99`, which the service refuses. And no fixed precision fixes that by itself, because
+ * a third of a hundred does not terminate. Carrying the residue does: `33.334 / 33.333 / 33.333` is
+ * `100.000` exactly, and each still resolves to `$100.00`.
+ *
+ * **Why six places and not three.** Three totals a hundred too, but the money stops surviving the
+ * round trip above roughly `$500` — a `$1,500` fee across six renters moves a cent. Six holds for
+ * every total tried, up to `$12,345.67` across seven.
+ *
+ * Computed through `BigInt` because `cents * 100_000_000` leaves the exact range of a `number` for a
+ * large enough fee, and a division that has to total exactly `100` cannot be assembled out of values
+ * that are nearly right.
+ *
+ * **The residue goes to rows the owner did not author**, in listed order, and only falls back to all
+ * of them when every row was typed. A row whose percentage the owner entered should read back as the
+ * number they entered — landing a millionth of a percent on it would answer `66.670001` to somebody
+ * who typed `66.67`, which is the page rewriting their work to balance its own books.
+ *
+ * @param centsByRow Each row's share, in cents, in listed order.
+ * @param totalCents What they add up to — the figure being divided.
+ * @param isDerived Which rows the page worked out rather than the owner typing.
+ * @returns One percentage per row, totalling `100` exactly. All zeros when there is nothing to divide.
+ */
+function dividePercentAcross(
+  centsByRow: readonly number[],
+  totalCents: number,
+  isDerived: readonly boolean[]
+): number[] {
+  // Zero divided among renters is zero each, not NaN. Reachable from the paid column, which starts at
+  // the charge's `alreadyPaid` and that is usually nothing at all.
+  if (totalCents === 0) {
+    return centsByRow.map(() => 0);
+  }
+
+  const target = 100 * PERCENT_PLACES;
+  const divisor = BigInt(totalCents);
+  const units = centsByRow.map((cents) => Number((BigInt(cents) * BigInt(target)) / divisor));
+
+  let leftover = target - units.reduce((sum, unit) => sum + unit, 0);
+  const eligible = isDerived.some(Boolean)
+    ? centsByRow.map((_unused, index) => isDerived[index])
+    : centsByRow.map(() => true);
+
+  return units.map((unit, index) => {
+    const takes = eligible[index] && leftover > 0;
+    if (takes) {
+      leftover -= 1;
+    }
+    return (unit + (takes ? 1 : 0)) / PERCENT_PLACES;
+  });
+}
+
+/**
+ * Renders a percentage for the box the owner types into — full precision, no trailing noise.
+ *
+ * An even two-way split reads `50`, not `50.000000`; a three-way one reads `33.333334`, because that
+ * is genuinely what the row is and rounding it to `33.33` is what moved the money. The box has to
+ * show the figure that will be sent, or the next keystroke silently discards precision the split
+ * depends on.
+ *
+ * @param percent The percentage, already divided to at most six places.
+ */
+export function formatPercent(percent: number): string {
+  return percent.toFixed(6).replace(/\.?0+$/, '');
+}
+
+/**
  * Reads a typed share, in cents, without ever rewriting it.
  *
  * An empty box is `0` rather than a complaint: clearing a cell to retype it is the ordinary way to
@@ -228,19 +311,27 @@ export function buildSplitRows(
   const smallestEven = evenAmounts.length > 0 ? Math.min(...evenAmounts) : 0;
 
   let evenIndex = 0;
-
-  return tenants.map((tenant) => {
+  const centsByRow = tenants.map((tenant) => {
     const share = typed.get(tenant.tenantId);
-    const cents = share ? share.cents : Math.round(evenAmounts[evenIndex] * 100);
+    return share ? share.cents : Math.round(evenAmounts[evenIndex++] * 100);
+  });
+
+  const percentByRow = dividePercentAcross(
+    centsByRow,
+    totalCents,
+    tenants.map((tenant) => !typed.has(tenant.tenantId))
+  );
+
+  return tenants.map((tenant, index) => {
+    const share = typed.get(tenant.tenantId);
+    const cents = centsByRow[index];
     const amount = cents / 100;
 
     const row: TenantShareRow = {
       tenantId: tenant.tenantId,
       name: tenant.name,
       amount,
-      // Zero divided among renters is zero each, not NaN. Reachable from the paid column, which
-      // starts at the charge's `alreadyPaid` and that is usually 0.
-      sharePercent: totalCents === 0 ? 0 : Math.round((cents / totalCents) * 10000) / 100,
+      sharePercent: percentByRow[index],
       carriesLeftoverCent: !share && amount !== smallestEven,
       authoredUnit: share ? unit : 'even',
       // Only a typed row in a percentage split has one. A row the page could not read has no number
@@ -255,9 +346,6 @@ export function buildSplitRows(
       error: share ? share.error : null
     };
 
-    if (!share) {
-      evenIndex += 1;
-    }
     return row;
   });
 }

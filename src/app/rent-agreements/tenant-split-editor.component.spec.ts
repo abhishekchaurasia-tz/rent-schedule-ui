@@ -143,13 +143,56 @@ describe('TenantSplitEditorComponent', () => {
     fixture.detectChanges();
 
     // Both typed rows carry across into the new unit; the untouched row is still dividing what they
-    // leave and has no figure of its own to convert.
-    expect(rowFor(tenantA).text).toBe('50.00');
-    expect(rowFor(tenantB).text).toBe('30.00');
+    // leave and has no figure of its own to convert. Trailing zeros are trimmed -- a box reading
+    // 50.000000 is noise, while 33.333334 has to show every place it has.
+    expect(rowFor(tenantA).text).toBe('50');
+    expect(rowFor(tenantB).text).toBe('30');
     expect(rowFor(tenantC).authoredUnit).toBe('even');
     expect(rowFor(tenantA).amount).toBe(150);
     expect(rowFor(tenantB).amount).toBe(90);
     expect(rowFor(tenantC).amount).toBe(60);
+  });
+
+  it('switching to percentages leaves every renter owing exactly what they owed (FR 24)', () => {
+    // The case FR 24 was drafted as a warning for. An even $300 three ways is $100.00 each, and
+    // 33.33% of 300 is 99.99 -- so carrying the two-decimal figure across took a cent off Alice and
+    // handed it to Bob, for no reason but a change of unit. Six places carries the residue instead:
+    // 33.334 / 33.333 / 33.333 totals a hundred exactly and each still resolves to $100.00.
+    splitAcross(300, tenantA, tenantB, tenantC);
+    const before = component.rows().map((row) => row.amount);
+
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    expect(component.rows().map((row) => row.amount)).toEqual(before);
+    expect(component.rows().map((row) => row.amount)).toEqual([100, 100, 100]);
+    expect(component.blocker()).toBeNull();
+    expect(reported!.shares!.map((share) => share.sharePercent))
+      .toEqual([33.333334, 33.333333, 33.333333]);
+  });
+
+  it('holds the money still on a total that divides no better in percent than in cents', () => {
+    // $1,500 across six is $250.00 each. Three decimals would have moved it -- the round trip only
+    // survives below about $500 at that precision -- which is why the carry is to six.
+    splitAcross(1500, tenantA, tenantB, tenantC);
+
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    expect(component.rows().map((row) => row.amount)).toEqual([500, 500, 500]);
+    expect(component.blocker()).toBeNull();
+  });
+
+  it('carries a typed row across without rewriting the number the owner entered', () => {
+    // The residue goes to the rows the page derived, never onto one the owner authored: answering
+    // 66.670001 to somebody who typed 66.67 is the page balancing its books with their input.
+    splitAcross(300, tenantA, tenantB, tenantC);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '66.67');
+    fixture.detectChanges();
+
+    expect(rowFor(tenantA).sharePercent).toBe(66.67);
+    expect(reported!.shares![0].sharePercent).toBe(66.67);
   });
 
   it('states a percentage on every row once the split is in percent, never on only some', () => {

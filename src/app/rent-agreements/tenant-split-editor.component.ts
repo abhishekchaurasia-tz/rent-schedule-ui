@@ -10,6 +10,7 @@ import {
   TenantShareInput,
   TenantShareOverride,
   buildSplitTable,
+  formatPercent,
   percentageBlocker,
   splitBlocker,
   toTenantShareInputs
@@ -308,10 +309,13 @@ export class TenantSplitEditorComponent {
    * **Untouched rows stay untouched.** They are still dividing what the typed rows leave, and a row
    * nobody has typed has no figure of its own to convert.
    *
-   * **The amounts can move by a cent, and requirement 24 is about saying so.** An even `$300` three
-   * ways is `100.00` each, and `33.33 %` of `300` is `99.99` — `100.00 / 100.00 / 100.00` simply has
-   * no expression as three percentages of `300`. This method does not yet disclose that; FR 24 is a
-   * separate milestone behind an open question about how loudly to.
+   * **The amounts do not move, which is requirement 24 as answered rather than as first written.**
+   * The figure carried across is the row's share of a hundred divided by the same money-first
+   * residue rule the amounts use, to six places — so an even `$300` three ways goes across as
+   * `33.334 / 33.333 / 33.333` and comes back as `100.00` each. v7 carried `sharePercent.toFixed(2)`
+   * instead, and `33.33 %` of `300` is `99.99`: switching the unit quietly took a cent off one renter
+   * and gave it to another. FR 24 was drafted as a disclosure for that; six places removes the thing
+   * there was to disclose.
    */
   setSplitUnit(unit: ShareUnit): void {
     if (this.splitUnit() === unit) {
@@ -332,7 +336,7 @@ export class TenantSplitEditorComponent {
             !row || row.error !== null
               ? (overrides.get(tenantId)!.text ?? '')
               : unit === 'percent'
-                ? row.sharePercent.toFixed(2)
+                ? formatPercent(row.sharePercent)
                 : row.amount.toFixed(2)
         });
       }
