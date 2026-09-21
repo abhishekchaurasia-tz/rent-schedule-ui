@@ -307,6 +307,55 @@ export function splitBlocker(
   return `${subject.shares} total $${shares}, ${subject.total} is $${fee} — $${gap} ${direction}.`;
 }
 
+/**
+ * The percentage a row will state on the wire.
+ *
+ * **One definition, used by the projection and by the guard**, so the figure the page refuses on is
+ * the figure it would have sent. Two readings of "the row's percentage" — one derived, one typed —
+ * is how the split came to be refused by the service for a number nobody entered.
+ */
+function statedPercent(row: TenantShareRow): number {
+  return row.typedPercent ?? row.sharePercent;
+}
+
+/**
+ * Why a percentage split cannot be saved, or `null` (requirement 19, as extended in v11).
+ *
+ * **The money arm is not enough on its own, because the two sums are independent.** Percentages of
+ * `33.33 / 33.33 / 33.34` and of `33.334 / 33.333 / 33.333` produce the same three amounts on a
+ * `$300` fee, and only the second totals a hundred. The service checks both and refuses either;
+ * without this the page would pass a split straight into a `422` it could have named itself.
+ *
+ * **Summed at six decimal places** rather than in hundredths. The owner may type more precision than
+ * the two places a derived figure carries — `33.334` is a legitimate third of a hundred — and
+ * rounding the sum to hundredths would refuse exactly that. Six places is past anything a person
+ * types and clear of binary floating point, where `33.334 + 33.333 + 33.333` is not quite `100`.
+ *
+ * @param rows The split as {@link buildSplitTable} produced it.
+ * @param unit The unit the split is typed in. A money split states no percentages and has nothing
+ *   here to check.
+ */
+export function percentageBlocker(
+  rows: readonly TenantShareRow[],
+  unit: ShareUnit
+): string | null {
+  if (unit !== 'percent' || rows.length === 0) {
+    return null;
+  }
+
+  const SCALE = 1_000_000;
+  const stated = rows.reduce((sum, row) => sum + Math.round(statedPercent(row) * SCALE), 0);
+  if (stated === 100 * SCALE) {
+    return null;
+  }
+
+  const total = (stated / SCALE).toFixed(2);
+  const gap = (Math.abs(100 * SCALE - stated) / SCALE).toFixed(2);
+  const direction = stated > 100 * SCALE ? 'over' : 'short';
+
+  return `The percentages total ${total}%, they must total 100% — ${gap}% ${direction}.`;
+}
+
 /** How {@link splitBlocker} names the paid column. */
 export const PAID_SUBJECT: SplitSubject = {
   shares: 'The paid amounts',
@@ -391,7 +440,7 @@ export function toTenantShareInputs(
   return rows.map((row) => ({
     tenantId: row.tenantId,
     amount: row.amount,
-    ...(unit === 'percent' ? { sharePercent: row.typedPercent ?? row.sharePercent } : {}),
+    ...(unit === 'percent' ? { sharePercent: statedPercent(row) } : {}),
     alreadyPaid: row.paidAmount
   }));
 }

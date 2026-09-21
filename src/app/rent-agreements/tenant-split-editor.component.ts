@@ -10,6 +10,7 @@ import {
   TenantShareInput,
   TenantShareOverride,
   buildSplitTable,
+  percentageBlocker,
   splitBlocker,
   toTenantShareInputs
 } from './tenant-split.util';
@@ -184,6 +185,14 @@ export class TenantSplitEditorComponent {
     const fee = splitBlocker(feeRows, this.feeTotal());
     if (fee !== null) {
       return fee;
+    }
+
+    // Also about the fee, so it is named before the paid column and after the money. The two sums
+    // are independent: amounts that total the fee exactly say nothing about whether the percentages
+    // stated beside them reach a hundred, and the service refuses either.
+    const percentages = percentageBlocker(feeRows, this.splitUnit());
+    if (percentages !== null) {
+      return percentages;
     }
 
     const paidRows = feeRows.map((row) => ({

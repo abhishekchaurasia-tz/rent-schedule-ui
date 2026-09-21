@@ -1,6 +1,7 @@
 import {
   PAID_SUBJECT,
   ShareUnit,
+  percentageBlocker,
   TenantShareOverride,
   buildSplitRows,
   buildSplitTable,
@@ -279,6 +280,103 @@ describe('tenant-split.util', () => {
 
     it('has nothing to refuse when the fee is shared by everyone', () => {
       expect(splitBlocker([], 300)).toBeNull();
+    });
+  });
+
+  describe('percentageBlocker (FR 19, v11)', () => {
+    /** The fee rows of a percentage split, which is all this guard reads. */
+    function percentRows(
+      tenants: readonly { tenantId: string; name: string }[],
+      feeTotal: number,
+      overrides: Map<string, TenantShareOverride>
+    ) {
+      return table(tenants, feeTotal, 0, overrides, new Map(), 'percent');
+    }
+
+    it('has nothing to check on a money split', () => {
+      expect(
+        percentageBlocker(table([alice, bob], 300, 0, typed([alice.tenantId, { text: '210' }])), 'amount')
+      ).toBeNull();
+    });
+
+    it('has nothing to refuse when the fee is shared by everyone', () => {
+      expect(percentageBlocker([], 'percent')).toBeNull();
+    });
+
+    it('accepts percentages that total exactly a hundred', () => {
+      const rows = percentRows(
+        [alice, bob],
+        300,
+        typed([alice.tenantId, { text: '70' }], [bob.tenantId, { text: '30' }])
+      );
+
+      expect(percentageBlocker(rows, 'percent')).toBeNull();
+    });
+
+    it('refuses percentages that total less, naming the total and the gap', () => {
+      const rows = percentRows(
+        [alice, bob],
+        300,
+        typed([alice.tenantId, { text: '60' }], [bob.tenantId, { text: '30' }])
+      );
+
+      expect(percentageBlocker(rows, 'percent'))
+        .toBe('The percentages total 90.00%, they must total 100% — 10.00% short.');
+    });
+
+    it('refuses percentages that total more', () => {
+      const rows = percentRows(
+        [alice, bob],
+        300,
+        typed([alice.tenantId, { text: '70' }], [bob.tenantId, { text: '40' }])
+      );
+
+      expect(percentageBlocker(rows, 'percent'))
+        .toBe('The percentages total 110.00%, they must total 100% — 10.00% over.');
+    });
+
+    it('refuses a truncated third even though every amount is exact', () => {
+      // 33.33 % of 300 is 99.99 three times, so the amounts are $0.03 short and the money arm speaks
+      // first. Here the third row carries the residue, so the amounts total $300 exactly and this is
+      // the only arm left to catch the 99.99 % -- which is the whole reason it exists.
+      const rows = percentRows(
+        [alice, bob, carol],
+        300,
+        typed(
+          [alice.tenantId, { text: '33.33' }],
+          [bob.tenantId, { text: '33.33' }],
+          [carol.tenantId, { text: '33.33' }]
+        )
+      );
+
+      expect(splitBlocker(rows, 300)).withContext('the amounts are what is short here').not.toBeNull();
+      expect(percentageBlocker(rows, 'percent'))
+        .toBe('The percentages total 99.99%, they must total 100% — 0.01% short.');
+    });
+
+    it('accepts a third typed past two decimal places, which sums to a hundred exactly', () => {
+      // 33.334 + 33.333 + 33.333 is 100.000. Summing in hundredths would round each to 33.33 and
+      // refuse a split the service accepts; summing in binary floating point would land just past
+      // 100 and refuse it too.
+      const rows = percentRows(
+        [alice, bob, carol],
+        300,
+        typed(
+          [alice.tenantId, { text: '33.334' }],
+          [bob.tenantId, { text: '33.333' }],
+          [carol.tenantId, { text: '33.333' }]
+        )
+      );
+
+      expect(splitBlocker(rows, 300)).withContext('the amounts are exact').toBeNull();
+      expect(percentageBlocker(rows, 'percent')).toBeNull();
+    });
+
+    it('counts the derived percentage of a row nobody typed, because that is what is sent', () => {
+      const rows = percentRows([alice, bob], 300, typed([alice.tenantId, { text: '70' }]));
+
+      // Bob was never typed; his 30 % goes on the wire all the same, so the guard has to see it.
+      expect(percentageBlocker(rows, 'percent')).toBeNull();
     });
   });
 

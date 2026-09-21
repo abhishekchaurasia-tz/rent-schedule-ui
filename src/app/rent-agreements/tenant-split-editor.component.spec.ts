@@ -164,6 +164,42 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
   });
 
+  it('refuses a percentage split that misses a hundred, before the service does', () => {
+    splitAcross(300, tenantA, tenantB);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '60');
+    component.typeShare(tenantB, '30');
+    fixture.detectChanges();
+
+    // The amounts are $180 + $90, which is $270 against a $300 fee -- so the money arm speaks first,
+    // exactly as requirement 23 settles. Fixing the amounts leaves the percentages as the fault.
+    expect(component.blocker()).toContain('the fee is $300.00');
+
+    component.typeShare(tenantB, '40');
+    fixture.detectChanges();
+    expect(component.blocker()).toBeNull();
+  });
+
+  it('names the percentages once the amounts add up', () => {
+    splitAcross(300, tenantA, tenantB, tenantC);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '33.33');
+    component.typeShare(tenantB, '33.33');
+    component.typeShare(tenantC, '33.33');
+    fixture.detectChanges();
+
+    // 99.99 / 99.99 / 99.99 is $0.03 short of the fee, so the money is named first.
+    expect(component.blocker()).toContain('the fee is $300.00');
+
+    component.typeShare(tenantC, '33.34');
+    fixture.detectChanges();
+
+    // Now the amounts are exact and the percentages total 100.00 -- both arms are satisfied.
+    expect(component.blocker()).toBeNull();
+    expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([33.33, 33.33, 33.34]);
+    expect(reported!.shares!.map((share) => share.amount)).toEqual([99.99, 99.99, 100.02]);
+  });
+
   it('states no percentage on any row while the split is in money', () => {
     splitAcross(300, tenantA, tenantB);
     component.typeShare(tenantA, '210');

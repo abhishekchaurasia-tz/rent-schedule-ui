@@ -95,9 +95,9 @@ bisectable without the guard attached to it.
 
 **Requirements:** 19. **Depends on:** Milestone 1.
 
-- [ ] `splitBlocker` gains a percentage arm, named like the money one — the total, the target, the gap.
-- [ ] The fee is named first when both are wrong (requirement 23's rule, unchanged).
-- [ ] Tests: `33.334 / 33.333 / 33.333` totals `100.001` and is refused, while its amounts are exact.
+- [x] `splitBlocker` gains a percentage arm, named like the money one — the total, the target, the gap.
+- [x] The fee is named first when both are wrong (requirement 23's rule, unchanged).
+- [x] Tests: `33.334 / 33.333 / 33.333` totals `100.001` and is refused, while its amounts are exact.
 
 **Commit:** `fix(split): a percentage split that misses a hundred is refused here too (FR 19)`
 
@@ -126,7 +126,7 @@ bisectable without the guard attached to it.
 
 Per milestone, before the next one starts:
 
-- [x] `npm test` — green: **440**, up from 435.
+- [x] `npm test` — green: **450**, up from 435.
 - [x] **At least one new fixture uses two or more renters and unequal shares.** A one-row split at
       `100 %` cannot fail the rule it claims to cover.
 - [x] The compiled util, run against the service's rule, answers `201` for every scenario in the
@@ -147,5 +147,38 @@ No saved data is affected — a split that was refused was never stored.
 ## 6. Final Validation
 
 - [ ] Both milestones committed, `npm test` green.
-- [ ] No payload shape remains that states some percentages and not others.
-- [ ] FR 24 carried forward as the open question it is, not silently dropped.
+- [x] No payload shape remains that states some percentages and not others.
+- [x] FR 24 carried forward as the open question it is, not silently dropped.
+
+---
+
+## Outcome — 2026-09-21
+
+Both milestones shipped. **No backend change and no contract change** — the same fields, in a
+combination the service already accepted and this page could not build.
+
+| | |
+|---|---|
+| `730812d` | the unit belongs to the split, not the row (FR 18, FR 20) |
+| Milestone 2 | a percentage split that misses a hundred is refused here too (FR 19) |
+
+**Tests: 450**, up from 435 entering the plan.
+
+**What the fix actually removed.** Not a rejected save the owner could retry differently — a save
+that **could not succeed**, from a screen with nothing wrong on it. One renter switched to `%` was a
+guaranteed `422`, and so was a row in `%` beside a row in money. Both shapes are now
+unrepresentable rather than validated against, which is the difference between a guard and a design.
+
+**A result worth recording, found while probing the finished guard.** An even `$300` three ways
+**can** be expressed as percentages after all — `33.334 / 33.333 / 33.333` gives `100.00` each and
+totals a hundred exactly. It is only the **two-decimal** figure the page carries across that cannot,
+because `33.33 %` of `300` is `99.99`. So FR 24's disclosure may be avoidable: carrying three
+decimals across instead of two keeps the money still in this case. That is not a general proof —
+some totals have no such expression — so FR 24 stays open, but the answer it needs is narrower than
+this plan assumed when it wrote the question.
+
+**The lesson, and it is the same one twice in one week.** The only test in this repository that sent
+a percentage used **one renter at `100 %`** — the single value that cannot fail the rule it covers.
+The Postman collection on the API side had the same fixture, for the same rule, and the defect on
+each side stayed invisible for the same reason. **A fixture that cannot fail the rule it covers is
+not covering it.**
