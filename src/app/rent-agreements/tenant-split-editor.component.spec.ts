@@ -71,16 +71,119 @@ describe('TenantSplitEditorComponent', () => {
     return fixture.nativeElement.querySelectorAll('.roster-row');
   }
 
+  describe('Shared Lease carries the same boxes (FR 25)', () => {
+    /** Renders the editor for `total` across the roster, left in Shared Lease. */
+    function sharedAcross(total: number, ...tenantIds: string[]): void {
+      fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.detectChanges();
+    }
+
+    it('shows the whole roster with boxes, and still sends nothing', () => {
+      sharedAcross(300, tenantA, tenantB);
+
+      expect(component.isSharedByEveryone()).toBeTrue();
+      expect(rendered().length).withContext('the table is not rendered in Shared Lease').toBe(2);
+      expect(fixture.nativeElement.querySelectorAll('.split-unit').length)
+        .withContext('the unit control is not offered in Shared Lease')
+        .toBe(1);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+
+      // The figures are shown because they are true. They are not sent, because nobody has said
+      // this fee names anybody -- it still covers renters added later.
+      expect(component.namesRenters()).toBeFalse();
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
+    });
+
+    it('names every renter shown the moment one share is typed, never just that one', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+
+      expect(component.namesRenters()).toBeTrue();
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
+      expect(reported!.shares!.length).withContext('one row went out alone').toBe(2);
+    });
+
+    it('does the same in percent, stating both rows', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.setSplitUnit('percent');
+      component.typeShare(tenantA, '60');
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([60, 40]);
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([180, 120]);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('says what naming a share costs, and only once it has been named', () => {
+      sharedAcross(300, tenantA, tenantB);
+      expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
+
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+
+      // The notice is the requirement. A named fee is resolved by an intersection with the roster,
+      // so it drops a renter who leaves and never adds one who joins -- a different product from
+      // the one the owner had a moment ago, chosen with a keystroke.
+      const notice = fixture.nativeElement.querySelector('.split-note.naming');
+      expect(notice).not.toBeNull();
+      expect(notice.textContent).toContain('will not');
+      expect(notice.textContent).toContain('added to the lease later');
+    });
+
+    it('goes back to shared when the shares are cleared', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+      expect(reported!.shares).toBeDefined();
+
+      component.resetSplit();
+      fixture.detectChanges();
+
+      expect(component.namesRenters()).toBeFalse();
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
+    });
+
+    it('unticking a renter on a shared fee charges the others, not that one alone', () => {
+      sharedAcross(300, tenantA, tenantB, tenantC);
+
+      // Every box reads as ticked while the fee is shared, so toggling one has to remove that
+      // renter from the set on screen. Treating the empty selection literally added them instead,
+      // which charged the unticked renter the whole fee.
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+
+      expect(component.rows().map((row) => row.tenantId)).toEqual([tenantA, tenantB]);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+      expect(reported!.shares!.length).toBe(2);
+    });
+
+    it('keeps a lease with no renters on the note, with nothing to type into', () => {
+      sharedAcross(300);
+
+      expect(rendered().length).toBe(0);
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.textContent).toContain('no renters saved yet');
+    });
+  });
+
   it('starts shared by everyone, which is a complete instruction rather than an empty one', () => {
     fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
     fixture.componentRef.setInput('feeTotal', 300);
     fixture.detectChanges();
 
     expect(component.isSharedByEveryone()).toBeTrue();
-    expect(component.rows()).toEqual([]);
     expect(reported).toEqual({ shares: undefined, blocker: null });
     expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
-    expect(rendered().length).toBe(0);
+
+    // v13: the table IS rendered here now, and this case used to assert it was not. What it was
+    // really protecting is the line above -- a shared fee sends nothing at all -- and that has not
+    // changed. The rows exist so the owner has somewhere to type; showing them commits to nothing.
+    expect(rendered().length).toBe(2);
+    expect(component.namesRenters()).toBeFalse();
   });
 
   it('ticks everybody when switched to Split per Tenant, changing who owes the fee not at all', () => {

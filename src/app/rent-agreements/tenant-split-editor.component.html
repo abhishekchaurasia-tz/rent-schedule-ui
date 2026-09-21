@@ -19,14 +19,18 @@
       />
       <span>Split per Tenant</span>
     </label>
-    @if (!isSharedByEveryone() && hasTypedShares()) {
+    @if (hasTypedShares()) {
       <button type="button" class="link-btn reset-all" (click)="resetSplit()">
-        Reset to an even split
+        @if (isSharedByEveryone()) {
+          Clear the shares
+        } @else {
+          Reset to an even split
+        }
       </button>
     }
   </div>
 
-  @if (!isSharedByEveryone()) {
+  @if (tenants().length > 0) {
     <!--
       The unit for the whole split, not for a row. v7 put this selector on every row, which let the
       owner say one renter's share in percent and leave the rest in money — and the service sums the
@@ -57,18 +61,33 @@
     </div>
   }
 
-  @if (isSharedByEveryone()) {
+  @if (tenants().length === 0) {
     <p class="split-note">
-      @if (tenants().length === 0) {
-        <strong>This lease has no renters saved yet, so the fee is charged to the lease itself.</strong>
-        It will be shared by every renter added later.
-      } @else {
-        <strong>Charged to the lease and shared by every active renter.</strong>
-        That is a complete instruction, not an unfinished one — and it keeps covering renters added
-        later. Choose <em>Split per Tenant</em> to say what each one owes.
-      }
+      <strong>This lease has no renters saved yet, so the fee is charged to the lease itself.</strong>
+      It will be shared by every renter added later.
     </p>
   } @else {
+    <!--
+      The notice is the requirement, not decoration. A fee with no split is resolved against the LIVE
+      roster on every invoice it reaches, so a renter who joins in March is charged it from March. A
+      fee that names people is resolved by named.Where(roster.Contains) -- an intersection, which
+      drops a renter who leaves and never adds one who joins. Those are two different products, and
+      before v13 the owner chose between them by picking a radio whose label says nothing about the
+      difference. Typing a share is the choice; this is where it gets said (requirement 25).
+    -->
+    @if (namesRenters()) {
+      <p class="split-note naming">
+        <strong>This fee names the renters below.</strong>
+        A renter added to the lease later <strong>will not</strong> be charged it. Clear the shares to
+        go back to charging the whole lease.
+      </p>
+    } @else {
+      <p class="split-note">
+        <strong>Charged to the lease and shared by every active renter.</strong>
+        That is a complete instruction, not an unfinished one — and it keeps covering renters added
+        later. Type a share below to say what each one owes instead.
+      </p>
+    }
     <table class="split-table">
       <thead>
         <tr>

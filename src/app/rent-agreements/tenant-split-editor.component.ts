@@ -108,7 +108,7 @@ export class TenantSplitEditorComponent {
    */
   private readonly paidOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
-  /** Whether the fee is shared by everybody — the state an empty selection encodes. */
+  /** Whether the **mode** is Shared Lease — an empty selection. Not the same as sending no split. */
   readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
 
   /** Whether any row has been typed over — what the "reset to even" control is offered for. */
@@ -116,17 +116,40 @@ export class TenantSplitEditorComponent {
     () => this.amountOverrides().size > 0 || this.paidOverrides().size > 0
   );
 
-  /** The ticked renters in roster order, named. */
-  private readonly selectedTenants = computed(() =>
+  /**
+   * Whether this fee **names** the renters it is showing, rather than being shared by whoever is
+   * active (requirement 25).
+   *
+   * **A subset selected, or any share typed.** Until v13 the mode radio decided this by itself, and
+   * Shared Lease had no boxes to type into — so the owner chose between two products by picking a
+   * radio whose label says nothing about the difference. The difference is real: a fee with no split
+   * is resolved against the live roster on every invoice it reaches, while a named one is resolved
+   * by `named.Where(roster.Contains)` — an intersection, which drops a renter who leaves and
+   * **never adds one who joins**.
+   *
+   * So the page lets them type wherever they are and tells them what the keystroke did. Clearing the
+   * shares is the way back, and it is the same gesture in reverse.
+   */
+  readonly namesRenters = computed(
+    () => !this.isSharedByEveryone() || this.amountOverrides().size > 0
+  );
+
+  /**
+   * The renters the table covers: the ticked ones, or the whole roster while the fee is shared.
+   *
+   * Shared Lease shows everybody because there has to be something to type into — and because the
+   * figures are true either way. What differs is whether they are sent.
+   */
+  private readonly coveredTenants = computed(() =>
     this.tenants()
-      .filter((tenant) => this.selectedTenantIds().has(tenant.tenantId))
+      .filter((tenant) => this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId))
       .map((tenant) => ({ tenantId: tenant.tenantId, name: this.tenantName(tenant.tenantId) }))
   );
 
   /** The split table: each renter's slice of the fee, of what is paid, and what that leaves owing. */
   readonly rows = computed<SplitTableRow[]>(() =>
     buildSplitTable(
-      this.selectedTenants(),
+      this.coveredTenants(),
       this.feeTotal(),
       this.alreadyPaid(),
       this.amountOverrides(),
@@ -136,11 +159,15 @@ export class TenantSplitEditorComponent {
   );
 
   /**
-   * One entry per **roster** renter, carrying its share when ticked and `null` when not.
+   * One entry per **roster** renter, carrying its share when covered and `null` when not.
    *
    * The table lists the whole roster so an unticked renter can be ticked back, while {@link rows}
-   * holds only the ticked ones because only they have a share. Pairing them here keeps the template
+   * holds only the covered ones because only they have a share. Pairing them here keeps the template
    * from searching `rows()` once per roster entry.
+   *
+   * **Everybody is covered while the fee is shared** (requirement 25). Reading `selected` straight off
+   * the selection would tick nobody in Shared Lease and label every renter *Not charged this fee* —
+   * the opposite of what the mode means.
    */
   readonly rosterRows = computed(() => {
     const byTenant = new Map(this.rows().map((row) => [row.tenantId, row] as const));
@@ -149,7 +176,7 @@ export class TenantSplitEditorComponent {
       tenantId: tenant.tenantId,
       name: this.tenantName(tenant.tenantId),
       initials: this.tenantInitials(tenant.tenantId),
-      selected: this.selectedTenantIds().has(tenant.tenantId),
+      selected: this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId),
       // The stand-in names are drawn from 16 x 16 combinations, so two renters on one lease can read
       // as the same person -- observed on a three-way split, two rows both called "Bilal Mensah".
       // The old roster list showed the id beside the name for exactly this reason; the split table
@@ -209,9 +236,14 @@ export class TenantSplitEditorComponent {
     // the typed rows and the fee total, and the last of those changes without anything here being
     // called at all — the owner edits an item's rate in the panel above.
     effect(() => {
+      // A shared fee sends nothing at all, however many rows the table is showing (requirement 5,
+      // as corrected in v13). The table is there so the owner can start typing, not because the
+      // figures are going anywhere.
       this.splitChange.emit({
-        shares: toTenantShareInputs(this.rows(), this.splitUnit()),
-        blocker: this.blocker()
+        shares: this.namesRenters()
+          ? toTenantShareInputs(this.rows(), this.splitUnit())
+          : undefined,
+        blocker: this.namesRenters() ? this.blocker() : null
       });
     });
   }
@@ -238,9 +270,20 @@ export class TenantSplitEditorComponent {
     return this.selectedTenantIds().has(tenantId);
   }
 
+  /**
+   * Ticks a renter on or off this fee.
+   *
+   * **Unticking somebody while the fee is shared means "everybody except them"**, not "only them".
+   * An empty selection encodes *shared by everyone*, so every box in the table reads as ticked
+   * (requirement 25) — and toggling a ticked box has to remove that renter from the set it is
+   * showing, which means materialising the set first. Without this, unticking Alice on a shared fee
+   * selected Alice alone and charged her the lot.
+   */
   toggleTenant(tenantId: string): void {
+    const everybody = this.tenants().map((tenant) => tenant.tenantId);
+
     this.selectedTenantIds.update((selected) => {
-      const next = new Set(selected);
+      const next = new Set(selected.size === 0 ? everybody : selected);
       if (!next.delete(tenantId)) {
         next.add(tenantId);
       }
