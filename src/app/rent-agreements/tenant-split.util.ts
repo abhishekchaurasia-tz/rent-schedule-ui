@@ -19,14 +19,20 @@
 export type ShareUnit = 'amount' | 'percent';
 
 /**
- * One renter's typed-over share: the unit they chose and the text they typed, verbatim.
+ * One renter's typed-over share: the text they typed, verbatim.
  *
  * **The text is kept as typed rather than parsed into a number.** A value the page cannot read —
  * `12,50`, a stray minus, a half-finished `1.` — has to stay on screen to be corrected, and
  * requirement 19 is explicit that the page never silently rewrites what the owner entered.
+ *
+ * **It carries no unit of its own, and that is requirement 18 as v11 corrects it.** The unit belongs
+ * to the split, not the row. While each row chose for itself the owner could state one renter's share
+ * as a percentage and leave the rest as money — and the service sums the percentages a request
+ * *states* and requires exactly `100.00`, so a single stated `70` was a guaranteed `422` from a
+ * screen whose amounts added up perfectly. Removing the field is what makes that payload
+ * unrepresentable rather than merely refused somewhere downstream.
  */
 export interface TenantShareOverride {
-  unit: ShareUnit;
   text: string;
 }
 
@@ -43,8 +49,17 @@ export interface TenantShareRow {
    * `33.33` has no way to tell a deliberate remainder from a rounding bug.
    */
   carriesLeftoverCent: boolean;
-  /** `even` while the row still carries its share of the division; otherwise the unit typed. */
+  /** `even` while the row still carries its share of the division; otherwise the split's unit. */
   authoredUnit: ShareUnit | 'even';
+  /**
+   * The percentage the owner actually typed, or `null` on a row they did not type.
+   *
+   * **Kept because the derived {@link sharePercent} is not it.** That one is computed back from the
+   * rounded cents, so a split authored as `33.334 / 33.333 / 33.333` re-derives as three `33.33`s
+   * totalling `99.99` — refused by the service for a reason the owner never typed. What went on the
+   * wire has to be what they entered.
+   */
+  typedPercent: number | null;
   /** What the row's input shows: the owner's own text on a typed row, the divided figure otherwise. */
   text: string;
   /** A complaint about the typed text, or `null`. Blocks the save; never rewrites the row. */
@@ -129,6 +144,89 @@ export function divideEvenly(total: number, count: number): number[] {
 }
 
 /**
+ * How many decimal places a percentage is carried to — and it is not an arbitrary choice.
+ *
+ * `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so six places is exactly what the
+ * service stores, losslessly. A figure the page carries to more precision than the column holds would
+ * be rounded on the way in, and the stored set would no longer total the hundred the page checked.
+ */
+const PERCENT_PLACES = 1_000_000;
+
+/**
+ * Divides `100` across the rows in proportion to the money, to six places (requirement 24).
+ *
+ * **The same rule as the money, on the other figure**: whole units each, the leftover handed **one at
+ * a time to the first rows in listed order**. That is what makes the percentages total exactly `100`
+ * while each one still resolves back to the cent it came from.
+ *
+ * **Why it has to be a division and not a rounding.** Taking each row's percentage on its own —
+ * `Math.round(cents / total * 10000) / 100`, which is what v7 did — gives `33.33` three times on a
+ * `$300` fee: `99.99`, which the service refuses. And no fixed precision fixes that by itself, because
+ * a third of a hundred does not terminate. Carrying the residue does: `33.334 / 33.333 / 33.333` is
+ * `100.000` exactly, and each still resolves to `$100.00`.
+ *
+ * **Why six places and not three.** Three totals a hundred too, but the money stops surviving the
+ * round trip above roughly `$500` — a `$1,500` fee across six renters moves a cent. Six holds for
+ * every total tried, up to `$12,345.67` across seven.
+ *
+ * Computed through `BigInt` because `cents * 100_000_000` leaves the exact range of a `number` for a
+ * large enough fee, and a division that has to total exactly `100` cannot be assembled out of values
+ * that are nearly right.
+ *
+ * **The residue goes to rows the owner did not author**, in listed order, and only falls back to all
+ * of them when every row was typed. A row whose percentage the owner entered should read back as the
+ * number they entered — landing a millionth of a percent on it would answer `66.670001` to somebody
+ * who typed `66.67`, which is the page rewriting their work to balance its own books.
+ *
+ * @param centsByRow Each row's share, in cents, in listed order.
+ * @param totalCents What they add up to — the figure being divided.
+ * @param isDerived Which rows the page worked out rather than the owner typing.
+ * @returns One percentage per row, totalling `100` exactly. All zeros when there is nothing to divide.
+ */
+function dividePercentAcross(
+  centsByRow: readonly number[],
+  totalCents: number,
+  isDerived: readonly boolean[]
+): number[] {
+  // Zero divided among renters is zero each, not NaN. Reachable from the paid column, which starts at
+  // the charge's `alreadyPaid` and that is usually nothing at all.
+  if (totalCents === 0) {
+    return centsByRow.map(() => 0);
+  }
+
+  const target = 100 * PERCENT_PLACES;
+  const divisor = BigInt(totalCents);
+  const units = centsByRow.map((cents) => Number((BigInt(cents) * BigInt(target)) / divisor));
+
+  let leftover = target - units.reduce((sum, unit) => sum + unit, 0);
+  const eligible = isDerived.some(Boolean)
+    ? centsByRow.map((_unused, index) => isDerived[index])
+    : centsByRow.map(() => true);
+
+  return units.map((unit, index) => {
+    const takes = eligible[index] && leftover > 0;
+    if (takes) {
+      leftover -= 1;
+    }
+    return (unit + (takes ? 1 : 0)) / PERCENT_PLACES;
+  });
+}
+
+/**
+ * Renders a percentage for the box the owner types into — full precision, no trailing noise.
+ *
+ * An even two-way split reads `50`, not `50.000000`; a three-way one reads `33.333334`, because that
+ * is genuinely what the row is and rounding it to `33.33` is what moved the money. The box has to
+ * show the figure that will be sent, or the next keystroke silently discards precision the split
+ * depends on.
+ *
+ * @param percent The percentage, already divided to at most six places.
+ */
+export function formatPercent(percent: number): string {
+  return percent.toFixed(6).replace(/\.?0+$/, '');
+}
+
+/**
  * Reads a typed share, in cents, without ever rewriting it.
  *
  * An empty box is `0` rather than a complaint: clearing a cell to retype it is the ordinary way to
@@ -180,11 +278,14 @@ export function readTypedShare(
  *   cents are handed out in (requirement 17 says "the first renters in the listed order").
  * @param total The fee being divided, in whole currency units.
  * @param overrides The rows the owner has typed over, keyed by renter.
+ * @param unit The unit **the whole split** is typed in (requirement 18, as corrected in v11). Every
+ *   typed row is read in it; no row carries a unit of its own.
  */
 export function buildSplitRows(
   tenants: readonly { tenantId: string; name: string }[],
   total: number,
-  overrides: ReadonlyMap<string, TenantShareOverride>
+  overrides: ReadonlyMap<string, TenantShareOverride>,
+  unit: ShareUnit = 'amount'
 ): TenantShareRow[] {
   if (tenants.length === 0) {
     return [];
@@ -199,7 +300,7 @@ export function buildSplitRows(
         const override = overrides.get(tenant.tenantId)!;
         return [
           tenant.tenantId,
-          { ...override, ...readTypedShare(override.text, override.unit, totalCents) }
+          { ...override, ...readTypedShare(override.text, unit, totalCents) }
         ] as const;
       })
   );
@@ -210,29 +311,41 @@ export function buildSplitRows(
   const smallestEven = evenAmounts.length > 0 ? Math.min(...evenAmounts) : 0;
 
   let evenIndex = 0;
-
-  return tenants.map((tenant) => {
+  const centsByRow = tenants.map((tenant) => {
     const share = typed.get(tenant.tenantId);
-    const cents = share ? share.cents : Math.round(evenAmounts[evenIndex] * 100);
+    return share ? share.cents : Math.round(evenAmounts[evenIndex++] * 100);
+  });
+
+  const percentByRow = dividePercentAcross(
+    centsByRow,
+    totalCents,
+    tenants.map((tenant) => !typed.has(tenant.tenantId))
+  );
+
+  return tenants.map((tenant, index) => {
+    const share = typed.get(tenant.tenantId);
+    const cents = centsByRow[index];
     const amount = cents / 100;
 
     const row: TenantShareRow = {
       tenantId: tenant.tenantId,
       name: tenant.name,
       amount,
-      // Zero divided among renters is zero each, not NaN. Reachable from the paid column, which
-      // starts at the charge's `alreadyPaid` and that is usually 0.
-      sharePercent: totalCents === 0 ? 0 : Math.round((cents / totalCents) * 10000) / 100,
+      sharePercent: percentByRow[index],
       carriesLeftoverCent: !share && amount !== smallestEven,
-      authoredUnit: share ? share.unit : 'even',
+      authoredUnit: share ? unit : 'even',
+      // Only a typed row in a percentage split has one. A row the page could not read has no number
+      // to keep, and an untouched row was never typed at all -- both fall back to the derived figure
+      // when the split goes on the wire, which is the honest value for a row nobody authored.
+      typedPercent:
+        share && unit === 'percent' && share.error === null && share.text.trim() !== ''
+          ? Number(share.text.trim())
+          : null,
       // A typed row echoes the owner back verbatim; a divided one shows the figure it was given.
       text: share ? share.text : amount.toFixed(2),
       error: share ? share.error : null
     };
 
-    if (!share) {
-      evenIndex += 1;
-    }
     return row;
   });
 }
@@ -282,6 +395,55 @@ export function splitBlocker(
   return `${subject.shares} total $${shares}, ${subject.total} is $${fee} — $${gap} ${direction}.`;
 }
 
+/**
+ * The percentage a row will state on the wire.
+ *
+ * **One definition, used by the projection and by the guard**, so the figure the page refuses on is
+ * the figure it would have sent. Two readings of "the row's percentage" — one derived, one typed —
+ * is how the split came to be refused by the service for a number nobody entered.
+ */
+function statedPercent(row: TenantShareRow): number {
+  return row.typedPercent ?? row.sharePercent;
+}
+
+/**
+ * Why a percentage split cannot be saved, or `null` (requirement 19, as extended in v11).
+ *
+ * **The money arm is not enough on its own, because the two sums are independent.** Percentages of
+ * `33.33 / 33.33 / 33.34` and of `33.334 / 33.333 / 33.333` produce the same three amounts on a
+ * `$300` fee, and only the second totals a hundred. The service checks both and refuses either;
+ * without this the page would pass a split straight into a `422` it could have named itself.
+ *
+ * **Summed at six decimal places** rather than in hundredths. The owner may type more precision than
+ * the two places a derived figure carries — `33.334` is a legitimate third of a hundred — and
+ * rounding the sum to hundredths would refuse exactly that. Six places is past anything a person
+ * types and clear of binary floating point, where `33.334 + 33.333 + 33.333` is not quite `100`.
+ *
+ * @param rows The split as {@link buildSplitTable} produced it.
+ * @param unit The unit the split is typed in. A money split states no percentages and has nothing
+ *   here to check.
+ */
+export function percentageBlocker(
+  rows: readonly TenantShareRow[],
+  unit: ShareUnit
+): string | null {
+  if (unit !== 'percent' || rows.length === 0) {
+    return null;
+  }
+
+  const SCALE = 1_000_000;
+  const stated = rows.reduce((sum, row) => sum + Math.round(statedPercent(row) * SCALE), 0);
+  if (stated === 100 * SCALE) {
+    return null;
+  }
+
+  const total = (stated / SCALE).toFixed(2);
+  const gap = (Math.abs(100 * SCALE - stated) / SCALE).toFixed(2);
+  const direction = stated > 100 * SCALE ? 'over' : 'short';
+
+  return `The percentages total ${total}%, they must total 100% — ${gap}% ${direction}.`;
+}
+
 /** How {@link splitBlocker} names the paid column. */
 export const PAID_SUBJECT: SplitSubject = {
   shares: 'The paid amounts',
@@ -302,16 +464,19 @@ export const PAID_SUBJECT: SplitSubject = {
  * @param alreadyPaid The charge's already-paid figure, divided the same way.
  * @param amountOverrides Rows whose fee share the owner typed.
  * @param paidOverrides Rows whose paid amount the owner typed.
+ * @param unit The unit the **fee** column is typed in. The paid column is always money — there is no
+ *   `alreadyPaidPercent` on the wire, so it has no unit to choose (requirement 23).
  */
 export function buildSplitTable(
   tenants: readonly { tenantId: string; name: string }[],
   feeTotal: number,
   alreadyPaid: number,
   amountOverrides: ReadonlyMap<string, TenantShareOverride>,
-  paidOverrides: ReadonlyMap<string, TenantShareOverride>
+  paidOverrides: ReadonlyMap<string, TenantShareOverride>,
+  unit: ShareUnit = 'amount'
 ): SplitTableRow[] {
-  const feeRows = buildSplitRows(tenants, feeTotal, amountOverrides);
-  const paidRows = buildSplitRows(tenants, alreadyPaid, paidOverrides);
+  const feeRows = buildSplitRows(tenants, feeTotal, amountOverrides, unit);
+  const paidRows = buildSplitRows(tenants, alreadyPaid, paidOverrides, 'amount');
 
   return feeRows.map((row, index) => {
     const paid = paidRows[index];
@@ -336,13 +501,25 @@ export function buildSplitTable(
  * **A fee shared by everybody sends nothing at all**, not an empty array: both read the same on the
  * server, but omission says *not specified* where `[]` says *specified as nobody*.
  *
- * `sharePercent` rides only on a row the owner typed **as** a percentage. Sending the derived figure
- * on every row would tell the server they stated something they did not.
+ * **`sharePercent` rides on every row or on none, decided by the split's unit** — v11's correction,
+ * and the reason this function had a defect rather than a preference. v7 attached it per row, to the
+ * rows the owner had typed as percentages. The service sums the percentages a request *states* and
+ * requires exactly `100.00`, so a two-renter fee with one row switched to `%` stated a single `70`
+ * and was refused `422`, while the page showed `210.00 / 90.00` against a `$300` fee and enabled
+ * Save. Nothing in a per-row unit can produce a stated set totalling a hundred except by accident.
  *
+ * **A typed row sends what was typed**, not {@link TenantShareRow.sharePercent}, which is derived
+ * back from the rounded cents: `33.334` typed re-derives as `33.33`, and three of those total
+ * `99.99`. A row nobody typed has no such figure and sends the derived one, which is the honest
+ * value for a share the page worked out itself.
+ *
+ * @param rows The split as {@link buildSplitTable} produced it.
+ * @param unit The unit the split is typed in.
  * @returns The `tenantShares` array, or `undefined` when the fee is shared by every renter.
  */
 export function toTenantShareInputs(
-  rows: readonly SplitTableRow[]
+  rows: readonly SplitTableRow[],
+  unit: ShareUnit = 'amount'
 ): TenantShareInput[] | undefined {
   if (rows.length === 0) {
     return undefined;
@@ -351,7 +528,7 @@ export function toTenantShareInputs(
   return rows.map((row) => ({
     tenantId: row.tenantId,
     amount: row.amount,
-    ...(row.authoredUnit === 'percent' ? { sharePercent: row.sharePercent } : {}),
+    ...(unit === 'percent' ? { sharePercent: statedPercent(row) } : {}),
     alreadyPaid: row.paidAmount
   }));
 }

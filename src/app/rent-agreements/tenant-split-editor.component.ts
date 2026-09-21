@@ -10,6 +10,8 @@ import {
   TenantShareInput,
   TenantShareOverride,
   buildSplitTable,
+  formatPercent,
+  percentageBlocker,
   splitBlocker,
   toTenantShareInputs
 } from './tenant-split.util';
@@ -86,6 +88,16 @@ export class TenantSplitEditorComponent {
   private readonly amountOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
   /**
+   * The unit the **whole split** is typed in (requirement 18, as corrected in v11).
+   *
+   * One value for the table, not one per row, because the service sums the percentages a request
+   * states and requires exactly `100.00` — a mixture states some of them and totals a hundred only
+   * by coincidence. Holding it here is what stops the page from building a body that cannot be
+   * accepted.
+   */
+  readonly splitUnit = signal<ShareUnit>('amount');
+
+  /**
    * The paid amounts the owner has typed over — a separate map, deliberately.
    *
    * The two columns divide two different figures, so fixing what one renter owes must not disturb what
@@ -96,7 +108,7 @@ export class TenantSplitEditorComponent {
    */
   private readonly paidOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
-  /** Whether the fee is shared by everybody — the state an empty selection encodes. */
+  /** Whether the **mode** is Shared Lease — an empty selection. Not the same as sending no split. */
   readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
 
   /** Whether any row has been typed over — what the "reset to even" control is offered for. */
@@ -104,30 +116,58 @@ export class TenantSplitEditorComponent {
     () => this.amountOverrides().size > 0 || this.paidOverrides().size > 0
   );
 
-  /** The ticked renters in roster order, named. */
-  private readonly selectedTenants = computed(() =>
+  /**
+   * Whether this fee **names** the renters it is showing, rather than being shared by whoever is
+   * active (requirement 25).
+   *
+   * **A subset selected, or any share typed.** Until v13 the mode radio decided this by itself, and
+   * Shared Lease had no boxes to type into — so the owner chose between two products by picking a
+   * radio whose label says nothing about the difference. The difference is real: a fee with no split
+   * is resolved against the live roster on every invoice it reaches, while a named one is resolved
+   * by `named.Where(roster.Contains)` — an intersection, which drops a renter who leaves and
+   * **never adds one who joins**.
+   *
+   * So the page lets them type wherever they are and tells them what the keystroke did. Clearing the
+   * shares is the way back, and it is the same gesture in reverse.
+   */
+  readonly namesRenters = computed(
+    () => !this.isSharedByEveryone() || this.amountOverrides().size > 0
+  );
+
+  /**
+   * The renters the table covers: the ticked ones, or the whole roster while the fee is shared.
+   *
+   * Shared Lease shows everybody because there has to be something to type into — and because the
+   * figures are true either way. What differs is whether they are sent.
+   */
+  private readonly coveredTenants = computed(() =>
     this.tenants()
-      .filter((tenant) => this.selectedTenantIds().has(tenant.tenantId))
+      .filter((tenant) => this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId))
       .map((tenant) => ({ tenantId: tenant.tenantId, name: this.tenantName(tenant.tenantId) }))
   );
 
   /** The split table: each renter's slice of the fee, of what is paid, and what that leaves owing. */
   readonly rows = computed<SplitTableRow[]>(() =>
     buildSplitTable(
-      this.selectedTenants(),
+      this.coveredTenants(),
       this.feeTotal(),
       this.alreadyPaid(),
       this.amountOverrides(),
-      this.paidOverrides()
+      this.paidOverrides(),
+      this.splitUnit()
     )
   );
 
   /**
-   * One entry per **roster** renter, carrying its share when ticked and `null` when not.
+   * One entry per **roster** renter, carrying its share when covered and `null` when not.
    *
    * The table lists the whole roster so an unticked renter can be ticked back, while {@link rows}
-   * holds only the ticked ones because only they have a share. Pairing them here keeps the template
+   * holds only the covered ones because only they have a share. Pairing them here keeps the template
    * from searching `rows()` once per roster entry.
+   *
+   * **Everybody is covered while the fee is shared** (requirement 25). Reading `selected` straight off
+   * the selection would tick nobody in Shared Lease and label every renter *Not charged this fee* —
+   * the opposite of what the mode means.
    */
   readonly rosterRows = computed(() => {
     const byTenant = new Map(this.rows().map((row) => [row.tenantId, row] as const));
@@ -136,7 +176,7 @@ export class TenantSplitEditorComponent {
       tenantId: tenant.tenantId,
       name: this.tenantName(tenant.tenantId),
       initials: this.tenantInitials(tenant.tenantId),
-      selected: this.selectedTenantIds().has(tenant.tenantId),
+      selected: this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId),
       // The stand-in names are drawn from 16 x 16 combinations, so two renters on one lease can read
       // as the same person -- observed on a three-way split, two rows both called "Bilal Mensah".
       // The old roster list showed the id beside the name for exactly this reason; the split table
@@ -175,6 +215,14 @@ export class TenantSplitEditorComponent {
       return fee;
     }
 
+    // Also about the fee, so it is named before the paid column and after the money. The two sums
+    // are independent: amounts that total the fee exactly say nothing about whether the percentages
+    // stated beside them reach a hundred, and the service refuses either.
+    const percentages = percentageBlocker(feeRows, this.splitUnit());
+    if (percentages !== null) {
+      return percentages;
+    }
+
     const paidRows = feeRows.map((row) => ({
       ...row,
       amount: row.paidAmount,
@@ -188,7 +236,15 @@ export class TenantSplitEditorComponent {
     // the typed rows and the fee total, and the last of those changes without anything here being
     // called at all — the owner edits an item's rate in the panel above.
     effect(() => {
-      this.splitChange.emit({ shares: toTenantShareInputs(this.rows()), blocker: this.blocker() });
+      // A shared fee sends nothing at all, however many rows the table is showing (requirement 5,
+      // as corrected in v13). The table is there so the owner can start typing, not because the
+      // figures are going anywhere.
+      this.splitChange.emit({
+        shares: this.namesRenters()
+          ? toTenantShareInputs(this.rows(), this.splitUnit())
+          : undefined,
+        blocker: this.namesRenters() ? this.blocker() : null
+      });
     });
   }
 
@@ -214,9 +270,20 @@ export class TenantSplitEditorComponent {
     return this.selectedTenantIds().has(tenantId);
   }
 
+  /**
+   * Ticks a renter on or off this fee.
+   *
+   * **Unticking somebody while the fee is shared means "everybody except them"**, not "only them".
+   * An empty selection encodes *shared by everyone*, so every box in the table reads as ticked
+   * (requirement 25) — and toggling a ticked box has to remove that renter from the set it is
+   * showing, which means materialising the set first. Without this, unticking Alice on a shared fee
+   * selected Alice alone and charged her the lot.
+   */
   toggleTenant(tenantId: string): void {
+    const everybody = this.tenants().map((tenant) => tenant.tenantId);
+
     this.selectedTenantIds.update((selected) => {
-      const next = new Set(selected);
+      const next = new Set(selected.size === 0 ? everybody : selected);
       if (!next.delete(tenantId)) {
         next.add(tenantId);
       }
@@ -244,7 +311,7 @@ export class TenantSplitEditorComponent {
   }
 
   /**
-   * Records what the owner typed into a row, in whichever unit that row is set to (requirement 18).
+   * Records what the owner typed into a row, read in the split's unit (requirement 18).
    *
    * The text is stored, not a number: it is echoed straight back into the input, so a value the page
    * cannot read stays on screen to be corrected rather than being replaced by a zero.
@@ -252,7 +319,7 @@ export class TenantSplitEditorComponent {
   typeShare(tenantId: string, text: string): void {
     this.amountOverrides.update((overrides) => {
       const next = new Map(overrides);
-      next.set(tenantId, { unit: overrides.get(tenantId)?.unit ?? 'amount', text });
+      next.set(tenantId, { text });
       return next;
     });
   }
@@ -267,39 +334,60 @@ export class TenantSplitEditorComponent {
   typePaid(tenantId: string, text: string): void {
     this.paidOverrides.update((overrides) => {
       const next = new Map(overrides);
-      next.set(tenantId, { unit: 'amount', text });
+      next.set(tenantId, { text });
       return next;
     });
   }
 
   /**
-   * Switches a row between money and percentage, **carrying the figure across** so what the renter
-   * owes does not move because the owner changed their mind about how to say it.
+   * Switches the **whole split** between money and percentage, carrying every typed row's figure
+   * across into the new unit (requirement 18, as corrected in v11).
    *
-   * Doing this to an untouched row makes it a typed one, at the value it was just divided to. Choosing
-   * a unit for a row *is* taking it over: it is the only reason to touch that control, and a row that
-   * kept re-dividing afterwards would throw the choice away the moment another renter was ticked.
+   * **One control for the table, because the unit is not a property of a row.** v7 put a selector on
+   * each row, which let the owner state one renter's share as a percentage and leave the rest as
+   * money — a body the service always refuses, because it sums the percentages a request states and
+   * requires exactly `100.00`. Converting every typed row together is what keeps the payload to the
+   * two shapes that can be accepted.
+   *
+   * **Untouched rows stay untouched.** They are still dividing what the typed rows leave, and a row
+   * nobody has typed has no figure of its own to convert.
+   *
+   * **The amounts do not move, which is requirement 24 as answered rather than as first written.**
+   * The figure carried across is the row's share of a hundred divided by the same money-first
+   * residue rule the amounts use, to six places — so an even `$300` three ways goes across as
+   * `33.334 / 33.333 / 33.333` and comes back as `100.00` each. v7 carried `sharePercent.toFixed(2)`
+   * instead, and `33.33 %` of `300` is `99.99`: switching the unit quietly took a cent off one renter
+   * and gave it to another. FR 24 was drafted as a disclosure for that; six places removes the thing
+   * there was to disclose.
    */
-  setShareUnit(tenantId: string, unit: ShareUnit): void {
-    const row = this.rows().find((candidate) => candidate.tenantId === tenantId);
-    if (!row || row.authoredUnit === unit) {
+  setSplitUnit(unit: ShareUnit): void {
+    if (this.splitUnit() === unit) {
       return;
     }
 
-    // Carried across from whichever figure the row already holds. A row the page could not read has
-    // nothing to carry, so its text goes across untouched.
-    const text =
-      row.error !== null
-        ? row.text
-        : unit === 'percent'
-          ? row.sharePercent.toFixed(2)
-          : row.amount.toFixed(2);
+    const rows = new Map(this.rows().map((row) => [row.tenantId, row] as const));
 
     this.amountOverrides.update((overrides) => {
-      const next = new Map(overrides);
-      next.set(tenantId, { unit, text });
+      const next = new Map<string, TenantShareOverride>();
+
+      for (const [tenantId] of overrides) {
+        const row = rows.get(tenantId);
+        // A row the page could not read has nothing to carry, so its text goes across untouched and
+        // stays on screen to be corrected.
+        next.set(tenantId, {
+          text:
+            !row || row.error !== null
+              ? (overrides.get(tenantId)!.text ?? '')
+              : unit === 'percent'
+                ? formatPercent(row.sharePercent)
+                : row.amount.toFixed(2)
+        });
+      }
+
       return next;
     });
+
+    this.splitUnit.set(unit);
   }
 
   /** Hands one row's fee share back to the even division, leaving every other typed row alone. */

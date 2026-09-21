@@ -16,6 +16,19 @@
   margin-bottom: 0.75rem;
 }
 
+.split-unit {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.split-unit-label {
+  font-size: 0.82rem;
+  color: #566;
+}
+
+.unit-choice,
 .mode-choice {
   display: flex;
   align-items: center;
@@ -148,13 +161,6 @@
 }
 
 .share-input,
-.share-unit {
-  padding: 0.3rem;
-  border: 1px solid #ccd2dd;
-  border-radius: 3px;
-  font: inherit;
-}
-
 .share-input {
   width: 4.6rem;
   text-align: right;
@@ -162,10 +168,6 @@
   &.invalid {
     border-color: #b3261e;
   }
-}
-
-.share-unit {
-  background: #f4f6f9;
 }
 
 .row-reset {

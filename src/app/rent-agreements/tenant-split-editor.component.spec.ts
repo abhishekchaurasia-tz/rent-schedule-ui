@@ -71,16 +71,119 @@ describe('TenantSplitEditorComponent', () => {
     return fixture.nativeElement.querySelectorAll('.roster-row');
   }
 
+  describe('Shared Lease carries the same boxes (FR 25)', () => {
+    /** Renders the editor for `total` across the roster, left in Shared Lease. */
+    function sharedAcross(total: number, ...tenantIds: string[]): void {
+      fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.detectChanges();
+    }
+
+    it('shows the whole roster with boxes, and still sends nothing', () => {
+      sharedAcross(300, tenantA, tenantB);
+
+      expect(component.isSharedByEveryone()).toBeTrue();
+      expect(rendered().length).withContext('the table is not rendered in Shared Lease').toBe(2);
+      expect(fixture.nativeElement.querySelectorAll('.split-unit').length)
+        .withContext('the unit control is not offered in Shared Lease')
+        .toBe(1);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+
+      // The figures are shown because they are true. They are not sent, because nobody has said
+      // this fee names anybody -- it still covers renters added later.
+      expect(component.namesRenters()).toBeFalse();
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
+    });
+
+    it('names every renter shown the moment one share is typed, never just that one', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+
+      expect(component.namesRenters()).toBeTrue();
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
+      expect(reported!.shares!.length).withContext('one row went out alone').toBe(2);
+    });
+
+    it('does the same in percent, stating both rows', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.setSplitUnit('percent');
+      component.typeShare(tenantA, '60');
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([60, 40]);
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([180, 120]);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('says what naming a share costs, and only once it has been named', () => {
+      sharedAcross(300, tenantA, tenantB);
+      expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
+
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+
+      // The notice is the requirement. A named fee is resolved by an intersection with the roster,
+      // so it drops a renter who leaves and never adds one who joins -- a different product from
+      // the one the owner had a moment ago, chosen with a keystroke.
+      const notice = fixture.nativeElement.querySelector('.split-note.naming');
+      expect(notice).not.toBeNull();
+      expect(notice.textContent).toContain('will not');
+      expect(notice.textContent).toContain('added to the lease later');
+    });
+
+    it('goes back to shared when the shares are cleared', () => {
+      sharedAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '210');
+      fixture.detectChanges();
+      expect(reported!.shares).toBeDefined();
+
+      component.resetSplit();
+      fixture.detectChanges();
+
+      expect(component.namesRenters()).toBeFalse();
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
+    });
+
+    it('unticking a renter on a shared fee charges the others, not that one alone', () => {
+      sharedAcross(300, tenantA, tenantB, tenantC);
+
+      // Every box reads as ticked while the fee is shared, so toggling one has to remove that
+      // renter from the set on screen. Treating the empty selection literally added them instead,
+      // which charged the unticked renter the whole fee.
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+
+      expect(component.rows().map((row) => row.tenantId)).toEqual([tenantA, tenantB]);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+      expect(reported!.shares!.length).toBe(2);
+    });
+
+    it('keeps a lease with no renters on the note, with nothing to type into', () => {
+      sharedAcross(300);
+
+      expect(rendered().length).toBe(0);
+      expect(reported!.shares).toBeUndefined();
+      expect(fixture.nativeElement.textContent).toContain('no renters saved yet');
+    });
+  });
+
   it('starts shared by everyone, which is a complete instruction rather than an empty one', () => {
     fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
     fixture.componentRef.setInput('feeTotal', 300);
     fixture.detectChanges();
 
     expect(component.isSharedByEveryone()).toBeTrue();
-    expect(component.rows()).toEqual([]);
     expect(reported).toEqual({ shares: undefined, blocker: null });
     expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
-    expect(rendered().length).toBe(0);
+
+    // v13: the table IS rendered here now, and this case used to assert it was not. What it was
+    // really protecting is the line above -- a shared fee sends nothing at all -- and that has not
+    // changed. The rows exist so the owner has somewhere to type; showing them commits to nothing.
+    expect(rendered().length).toBe(2);
+    expect(component.namesRenters()).toBeFalse();
   });
 
   it('ticks everybody when switched to Split per Tenant, changing who owes the fee not at all', () => {
@@ -118,7 +221,7 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares).toBeUndefined();
   });
 
-  it('reads what is typed into a row, in the unit that row is set to', () => {
+  it('reads what is typed into a row, in the unit the split is set to', () => {
     splitAcross(300, tenantA, tenantB, tenantC);
 
     const input = rendered()[0].querySelector('.share-input');
@@ -133,20 +236,122 @@ describe('TenantSplitEditorComponent', () => {
     expect(rendered()[1].textContent).toContain('Even');
   });
 
-  it('switches a row to a percentage without moving the money', () => {
+  it('switches the whole split to percentages, converting every typed row', () => {
     splitAcross(300, tenantA, tenantB, tenantC);
-
-    const unit = rendered()[0].querySelector('.share-unit');
-    unit.value = 'percent';
-    unit.dispatchEvent(new Event('change'));
+    component.typeShare(tenantA, '150');
+    component.typeShare(tenantB, '90');
     fixture.detectChanges();
 
-    // The row was at its even $100.00 of $300; asking to see it as a percentage says 33.33%, and the
-    // cent it loses to that rounding is the point — it is now a stated percentage, not a stated amount.
-    expect(rowFor(tenantA).authoredUnit).toBe('percent');
-    expect(rowFor(tenantA).text).toBe('33.33');
-    expect(rowFor(tenantA).amount).toBe(99.99);
-    expect(reported!.shares![0].sharePercent).toBe(33.33);
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    // Both typed rows carry across into the new unit; the untouched row is still dividing what they
+    // leave and has no figure of its own to convert. Trailing zeros are trimmed -- a box reading
+    // 50.000000 is noise, while 33.333334 has to show every place it has.
+    expect(rowFor(tenantA).text).toBe('50');
+    expect(rowFor(tenantB).text).toBe('30');
+    expect(rowFor(tenantC).authoredUnit).toBe('even');
+    expect(rowFor(tenantA).amount).toBe(150);
+    expect(rowFor(tenantB).amount).toBe(90);
+    expect(rowFor(tenantC).amount).toBe(60);
+  });
+
+  it('switching to percentages leaves every renter owing exactly what they owed (FR 24)', () => {
+    // The case FR 24 was drafted as a warning for. An even $300 three ways is $100.00 each, and
+    // 33.33% of 300 is 99.99 -- so carrying the two-decimal figure across took a cent off Alice and
+    // handed it to Bob, for no reason but a change of unit. Six places carries the residue instead:
+    // 33.334 / 33.333 / 33.333 totals a hundred exactly and each still resolves to $100.00.
+    splitAcross(300, tenantA, tenantB, tenantC);
+    const before = component.rows().map((row) => row.amount);
+
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    expect(component.rows().map((row) => row.amount)).toEqual(before);
+    expect(component.rows().map((row) => row.amount)).toEqual([100, 100, 100]);
+    expect(component.blocker()).toBeNull();
+    expect(reported!.shares!.map((share) => share.sharePercent))
+      .toEqual([33.333334, 33.333333, 33.333333]);
+  });
+
+  it('holds the money still on a total that divides no better in percent than in cents', () => {
+    // $1,500 across six is $250.00 each. Three decimals would have moved it -- the round trip only
+    // survives below about $500 at that precision -- which is why the carry is to six.
+    splitAcross(1500, tenantA, tenantB, tenantC);
+
+    component.setSplitUnit('percent');
+    fixture.detectChanges();
+
+    expect(component.rows().map((row) => row.amount)).toEqual([500, 500, 500]);
+    expect(component.blocker()).toBeNull();
+  });
+
+  it('carries a typed row across without rewriting the number the owner entered', () => {
+    // The residue goes to the rows the page derived, never onto one the owner authored: answering
+    // 66.670001 to somebody who typed 66.67 is the page balancing its books with their input.
+    splitAcross(300, tenantA, tenantB, tenantC);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '66.67');
+    fixture.detectChanges();
+
+    expect(rowFor(tenantA).sharePercent).toBe(66.67);
+    expect(reported!.shares![0].sharePercent).toBe(66.67);
+  });
+
+  it('states a percentage on every row once the split is in percent, never on only some', () => {
+    // The v11 defect, at the component. Before it, this reported one sharePercent of 50 and the
+    // service refused the save 422 -- the percentages a request STATES must total exactly 100.
+    splitAcross(300, tenantA, tenantB);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '70');
+    fixture.detectChanges();
+
+    expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([70, 30]);
+    expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
+  });
+
+  it('refuses a percentage split that misses a hundred, before the service does', () => {
+    splitAcross(300, tenantA, tenantB);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '60');
+    component.typeShare(tenantB, '30');
+    fixture.detectChanges();
+
+    // The amounts are $180 + $90, which is $270 against a $300 fee -- so the money arm speaks first,
+    // exactly as requirement 23 settles. Fixing the amounts leaves the percentages as the fault.
+    expect(component.blocker()).toContain('the fee is $300.00');
+
+    component.typeShare(tenantB, '40');
+    fixture.detectChanges();
+    expect(component.blocker()).toBeNull();
+  });
+
+  it('names the percentages once the amounts add up', () => {
+    splitAcross(300, tenantA, tenantB, tenantC);
+    component.setSplitUnit('percent');
+    component.typeShare(tenantA, '33.33');
+    component.typeShare(tenantB, '33.33');
+    component.typeShare(tenantC, '33.33');
+    fixture.detectChanges();
+
+    // 99.99 / 99.99 / 99.99 is $0.03 short of the fee, so the money is named first.
+    expect(component.blocker()).toContain('the fee is $300.00');
+
+    component.typeShare(tenantC, '33.34');
+    fixture.detectChanges();
+
+    // Now the amounts are exact and the percentages total 100.00 -- both arms are satisfied.
+    expect(component.blocker()).toBeNull();
+    expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([33.33, 33.33, 33.34]);
+    expect(reported!.shares!.map((share) => share.amount)).toEqual([99.99, 99.99, 100.02]);
+  });
+
+  it('states no percentage on any row while the split is in money', () => {
+    splitAcross(300, tenantA, tenantB);
+    component.typeShare(tenantA, '210');
+    fixture.detectChanges();
+
+    expect(reported!.shares!.every((share) => !('sharePercent' in share))).toBeTrue();
   });
 
   it('hands one row back to the even split without disturbing the others', () => {
@@ -353,8 +558,11 @@ describe('TenantSplitEditorComponent', () => {
     it('offers no unit selector on the paid box, because the wire carries no paid percentage', () => {
       splitAcross(300, tenantA, tenantB);
 
-      // One selector per row, on the amount box alone.
-      expect(rendered()[0].querySelectorAll('.share-unit').length).toBe(1);
+      // No unit control inside a row at all as of v11 -- the unit is the split's, chosen once above
+      // the table. What this case has always guarded still holds and holds harder: the paid column
+      // has no unit to choose, because there is no alreadyPaidPercent on the wire (requirement 23).
+      expect(rendered()[0].querySelectorAll('.share-unit').length).toBe(0);
+      expect(fixture.nativeElement.querySelectorAll('.split-unit').length).toBe(1);
     });
   });
 });

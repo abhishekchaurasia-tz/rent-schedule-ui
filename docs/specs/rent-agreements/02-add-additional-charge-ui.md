@@ -2,6 +2,10 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v13 | 2026-09-21 | **Shared Lease gains the same share boxes as Split per Tenant, and naming a share is what makes a fee stop covering renters added later — said on screen instead of discovered.** New **FR 25**; **FR 5 is corrected**. *Raised by the user 2026-09-21: the percentage control added in v11 is not on the Shared Lease option, which is where they looked for it, and they want the same capability there.* **Why it was not there, and why that was the wrong answer.** Shared Lease sends no `tenantShares`, so there was nothing to state a percentage against; the boxes lived in *Split per Tenant*, which pre-ticks everybody and covers the same people. That is true, and it is useless — the owner has to already know it to find the feature. **The conflict the two modes were keeping apart.** A fee with **no** split resolves against the **live roster** every time an invoice is built: a renter who joins in March is charged it from March. A fee that **names** people only ever **shrinks** — `named.Where(roster.Contains)` drops a renter who leaves and never adds one who joins. So *"shared by everyone, now and later"* and *"Alice 60 %, Bob 40 %"* cannot both hold, and the page was reconciling them by hiding one. **FR 25 puts the boxes on both modes and states the cost where the owner pays it.** Typing any share, in either unit, makes the fee **name** the current renters, and the page says so in the same breath: *a renter added later will not be charged this fee*. Clearing the shares returns it to genuinely shared. **Rejected, and recorded so it is not re-litigated:** keeping the roster live **and** the percentages stated needs weights that re-normalise as the roster changes — a new backend concept, a rule for what a joiner is owed, and a reopening of BR-01. **No backend change and no contract change**: a body the service already accepts, from a mode that could not previously build one. | [2026-09-21T1700-02-naming-a-share-is-a-decision](../../plans/rent-agreements/2026-09-21T1700-02-naming-a-share-is-a-decision.md) |
+| v12 | 2026-09-21 | **FR 24 is answered, and the answer is that there is nothing to disclose.** *Decided by the user 2026-09-21, from measurements taken after v11 shipped.* v11 recorded that switching the split’s unit moves the money by a cent — an even `$300` three ways is `100.00` each, `33.33 %` of `300` is `99.99` — and asked how loudly the page should say so. **The premise was wrong.** `100.00 / 100.00 / 100.00` has no expression as three **two-decimal** percentages of `300`, but it has one at six: `33.334 / 33.333 / 33.333` totals a hundred exactly and each row resolves back to `$100.00`. **So the percentages are divided, not rounded** — by the same money-first residue rule the amounts already use, whole units each with the leftover one at a time to the first rows. **Six places because that is what the column holds**: `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so the figure the page sends is the figure the service stores, losslessly. *An earlier recommendation in this work said three places; it is wrong and is recorded as such — three totals a hundred but the money stops surviving the round trip above roughly `$500`, and a `$1,500` fee across six renters moves a cent. Six held for every total measured, to `$12,345.67` across seven.* **The residue never lands on a row the owner typed**, only on the ones the page derived: answering `66.670001` to somebody who entered `66.67` is the page balancing its books with their input. **No backend change and no contract change.** | [2026-09-21T1400-02-the-unit-belongs-to-the-split](../../plans/rent-agreements/2026-09-21T1400-02-the-unit-belongs-to-the-split.md) |
+| v11 | 2026-09-21 | **Switching one row to `%` produces a save the server always refuses, because the unit belongs to the split and this page treats it as a property of the row.** **FR 18, 19 and 20 are corrected; new FR 24.** *Found 2026-09-21 by checking this page against the service’s own rule, after the same gap was closed on the API side.* **The defect.** `toTenantShareInputs` attaches `sharePercent` only to rows typed **as** a percentage. The service sums the **stated** percentages and requires exactly `100.00` — so a two-renter `$300` fee with one row switched to `%` and typed `70` sends one stated percentage of `70`, and is refused `422 additional_charge.tenant_share_percentages_do_not_total_one_hundred`. The screen shows `210.00 / 90.00`, the amounts total the fee exactly, and Save is enabled. *Measured 2026-09-21 by running `tenant-split.util.ts` against the rule as `ValidateTenantShares` implements it.* **Only a split where every row is typed as a percentage survives**, and nothing on screen says so. **FR 18 is corrected: the unit is the split’s, not the row’s** — one control above the table, so the payload can only ever be all-percent or all-amount, which is the shape the service accepts. **FR 20 is corrected twice over:** `sharePercent` rides on **every** row when the split is in percent, and it carries **what the owner typed**, not a figure re-derived from the rounded amount — the derivation quietly turns a split authored as `33.334 / 33.333 / 33.333` into three `33.33`s totalling `99.99`, which is the same refusal by another route. **FR 19 gains a percentage arm**, so the page refuses before the server does, as it already does for the money. **New FR 24 — switching the unit moves the money, and the page must say so.** Carrying a row across at its derived percentage re-applies it: an even `$300` three ways is `100.00` each, and `33.33 %` of `300` is `99.99`. The rows become `99.99 / 100.01 / 100.00` because the owner changed how they were saying it. **This is not fixable by better rounding** — `100.00 / 100.00 / 100.00` has no expression as three percentages of `300`, which is exactly why backend v105 reversed requirement 30 to divide the money. The page discloses the change rather than hiding it. **No backend change and no contract change:** the same fields, in a combination the service already accepts and this page could not produce. | [2026-09-21T1400-02-the-unit-belongs-to-the-split](../../plans/rent-agreements/2026-09-21T1400-02-the-unit-belongs-to-the-split.md) |
+| v10 | 2026-09-18 | **The page stops listing the renters, because the fee panel already does.** **FR 3 is corrected.** *Raised by the user 2026-09-18 — no need to show the tenant list when adding a fee from this page.* v8 moved the tenant picker into the fee panel and left a read-only roster card behind on the page "for context", which meant the same people were listed twice on one screen: once with their recorded rent and deposit shares, and again in the split editor with a checkbox and an amount each. **The duplicate is the copy that goes stale**, and it is also the one the owner does not need — they are about to pick renters in the panel, not read about them beforehand. The card is removed. **The two warnings it contained stay, because they are a state rather than a list:** a lease whose step 2 was never saved (`204`) still says so and still links to the ADD TENANTS screen (requirement 6), and a saved-but-empty roster still says a fee will be shared by whoever is added later. **What is genuinely lost is the recorded rent and deposit shares** — FR 3 asked for them and no screen shows them now. That is deliberate rather than overlooked: they describe how the *rent* is split, which is a different question from how this fee is, and nothing on this page acted on them. They can be added to the split editor’s subline if they turn out to be wanted. | — |
 | v9 | 2026-09-18 | **Each renter gets a box for what they owe and a box for what they have paid, and the paid slice is finally sent.** New **requirement 23**; the Contract table row for `tenantShares` is corrected. *Asked for by the user 2026-09-18 — two boxes, one for the line item and one for the paid amount, each dividing into shares.* **The field was on the wire the whole time and this spec never recorded it.** `AdditionalChargeTenantShareInput` accepts `tenantId`, `amount`, `sharePercent` **and `alreadyPaid`** — read off the service’s own OpenAPI document at `/openapi/v1.json` on 2026-09-18 rather than assumed — and the response has carried a per-renter `alreadyPaid` since the split shipped. The Contract table here listed only the first three, so the client read the field back, never sent it, and had no box to type it into: the charge carried one `alreadyPaid` figure and the **server** divided it. **That is the hazard requirement 17 exists for** — one division shown and a different one stored — and it was live in the paid column for as long as the amounts column was being carefully protected from it. **The split table now has five columns**: Tenants, Shares, **Amount**, **Paid**, **Owes**. Amount and Paid are both typeable and both divide by the identical rule — money, to the cent, leftover cents one each to the renters at the top of the list, typed boxes left alone while untouched boxes absorb the difference — and they are **independent**, so fixing what one renter owes does not disturb what another has paid. **Owes is derived and never typed into.** **Paid is money only**, because there is no `alreadyPaidPercent` on the wire, so that column has no unit to choose. **Both columns must add up**, and the fee is named first when both are wrong: two messages at once names neither clearly. **A negative Owes is shown, not refused** — the charge itself lets `alreadyPaid` exceed its own total, so a stricter rule per renter would be one this screen invented. Also: the split row carries the renter’s id beside the name. The stand-in identities are drawn from 16 × 16 combinations, so two renters on one lease can read as the same person — hit while checking this in the browser, two rows both called *Bilal Mensah* — and these rows carry different money. **No backend change, no contract change:** a field that was always accepted is now sent. | — |
 | v8 | 2026-09-18 | **The split editor moves into the fee panel, so the Invoices page gets the same one and the lease editor still gets none.** **FR 4 and FR 5 are corrected; FR 8 is restored; the *"panel is reused, not forked"* constraint is replaced.** *Raised by the user 2026-09-18, asking why the two screens that add a fee do not look alike.* **Both post to the same endpoint with the same field available, and only one of them could use it.** v7 put the tenant picker and the split on this **page**, because the fee panel is shared with the lease create/edit screens and requirement 22 says those must never gain a renter control. The Invoices page hosts that same panel, so it ended up with no way to say who pays at all — spec `04` FR 19 made that deliberate and pointed the user here for a subset. Two screens, one API, one of them able to send `tenantShares`. **The editor now lives in the panel behind a `tenants` input**, and that input is the whole of requirement 22: a host that passes a roster gets the editor, a host that passes none renders no renter control at all. The lease screens pass none. What was an architectural arrangement is now a single assertion, so a change that renders the editor unconditionally fails a test rather than quietly growing a split editor on the lease editor. **FR 8 stands again.** v7 could not satisfy it: the split divides the fee's money, the total lived inside the panel, and the panel is a drawer over a click-to-close dimmer — so nothing behind it could be typed into and Create had to *stage* the fee for a second, page-level Save. Inside the panel the total is already there, so Create posts once again and this page drops its picker, its staged-fee card, its split signals and its submit guard. **FR 4 moves rather than dies:** the selection is still per-row with the two modes, but it happens in the panel; this page keeps the roster as read-only context, which is all FR 3 ever asked for. **FR 5 is corrected** — an empty selection still means *every active renter shares this fee*, but it is now expressed by sending no `tenantShares`, not by `tenantIds: []`, which v7 FR 20 had already stopped sending. **The arithmetic moves to `tenant-split.util.ts`** because three screens divide a fee now and the rules are the part that must not differ between them; the control surface moves to `tenant-split-editor.component`, which also returns this page's stylesheet to under its budget. **No backend change, no contract change** — the same body, from one more screen. | — |
 | v7 | 2026-09-17 | **The page gains the split editor the backend has been waiting for, and stops sending the tenant array.** New **requirements 17-22**. The backend shipped a per-tenant split on 2026-09-17 (`06-unified-invoice-generation.md` v105: `payerShares`, renamed to `tenantShares` in v109) and **this page has never sent it** — it still sends `tenantIds` and lets the server divide evenly. So the one thing the owner asked for, *typing what each renter owes*, is unreachable from the only screen that can say who pays. This version adds the editor: ticking renters fills an even division, each row is editable in **money or percentage**, and the rows must total the fee before the save is allowed. It also stops reading the echoed `tenantIds`, which backend v109 removes from the response — **the label naming who a fee landed on breaks the day that ships**, so this release must land first. | [2026-09-17T2200-02-the-owner-types-each-share](../../plans/rent-agreements/2026-09-17T2200-02-the-owner-types-each-share.md) |
@@ -53,10 +57,16 @@ charge with its real id.
 2. On load, the system shall fetch the lease (`GET /rent/agreements/{id}`) and its saved tenants
    (`GET /rent/agreements/{id}/tenants`) concurrently, and shall render nothing of the fee UI until
    both answer.
-3. The system shall render every **active** tenant the tenants endpoint returns, each with its
+3. ~~The system shall render every **active** tenant the tenants endpoint returns, each with its
    `tenantId`, its recorded rent share and its recorded deposit share, and a stable stand-in name
-   derived from the id — the same derivation the ADD TENANTS screen uses, so the same tenant reads
-   as the same person on both screens.
+   derived from the id.~~ **Corrected in v10 — this page renders no roster of its own.** It loads the
+   roster and hands it to the fee panel, whose split editor is the one place renters are listed: each
+   with a stable stand-in name derived from the id — the same derivation the ADD TENANTS screen uses, so
+   the same tenant reads as the same person on both screens — the id beside it, a checkbox, and their
+   share of the fee.
+   **The recorded rent and deposit shares are no longer shown anywhere**, deliberately: they describe
+   how the *rent* is divided, which is a different question from how this fee is, and nothing on this
+   page ever acted on them.
 4. ~~The system shall let the user select **any number** of those tenants, including none and all,
    with per-row checkboxes plus "Select all" and "Clear" actions.~~ **Corrected in v8 — the selection
    moved into the fee panel.** It is still per-row and still allows none and all, but it is made in
@@ -68,6 +78,11 @@ charge with its real id.
    is carried by sending **no `tenantShares`** (requirement 20), not by `tenantIds: []` — that array
    stopped being sent at v7, and this clause still named it. Both mean the same thing to the server;
    omission states *not specified* where an empty list states *specified as nobody*.
+   **Corrected again in v13: the selection is no longer the only thing that decides.** A fee names its
+   renters when the owner has selected a subset **or has typed any share**, and it is shared when
+   neither is true. Shared Lease now carries the same boxes as Split per Tenant (requirement 25), so
+   "shared" stopped being a mode the owner is in and became a **state the fee is in** — one they leave
+   by typing a figure and return to by clearing them.
 6. When the tenants endpoint answers `204 No Content` (the lease exists but step 2 was never saved),
    the system shall say so, offer a link to that lease's ADD TENANTS screen, and still allow a
    shared fee to be added; it shall not present a tenant picker with nothing in it.
@@ -121,20 +136,37 @@ charge with its real id.
     leftover cents go **one each to the first renters in the listed order** — `$100` across three is
     `33.34 / 33.33 / 33.33`, and across six is four rows of `16.67` and two of `16.66`, never one row
     carrying all four cents.
-18. **v7** — The owner shall be able to **type over any row**, in either money or percentage, and the
-    page shall record **which unit they typed**. Typing an amount leaves that row's percentage
-    derived; typing a percentage leaves its amount derived. The two are not interchangeable: on a
-    `$300` fee, `200.00` typed and `66.67` typed are different rows, because `66.67%` of `300` is
-    `200.01`. The page sends the typed unit as the backend records it — an amount always, and a
-    percentage only when the owner typed one.
+    **v12 — the percentage shown beside each amount is divided by the same rule**, to six decimal
+    places, rather than each row being rounded on its own. Rounding independently gave `33.33` three
+    times on a `$300` fee, which is `99.99` — a set the service refuses, and the arithmetic that
+    moved a cent whenever the unit changed (requirement 24). The rendered figure is unchanged: the
+    table still shows two places.
+18. **v7, corrected in v11** — The owner shall be able to **type over any row**, and shall choose
+    **one unit for the whole split** — money or percentage — from a single control above the table.
+    Typing an amount leaves that row's percentage derived; typing a percentage leaves its amount
+    derived. The two are not interchangeable: on a `$300` fee, `200.00` typed and `66.67` typed are
+    different rows, because `66.67%` of `300` is `200.01`.
+    **v11 — the unit belongs to the split, and v7's per-row selector is the defect.** The service sums
+    the percentages a request **states** and requires exactly `100.00`. A per-row unit lets the owner
+    state one of them, and one percentage never totals a hundred unless it is a hundred — so switching
+    a single row to `%` produced a request that could not be accepted, from a screen showing amounts
+    that added up perfectly. A split-level unit makes the refused combination **unrepresentable**
+    rather than merely validated against.
 19. **v7** — The page shall **refuse the save** while the rows do not total the fee exactly, naming
     the difference — *"the shares total $290.00, the fee is $300.00"* — and offering a **reset to an
     even split**. The typed rows are **kept**, never silently corrected: an owner who has typed three
     numbers and got one wrong wants to see all three, not have the page overwrite their work. The
     backend refuses the same state with `422`, so this is the page refusing before the server does,
     which requirement 16 already established as this page's habit.
-20. **v7** — The page shall send the split as **`tenantShares`** — one entry per renter carrying
-    `tenantId`, `amount`, and `sharePercent` **only when the owner typed a percentage** — and shall
+    **v11 — and while a percentage split does not total `100.00` exactly.** The money arm alone lets
+    a split pass here and fail at the service, because the two sums are independent: percentages of
+    `33.33 / 33.33 / 33.34` and percentages of `33.334 / 33.333 / 33.333` produce the same amounts and
+    only one of them totals a hundred. Named the same way as the money — the total, the target and the
+    gap — and the **fee is named first when both are wrong**, as requirement 23 already settles.
+20. **v7, corrected in v11** — The page shall send the split as **`tenantShares`** — one entry per
+    renter carrying `tenantId`, `amount`, and `sharePercent` **on every row when the split's unit is
+    percentage, on none of them otherwise** (v7 sent it per row, which is the defect v11 corrects) —
+    and shall
     **stop sending `tenantIds`**. A fee shared by everybody sends **no `tenantShares`**, which is the
     instruction *"every current and future active renter shares this fee"*; it is the same meaning the
     empty `tenantIds` array carried, read off a different shape.
@@ -162,6 +194,45 @@ charge with its real id.
     named first when both are wrong, because two messages at once names neither clearly. **A
     negative Owes is shown rather than refused:** the charge itself allows `alreadyPaid` to exceed
     its own total, so a stricter rule per renter would be one this screen invented.
+
+24. **v11, answered in v12** — When the owner switches the split's unit, the page shall **carry
+    every row's figure across** into the new unit and shall leave **every renter owing exactly what
+    they owed**. A percentage shall be **divided, not rounded**: the page shall divide `100` across
+    the rows in proportion to the money, to **six decimal places**, handing the leftover **one unit at
+    a time to the first rows the page derived** — the same residue rule requirement 17 uses for the
+    cents.
+    **v11 asked how loudly to warn that the money moves. It moves only because of how the figure was
+    carried.** An even `$300` across three renters is `100.00` each. As two-decimal percentages that
+    is `33.33` each, and `33.33 %` of `300` is `99.99` — so the rows became
+    `99.99 / 100.01 / 100.00` on a change of unit alone. At six places the same split is
+    `33.334 / 33.333 / 33.333`: it totals `100.000000` exactly **and** each row resolves back to
+    `$100.00`. There is no disclosure to write, because nothing changes.
+    **Six places, because that is what the service stores.**
+    `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so a figure carried to six
+    places arrives intact and the set still totals the hundred this page checked. Three places was
+    considered and **rejected on measurement**: it totals a hundred, but the money stops surviving the
+    round trip above roughly `$500`, and a `$1,500` fee across six renters moves a cent.
+    **The residue never lands on a row the owner typed.** It goes to the rows the page worked out,
+    and only falls back to all of them when every row was authored. Answering `66.670001` to somebody
+    who entered `66.67` would be the page rewriting their work to balance its own books.
+
+25. **v13** — The system shall offer the **same share boxes and the same unit control on both modes**,
+    Shared Lease included, and shall treat **typing any share** as the instruction that this fee
+    **names** the renters it is showing. While no share has been typed the fee stays genuinely shared
+    and **no `tenantShares` is sent** (requirement 5); the moment one is, the whole split goes on the
+    wire exactly as it does from Split per Tenant.
+    **The page shall say what naming a share costs, beside the shares themselves.** A fee that names
+    renters **stops covering renters added later** — not as a footnote but as the governing behaviour:
+    the recompute resolves a named fee with `named.Where(roster.Contains)`, which drops a renter who
+    leaves and **never adds one who joins**, while a fee with no split is resolved against the live
+    roster on every invoice it reaches. The two are different products and the owner is choosing
+    between them with a keystroke, so the consequence belongs on screen and not in this document.
+    **Clearing the shares puts it back.** The reset control returns the fee to shared, which is the
+    only way back and must therefore be offered wherever the notice appears.
+    **Why not both.** Stated percentages **and** a live roster would need weights that re-normalise
+    when the roster changes, a rule for what a renter who joins is owed, and a backend that stores
+    something other than a row per named tenant. That is a different feature; this requirement is
+    about no longer hiding the choice.
 
 22. **v7** — The **lease editor** shall carry a charge's saved split forward on every terms save,
     exactly as it carries `tenantIds` today. It **does not gain a split editor** — that screen has no
@@ -224,7 +295,7 @@ charge with its real id.
 | `endDate` | `string \| null` | Iff recurring and not open-ended | |
 | `hasNoEndDate` | `boolean` | Yes | |
 | ~~`tenantIds`~~ | `string[]` | No | **Not sent from v7** (requirement 20). The backend accepts and ignores it for one release, then removes it |
-| `tenantShares` | `TenantShareInput[]` | No | **v7, corrected in v9.** One entry per renter: `tenantId`, `amount`, `sharePercent` only when a percentage was typed, and `alreadyPaid` — that renter’s slice of the charge’s already-paid figure. **`alreadyPaid` was missing from this row until v9** while the service had accepted it all along (`AdditionalChargeTenantShareInput`, verified against `/openapi/v1.json`), so the client read it back and never sent it. **Absent means every active renter shares the fee** — the meaning the empty array carried. Amounts must total the fee exactly, any percentages must total `100.00`, and the paid slices must total the charge’s `alreadyPaid` |
+| `tenantShares` | `TenantShareInput[]` | No | **v7, corrected in v9.** One entry per renter: `tenantId`, `amount`, `sharePercent` on every row when the split is in percent and on none otherwise (**corrected in v11**; v7 sent it per row, which the service refuses), and `alreadyPaid` — that renter’s slice of the charge’s already-paid figure. **`alreadyPaid` was missing from this row until v9** while the service had accepted it all along (`AdditionalChargeTenantShareInput`, verified against `/openapi/v1.json`), so the client read it back and never sent it. **Absent means every active renter shares the fee** — the meaning the empty array carried. Amounts must total the fee exactly, any percentages must total `100.00`, and the paid slices must total the charge’s `alreadyPaid` |
 | `items` | `AdditionalChargeItemCreationRequest[]` | Yes | Non-empty |
 
 Response: `RentAgreementAdditionalChargeResponse` — the persisted charge. **Backend v109 removes

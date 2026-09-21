@@ -151,9 +151,8 @@ h1 {
   font-weight: 600;
 }
 
-/* ---- stage 2: the tenant picker ------------------------------------------------------------- */
+/* ---- the committed-charge list -------------------------------------------------------------- */
 
-.tenants-card,
 .added-card {
   border: 1px solid #dcdcdc;
   border-radius: 4px;
@@ -170,87 +169,11 @@ h1 {
   }
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.bulk-actions {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.selection-note,
-.invoice-mode,
 .added-note {
   margin: 0 0 0.75rem;
   font-size: 0.83rem;
   color: #555;
   max-width: 80ch;
-}
-
-.tenant-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.tenant-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid #e2e2e2;
-  border-radius: 3px;
-  cursor: pointer;
-
-  &:hover {
-    border-color: #c4c4c4;
-  }
-
-  &.selected {
-    border-color: #1a56db;
-    background: #f5f8ff;
-  }
-
-  input[type='checkbox'] {
-    width: 1.05rem;
-    height: 1.05rem;
-    cursor: pointer;
-  }
-}
-
-.tenant-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.tenant-name {
-  font-weight: 600;
-  font-size: 0.92rem;
-}
-
-.tenant-id {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
-  color: #777;
-  overflow-wrap: anywhere;
-}
-
-.tenant-shares {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.15rem;
-  font-size: 0.82rem;
-  color: #444;
-  white-space: nowrap;
 }
 
 .muted {
