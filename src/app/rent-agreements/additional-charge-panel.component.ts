@@ -31,7 +31,7 @@ import {
 } from '../rent-schedule/frequency-options.util';
 import { toIsoDate } from '../shared/date.util';
 import { AdditionalChargeCreationRequest, AgreementTenantShareResponse } from './rent-agreement.models';
-import { TenantSplitEditorComponent, TenantSplitState } from './tenant-split-editor.component';
+import { TenantSplitEditorComponent, TenantSplitSeed, TenantSplitState } from './tenant-split-editor.component';
 import { LineItemResponse, LineItemScope } from './line-item.models';
 import { LineItemsService } from './line-items.service';
 
@@ -121,6 +121,15 @@ export class AdditionalChargePanelComponent implements OnInit {
    * append or a replace of the charge being edited.
    */
   @Input() initialCharge: AdditionalChargeCreationRequest | null = null;
+
+  /**
+   * The split to open the editor on, built once from {@link initialCharge} (requirement 27).
+   *
+   * **Held rather than computed on every read**, because the editor applies a seed once per object
+   * identity: a fresh object each change-detection pass would re-apply it over the owner's typing.
+   * Null for a fresh add, which is what keeps the seed out of that path entirely.
+   */
+  splitSeed: TenantSplitSeed | null = null;
 
   @Output() readonly created = new EventEmitter<AdditionalChargeCreationRequest>();
   @Output() readonly closed = new EventEmitter<void>();
@@ -341,6 +350,15 @@ export class AdditionalChargePanelComponent implements OnInit {
       this.form.get('attachedWithRentalInvoice')!.disable();
     }
     if (this.initialCharge) {
+      // Requirement 27: the split is part of the charge being reopened, and was the one part
+      // applyInitialCharge never restored. Built here, once, so the editor applies it once.
+      this.splitSeed = this.initialCharge.tenantShares?.length
+        ? {
+            mode: this.initialCharge.splitMode ?? 'PerTenant',
+            shares: this.initialCharge.tenantShares.map((share) => ({ ...share }))
+          }
+        : null;
+
       this.applyInitialCharge(this.initialCharge);
     }
 

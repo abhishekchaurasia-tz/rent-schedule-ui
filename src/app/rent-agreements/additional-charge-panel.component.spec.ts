@@ -565,6 +565,165 @@ describe('AdditionalChargePanelComponent', () => {
     });
   });
 
+  describe('reopening a fee keeps its split (FR 27)', () => {
+    // Until v15 applyInitialCharge restored notes, amount, dates, recurrence and items -- and nothing
+    // about the split. The editor took no seed input at all, so it opened as if the fee were new: the
+    // mode, the ticks, the unit, the typed shares and the typed paid figures were all gone, and the
+    // next save wrote an even division over what the owner had typed. Nobody was told.
+    //
+    // It predates splitMode. The figures have been lost since the editor arrived in v7 and the paid
+    // boxes since v9; v14 only added the mode to the same hole.
+
+    /** What create() emitted, captured by reopen() and by the fresh-add case. */
+    let emitted: AdditionalChargeCreationRequest | undefined;
+
+    const ravi = '11111111-1111-1111-1111-111111111111';
+    const sita = '22222222-2222-2222-2222-222222222222';
+    const amit = '33333333-3333-3333-3333-333333333333';
+
+    /** A stored fee of `total`, with the rows exactly as the owner left them. */
+    function storedFee(
+      total: number,
+      splitMode: 'Shared' | 'PerTenant',
+      tenantShares: AdditionalChargeCreationRequest['tenantShares']
+    ): AdditionalChargeCreationRequest {
+      return {
+        notes: 'Reserved parking',
+        alreadyPaid: 0,
+        attachedWithRentalInvoice: false,
+        isRecurring: false,
+        dueDate: '2026-08-20',
+        frequency: null,
+        frequencyConfig: null,
+        startDate: null,
+        endDate: null,
+        hasNoEndDate: false,
+        splitMode,
+        tenantShares,
+        items: [
+          {
+            lineItemId: parkingItem.id,
+            itemType: 'Parking',
+            description: 'Parking space',
+            quantity: 1,
+            rate: total,
+            amount: total
+          }
+        ]
+      };
+    }
+
+    /** Opens the panel on a stored fee, with the roster it was split across. */
+    function reopen(fee: AdditionalChargeCreationRequest, ...roster: string[]): void {
+      component.tenants = roster.map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }));
+      component.initialCharge = fee;
+      emitted = undefined;
+      component.created.subscribe((request) => (emitted = request));
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+    }
+
+    it('restores the typed shares rather than the even division', () => {
+      // Deliberately uneven: 150 / 150 is what a blank table produces, so an even split could pass
+      // this case without anything having been restored at all.
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.amount)).toEqual([200, 100]);
+    });
+
+    it('restores the mode, so a shared fee does not come back named', () => {
+      reopen(
+        storedFee(300, 'Shared', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.splitMode).toBe('Shared');
+    });
+
+    it('restores the unit, reading it off the rows that carry a percentage', () => {
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 180, sharePercent: 60 },
+          { tenantId: sita, amount: 120, sharePercent: 40 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.sharePercent)).toEqual([60, 40]);
+      expect(emitted!.tenantShares!.map((share) => share.amount)).toEqual([180, 120]);
+    });
+
+    it('restores each renter paid figure, which v9 added and this lost with the rest', () => {
+      const fee = storedFee(300, 'PerTenant', [
+        { tenantId: ravi, amount: 200, alreadyPaid: 100 },
+        { tenantId: sita, amount: 100, alreadyPaid: 0 }
+      ]);
+      reopen({ ...fee, alreadyPaid: 100 }, ravi, sita);
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.alreadyPaid)).toEqual([100, 0]);
+    });
+
+    it('ticks exactly the renters the fee names, not the whole roster', () => {
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita,
+        amit
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.tenantId)).toEqual([ravi, sita]);
+    });
+
+    it('seeds nothing on a fresh add, so the seed cannot leak into that path', () => {
+      component.tenants = [ravi, sita].map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }));
+      component.initialCharge = null;
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+
+      expect(component.splitState().shares).toBeUndefined();
+      expect(component.splitState().mode).toBe('Shared');
+    });
+  });
+
   it('prefills a one-time charge from initialCharge (Edit)', () => {
     const existing: AdditionalChargeCreationRequest = {
       notes: 'Existing note',

@@ -17,6 +17,26 @@ import {
 } from './tenant-split.util';
 
 /** What the editor reports upward on every change — the split, and why it cannot be saved. */
+/**
+ * A split the owner already authored, handed back to the editor when a fee is reopened for editing
+ * (spec `02-add-additional-charge-ui.md` v15, requirement 27).
+ *
+ * **Everything here is already on the request the panel holds.** Nothing new travels on the wire; the
+ * panel simply had no way to pass it on, so reopening a fee opened the table blank and the next save
+ * wrote an even division over what the owner had typed.
+ */
+export interface TenantSplitSeed {
+  /** The mode the fee was authored under. */
+  mode: 'Shared' | 'PerTenant';
+  /** The stored rows, in the order they were saved. */
+  shares: readonly {
+    tenantId: string;
+    amount: number;
+    sharePercent?: number | null;
+    alreadyPaid?: number;
+  }[];
+}
+
 export interface TenantSplitState {
   /** The `tenantShares` array, or `undefined` for a fee shared by every renter. */
   shares: TenantShareInput[] | undefined;
@@ -79,6 +99,17 @@ export class TenantSplitEditorComponent {
 
   /** The split and its blocker, re-emitted whenever either changes. */
   readonly splitChange = output<TenantSplitState>();
+
+  /**
+   * A split the owner already authored, for a fee reopened from the host's list (requirement 27).
+   *
+   * **Applied once per seed, never on every change.** A seed that re-applied itself would overwrite
+   * the owner mid-keystroke; the guard below is what makes it a starting point rather than a rule.
+   */
+  readonly seed = input<TenantSplitSeed | null>(null);
+
+  /** The seed already applied, so the same one is never applied twice. */
+  private appliedSeed: TenantSplitSeed | null = null;
 
   /**
    * Who the fee is charged to. **Empty is a complete instruction, not an unfinished one:** it means
@@ -253,6 +284,19 @@ export class TenantSplitEditorComponent {
     // One effect rather than an emit inside every handler: the split is a function of the selection,
     // the typed rows and the fee total, and the last of those changes without anything here being
     // called at all — the owner edits an item's rate in the panel above.
+    // Requirement 27. Reading seed() here makes this effect depend on it, so a host that opens the
+    // panel on a different fee seeds that one too. The reference guard is what stops it re-running
+    // against the owner's typing, which changes the signals this effect would otherwise react to.
+    effect(() => {
+      const seed = this.seed();
+      if (seed === null || seed === this.appliedSeed) {
+        return;
+      }
+
+      this.appliedSeed = seed;
+      this.applySeed(seed);
+    });
+
     effect(() => {
       // Requirement 26. The split and the mode travel separately, because they answer different
       // questions: the split is HOW the fee divides, the mode is WHO OWES it. A shared fee with
@@ -350,6 +394,43 @@ export class TenantSplitEditorComponent {
     if (this.selectedTenantIds().size === 0) {
       this.selectedTenantIds.set(new Set(this.tenants().map((tenant) => tenant.tenantId)));
     }
+  }
+
+  /**
+   * Restores a split the owner already authored (requirement 27).
+   *
+   * **All five pieces or none.** The mode, the ticks, the unit, the fee shares and the paid shares were
+   * lost together and come back together: restoring the mode over a blank table would say who owes a
+   * division that is not on screen, which is worse than restoring neither.
+   *
+   * **The unit is derived, not stored.** A row carrying a `sharePercent` was authored as a percentage
+   * — the same convention the service uses, where a null `share_percent` means the figure was typed as
+   * an amount (BR-06). So there is no sixth value to keep in step.
+   *
+   * @param seed The stored split.
+   */
+  private applySeed(seed: TenantSplitSeed): void {
+    const authoredInPercent = seed.shares.some((share) => share.sharePercent != null);
+    this.splitUnit.set(authoredInPercent ? 'percent' : 'amount');
+    this.mode.set(seed.mode);
+    this.selectedTenantIds.set(new Set(seed.shares.map((share) => share.tenantId)));
+
+    this.amountOverrides.set(
+      new Map(
+        seed.shares.map((share) => [
+          share.tenantId,
+          { text: String(authoredInPercent ? (share.sharePercent ?? 0) : share.amount) }
+        ])
+      )
+    );
+
+    this.paidOverrides.set(
+      new Map(
+        seed.shares
+          .filter((share) => share.alreadyPaid != null)
+          .map((share) => [share.tenantId, { text: String(share.alreadyPaid) }])
+      )
+    );
   }
 
   /**

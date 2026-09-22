@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v15 | 2026-09-22 | **Reopening a fee for editing throws its whole split away, and nothing says so.** New **FR 27**. *Found 2026-09-22 by reading the edit path end to end, not from a report — no test asserts it and the screen gives no sign.* **What happens.** In the new-agreement wizard, add a `$300` fee split `200 / 100`, press **Edit** on it, and the split table opens **blank**. Save, and the fee is `150 / 150`. The owner typed a division and it is gone. **Where it comes from.** `applyInitialCharge` restores notes, amount, dates, recurrence and items — everything except the split. The split editor takes no seed input at all: it is handed `tenants`, `feeTotal`, `alreadyPaid` and `isGroupInvoice`, and nothing about what was already typed. **Five pieces of state are lost**: the mode, the ticked renters, the unit, the typed fee shares and the typed paid shares. **It predates the split itself being sent.** This is not a consequence of v14 — the figures have been lost since the editor arrived in v7, and v9 added the paid boxes to what is lost. v14 only added the mode to the same hole. **Reach, stated so it is not over- or under-read.** Only the wizard passes `initialCharge`; `POST …/additional-charges` and the Invoices page do not, so **no saved fee travels this path today** and nothing in the database is harmed. What is harmed is the owner’s work in the wizard, before any of it is saved. **No contract change.** Everything FR 27 needs is already on `AdditionalChargeCreationRequest`. | [2026-09-22T1600-02-editing-a-fee-keeps-its-split](../../plans/rent-agreements/2026-09-22T1600-02-editing-a-fee-keeps-its-split.md) |
 | v14 | 2026-09-22 | **The mode the owner picked goes on the wire, and typing a share stops meaning anything about who pays.** New **FR 26**; **FR 25 is corrected — its naming half is reversed.** *Decided by the user 2026-09-22, resolving a direct conflict between this spec and the service.* **The conflict.** v13 made *typing any share* the instruction that a fee **names** its renters, so a *Shared Lease* fee with figures in it stopped covering renters added later. The service decided the opposite on 2026-09-21 and shipped it in `06-unified-invoice-generation.md` v122 (**BR-30**): a fee recorded as `Shared` resolves its payers from the **live roster** every time it is billed, and its stored rows are a *record of how it divided at save*, not a list of who owes it. Both could not hold. **BR-30 wins.** Naming is now what the **mode control** says and nothing else. **What this page must send.** The service added an optional `splitMode` field taking `Shared` or `PerTenant`. Until this page sends it the service falls back to what the payer-row count used to mean — *a body carrying a split is `PerTenant`* — so a *Shared Lease* fee whose owner typed figures is recorded as `PerTenant` today and silently stops following the roster. **That is a live defect and FR 26 is its fix.** **What the screen loses.** v13 put a notice beside the shares saying that naming costs coverage of future renters. The notice is right and its trigger is wrong: it belongs to the **mode control**, not to the first keystroke in a share box. **What stays from v13:** both modes keep the same share boxes and the same unit control, which was the other half of FR 25 and is unaffected. | [2026-09-22T1400-02-the-mode-goes-on-the-wire](../../plans/rent-agreements/2026-09-22T1400-02-the-mode-goes-on-the-wire.md) |
 | v13 | 2026-09-21 | **Shared Lease gains the same share boxes as Split per Tenant, and naming a share is what makes a fee stop covering renters added later — said on screen instead of discovered.** New **FR 25**; **FR 5 is corrected**. *Raised by the user 2026-09-21: the percentage control added in v11 is not on the Shared Lease option, which is where they looked for it, and they want the same capability there.* **Why it was not there, and why that was the wrong answer.** Shared Lease sends no `tenantShares`, so there was nothing to state a percentage against; the boxes lived in *Split per Tenant*, which pre-ticks everybody and covers the same people. That is true, and it is useless — the owner has to already know it to find the feature. **The conflict the two modes were keeping apart.** A fee with **no** split resolves against the **live roster** every time an invoice is built: a renter who joins in March is charged it from March. A fee that **names** people only ever **shrinks** — `named.Where(roster.Contains)` drops a renter who leaves and never adds one who joins. So *"shared by everyone, now and later"* and *"Alice 60 %, Bob 40 %"* cannot both hold, and the page was reconciling them by hiding one. **FR 25 puts the boxes on both modes and states the cost where the owner pays it.** Typing any share, in either unit, makes the fee **name** the current renters, and the page says so in the same breath: *a renter added later will not be charged this fee*. Clearing the shares returns it to genuinely shared. **Rejected, and recorded so it is not re-litigated:** keeping the roster live **and** the percentages stated needs weights that re-normalise as the roster changes — a new backend concept, a rule for what a joiner is owed, and a reopening of BR-01. **No backend change and no contract change**: a body the service already accepts, from a mode that could not previously build one. | [2026-09-21T1700-02-naming-a-share-is-a-decision](../../plans/rent-agreements/2026-09-21T1700-02-naming-a-share-is-a-decision.md) |
 | v12 | 2026-09-21 | **FR 24 is answered, and the answer is that there is nothing to disclose.** *Decided by the user 2026-09-21, from measurements taken after v11 shipped.* v11 recorded that switching the split’s unit moves the money by a cent — an even `$300` three ways is `100.00` each, `33.33 %` of `300` is `99.99` — and asked how loudly the page should say so. **The premise was wrong.** `100.00 / 100.00 / 100.00` has no expression as three **two-decimal** percentages of `300`, but it has one at six: `33.334 / 33.333 / 33.333` totals a hundred exactly and each row resolves back to `$100.00`. **So the percentages are divided, not rounded** — by the same money-first residue rule the amounts already use, whole units each with the leftover one at a time to the first rows. **Six places because that is what the column holds**: `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so the figure the page sends is the figure the service stores, losslessly. *An earlier recommendation in this work said three places; it is wrong and is recorded as such — three totals a hundred but the money stops surviving the round trip above roughly `$500`, and a `$1,500` fee across six renters moves a cent. Six held for every total measured, to `$12,345.67` across seven.* **The residue never lands on a row the owner typed**, only on the ones the page derived: answering `66.670001` to somebody who entered `66.67` is the page balancing its books with their input. **No backend change and no contract change.** | [2026-09-21T1400-02-the-unit-belongs-to-the-split](../../plans/rent-agreements/2026-09-21T1400-02-the-unit-belongs-to-the-split.md) |
@@ -281,10 +282,44 @@ charge with its real id.
     and ignores — this field is read, so a wrong value would change who owes the fee. The page sends
     one of exactly two strings and never a free-typed one.
 
-    **Nothing is read back to drive the control.** The service returns `splitMode` on the charge, and
-    this page may show it, but the control's state comes from the owner's own selection within the
-    panel. Reading the response back into the control is a separate question and is not this
-    requirement.
+    **Nothing is read back from the *service* to drive the control.** The service returns `splitMode`
+    on the charge, but the control's state comes from the owner's own selection within the panel.
+    Reading a *server response* back into the control is a separate question and is not this
+    requirement — see FR 27 for the *local* reopen, which is.
+
+27. **v15** — Reopening a fee for editing shall restore **the whole split**, not part of it.
+
+    **What is lost today.** `applyInitialCharge` restores notes, amount, dates, recurrence and items,
+    and stops there. The split editor is handed `tenants`, `feeTotal`, `alreadyPaid` and
+    `isGroupInvoice` — nothing about what was typed — so it opens as if the fee were new.
+
+    | Lost on reopen | Comes back from |
+    |---|---|
+    | the mode | `splitMode` |
+    | which renters are ticked | the `tenantShares` rows' `tenantId`s |
+    | the unit, amount or percent | whether the rows carry `sharePercent` |
+    | each renter's typed share | each row's `amount` or `sharePercent` |
+    | each renter's typed paid figure | each row's `alreadyPaid` |
+
+    **Every one of them is already on the request object the panel is handed.** Nothing new is needed
+    on the wire; the panel simply does not pass them on.
+
+    ```
+      $300, typed 200 / 100
+        -> press Edit
+        -> the table opens blank
+        -> save
+        -> 150 / 150, and nobody was told
+    ```
+
+    **It predates `splitMode`.** The figures have been lost since the editor arrived in v7 and the
+    paid boxes since v9; v14 added the mode to the same hole. Restoring the mode without restoring the
+    figures would be meaningless, so FR 27 covers all five together.
+
+    **Reach.** Only the new-agreement wizard passes `initialCharge`. `POST …/additional-charges` and
+    the Invoices page do not, so no **saved** fee reaches this path and nothing stored is harmed. What
+    is harmed is the owner's work in the wizard, before any of it is saved — which is the same loss,
+    one step earlier.
 
 22. **v7** — The **lease editor** shall carry a charge's saved split forward on every terms save,
     exactly as it carries `tenantIds` today. It **does not gain a split editor** — that screen has no
