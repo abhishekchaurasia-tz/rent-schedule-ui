@@ -158,6 +158,19 @@ export interface AdditionalChargeCreationRequest {
     sharePercent?: number;
     alreadyPaid?: number;
   }>;
+
+  /**
+   * Which mode the owner picked, and the only thing that says **who owes** the fee (requirement 26).
+   *
+   * **Optional on the service, but omitting it is not neutral.** The service then falls back to what
+   * the payer-row count used to mean — a body carrying a split names its payers — so a *Shared Lease*
+   * fee whose owner typed figures is recorded as named and stops following the live roster. That is
+   * the case this field exists for, and the one this page got wrong until v14.
+   *
+   * An unrecognised value is a `400`, unlike the `isGrouped` and `tenantIds` the service tolerates and
+   * ignores — this one is read.
+   */
+  splitMode?: 'Shared' | 'PerTenant';
   items: AdditionalChargeItemCreationRequest[];
 }
 

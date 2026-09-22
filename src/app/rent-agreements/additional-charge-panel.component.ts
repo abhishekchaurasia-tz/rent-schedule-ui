@@ -160,7 +160,7 @@ export class AdditionalChargePanelComponent implements OnInit {
    * blocker is what refuses the click (requirement 19). It starts as a fee shared by everybody, which
    * is what an untouched editor means and what a host passing no roster leaves standing.
    */
-  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null });
+  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null, mode: 'Shared' });
 
   /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
   readonly openItemPickerIndex = signal<number | null>(null);
@@ -772,6 +772,12 @@ export class AdditionalChargePanelComponent implements OnInit {
 
     const request: AdditionalChargeCreationRequest = {
       ...(shares === undefined ? {} : { tenantShares: shares }),
+
+      // Requirement 26. Sent on EVERY submission, including one carrying no split. The service reads
+      // an absent field the way the payer-row count used to be read -- a split was sent, so the fee
+      // names its payers -- which is wrong for exactly the case this field exists for: a Shared Lease
+      // fee whose owner typed figures.
+      splitMode: this.splitState().mode,
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
       attachedWithRentalInvoice: ridesRentalInvoice,

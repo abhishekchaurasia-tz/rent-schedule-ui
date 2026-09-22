@@ -261,6 +261,10 @@ describe('AdditionalChargePanelComponent', () => {
       attachedWithRentalInvoice: false,
       isRecurring: false,
       dueDate: '2026-08-15',
+
+      // v14, requirement 26: sent on EVERY submission, including one carrying no split. An absent
+      // field is not neutral -- the service reads it the way the payer-row count used to be read.
+      splitMode: 'Shared',
       frequency: null,
       frequencyConfig: null,
       startDate: null,

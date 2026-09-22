@@ -73,13 +73,15 @@
       fee that names people is resolved by named.Where(roster.Contains) -- an intersection, which
       drops a renter who leaves and never adds one who joins. Those are two different products, and
       before v13 the owner chose between them by picking a radio whose label says nothing about the
-      difference. Typing a share is the choice; this is where it gets said (requirement 25).
+      difference. The MODE CONTROL is the choice; this is where it gets said (requirement 25 as
+      corrected in v14 -- until then typing a share was the choice, and that is the half the user
+      reversed on 2026-09-22 in favour of the service's BR-30).
     -->
     @if (namesRenters()) {
       <p class="split-note naming">
         <strong>This fee names the renters below.</strong>
-        A renter added to the lease later <strong>will not</strong> be charged it. Clear the shares to
-        go back to charging the whole lease.
+        A renter added to the lease later <strong>will not</strong> be charged it. Pick
+        <em>Shared Lease</em> to go back to charging the whole lease — the figures you typed are kept.
       </p>
     } @else {
       <p class="split-note">
@@ -109,6 +111,7 @@
               <input
                 type="checkbox"
                 [checked]="row.selected"
+                [disabled]="!namesRenters()"
                 [attr.aria-label]="'Charge ' + row.name"
                 (change)="toggleTenant(row.tenantId)"
               />
