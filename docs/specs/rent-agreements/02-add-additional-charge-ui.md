@@ -1,7 +1,10 @@
+
+
 ## Changelog
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v16 | 2026-09-22 | **Restructured into the six-pillar blueprint. No requirement changed, and no line of content was rewritten.** *Doc-only.* This spec had kept the older layout — Overview, Business Scope, Functional Requirements, Constraints, Contract, Out of Scope — which the conventions say to restructure at the next substantive revision. v14 and v15 were that revision twice over, and doing it inside either would have buried the change. **Every section body was lifted whole**, not reworded: *Business Scope* and *Functional Requirements* become **Core Features & User Flows**, *Constraints* joins **System Architecture & Tech Stack**, *Contract* becomes **API Endpoints & Server Operations**, and *Out of Scope* joins **Definition of Done**. **Verified rather than asserted:** every non-heading line of the old file is present in the new one — zero lost — and all 16 requirements and 14 changelog rows survive. **What is new, because the blueprint requires it and this spec had none:** the three plain-English blocks, a **Database Schema** section saying *no persistence* and why, an **Automated & Background Systems** section saying *none* and why — a page that retries by itself can charge a fee twice while nobody is watching — and a **Definition of Done** with eight binary criteria. **No Business Rules Register.** This spec numbers its rules as FRs and four other documents cite those numbers; renumbering them would break every one of those references for no gain. | — |
 | v15 | 2026-09-22 | **Reopening a fee for editing throws its whole split away, and nothing says so.** New **FR 27**. *Found 2026-09-22 by reading the edit path end to end, not from a report — no test asserts it and the screen gives no sign.* **What happens.** In the new-agreement wizard, add a `$300` fee split `200 / 100`, press **Edit** on it, and the split table opens **blank**. Save, and the fee is `150 / 150`. The owner typed a division and it is gone. **Where it comes from.** `applyInitialCharge` restores notes, amount, dates, recurrence and items — everything except the split. The split editor takes no seed input at all: it is handed `tenants`, `feeTotal`, `alreadyPaid` and `isGroupInvoice`, and nothing about what was already typed. **Five pieces of state are lost**: the mode, the ticked renters, the unit, the typed fee shares and the typed paid shares. **It predates the split itself being sent.** This is not a consequence of v14 — the figures have been lost since the editor arrived in v7, and v9 added the paid boxes to what is lost. v14 only added the mode to the same hole. **Reach, stated so it is not over- or under-read.** Only the wizard passes `initialCharge`; `POST …/additional-charges` and the Invoices page do not, so **no saved fee travels this path today** and nothing in the database is harmed. What is harmed is the owner’s work in the wizard, before any of it is saved. **No contract change.** Everything FR 27 needs is already on `AdditionalChargeCreationRequest`. | [2026-09-22T1600-02-editing-a-fee-keeps-its-split](../../plans/rent-agreements/2026-09-22T1600-02-editing-a-fee-keeps-its-split.md) |
 | v14 | 2026-09-22 | **The mode the owner picked goes on the wire, and typing a share stops meaning anything about who pays.** New **FR 26**; **FR 25 is corrected — its naming half is reversed.** *Decided by the user 2026-09-22, resolving a direct conflict between this spec and the service.* **The conflict.** v13 made *typing any share* the instruction that a fee **names** its renters, so a *Shared Lease* fee with figures in it stopped covering renters added later. The service decided the opposite on 2026-09-21 and shipped it in `06-unified-invoice-generation.md` v122 (**BR-30**): a fee recorded as `Shared` resolves its payers from the **live roster** every time it is billed, and its stored rows are a *record of how it divided at save*, not a list of who owes it. Both could not hold. **BR-30 wins.** Naming is now what the **mode control** says and nothing else. **What this page must send.** The service added an optional `splitMode` field taking `Shared` or `PerTenant`. Until this page sends it the service falls back to what the payer-row count used to mean — *a body carrying a split is `PerTenant`* — so a *Shared Lease* fee whose owner typed figures is recorded as `PerTenant` today and silently stops following the roster. **That is a live defect and FR 26 is its fix.** **What the screen loses.** v13 put a notice beside the shares saying that naming costs coverage of future renters. The notice is right and its trigger is wrong: it belongs to the **mode control**, not to the first keystroke in a share box. **What stays from v13:** both modes keep the same share boxes and the same unit control, which was the other half of FR 25 and is unaffected. | [2026-09-22T1400-02-the-mode-goes-on-the-wire](../../plans/rent-agreements/2026-09-22T1400-02-the-mode-goes-on-the-wire.md) |
 | v13 | 2026-09-21 | **Shared Lease gains the same share boxes as Split per Tenant, and naming a share is what makes a fee stop covering renters added later — said on screen instead of discovered.** New **FR 25**; **FR 5 is corrected**. *Raised by the user 2026-09-21: the percentage control added in v11 is not on the Shared Lease option, which is where they looked for it, and they want the same capability there.* **Why it was not there, and why that was the wrong answer.** Shared Lease sends no `tenantShares`, so there was nothing to state a percentage against; the boxes lived in *Split per Tenant*, which pre-ticks everybody and covers the same people. That is true, and it is useless — the owner has to already know it to find the feature. **The conflict the two modes were keeping apart.** A fee with **no** split resolves against the **live roster** every time an invoice is built: a renter who joins in March is charged it from March. A fee that **names** people only ever **shrinks** — `named.Where(roster.Contains)` drops a renter who leaves and never adds one who joins. So *"shared by everyone, now and later"* and *"Alice 60 %, Bob 40 %"* cannot both hold, and the page was reconciling them by hiding one. **FR 25 puts the boxes on both modes and states the cost where the owner pays it.** Typing any share, in either unit, makes the fee **name** the current renters, and the page says so in the same breath: *a renter added later will not be charged this fee*. Clearing the shares returns it to genuinely shared. **Rejected, and recorded so it is not re-litigated:** keeping the roster live **and** the percentages stated needs weights that re-normalise as the roster changes — a new backend concept, a rule for what a joiner is owed, and a reopening of BR-01. **No backend change and no contract change**: a body the service already accepts, from a mode that could not previously build one. | [2026-09-21T1700-02-naming-a-share-is-a-decision](../../plans/rent-agreements/2026-09-21T1700-02-naming-a-share-is-a-decision.md) |
@@ -35,7 +38,87 @@ The fee itself is built by the existing `AdditionalChargePanelComponent`, import
 This spec adds no new fee-authoring UI; it adds the lease lookup, the tenant picker, and the wiring
 to a different endpoint.
 
-## Business Scope
+## In Plain English
+
+**The problem.** A property manager needs to bill something the lease never mentioned — a utility
+recharge, a repair, a pet fee — after the lease is saved. This page adds one such fee to one lease.
+
+**Who uses it.** The property manager or owner, from `/rent-agreements/additional-charges`.
+
+**A worked example.** A lease has three renters. The manager adds a `$300` parking fee:
+
+1. They type the fee and its line item.
+2. They pick **Shared Lease** — meaning the lease owes it, whoever is on the lease at the time.
+3. They leave the boxes alone, so the service divides: `100 / 100 / 100`.
+4. A renter joins in March. They are charged the fee too, because *Shared Lease* follows the lease.
+
+Had the manager picked **Split per Tenant** and typed `200 / 50 / 50`, those three renters would owe
+exactly that, and the renter who joined in March would owe nothing of it.
+
+**What changes in the data.** One fee is appended to the lease, with one row per payer recording how
+it divided, and a note of which of the two settings it was saved under.
+
+**The three likeliest failures.**
+
+1. The typed shares do not add up to the fee, and the save is refused — the page says so before the
+   server does.
+2. The lease is not in a state that accepts edits, and the save is refused.
+3. The same fee is sent twice on a retry; the second is recognised and nothing is charged twice.
+
+## What You Need to Decide
+
+*Nothing is outstanding.* Every choice this page offers has been decided and is recorded in the
+changelog with its date and who made it. The most recent, on 2026-09-22: **picking the mode is what
+names the renters, and typing a share is not** (FR 25 as corrected, FR 26).
+
+## Assumptions to Confirm
+
+*None outstanding.* The one assumption this spec carried — whether stated figures and a live roster
+could both hold — was answered in v14 rather than left standing: the service stores a row per payer
+on every charge and records the mode separately, so they can.
+
+## 1. System Architecture & Tech Stack
+
+**Angular standalone components with signals**, in `rent-schedule-ui`. The page is
+`AddAdditionalChargeComponent`; the fee form and the split editor are
+`AdditionalChargePanelComponent` and `TenantSplitEditorComponent`, both shared with the
+new-agreement wizard and the Invoices page. Reactive forms for the fee fields, signals for the
+split. Tests run on Karma with ChromeHeadless.
+
+**It talks to one service** — the billing API described in
+`06-unified-invoice-generation.md` — over REST. There is no other backend and no browser storage.
+
+### Constraints
+
+- **Additive only.** `POST …/additional-charges` cannot edit or remove; the page must not imply it can.
+- **One charge per submission.** The endpoint takes exactly one charge, so the page submits once per
+  panel `created` event and never batches.
+- **No tenant-profile service exists.** The tenants endpoint stores shares against a `tenantId` and
+  carries no personal fields, so every name/email on this screen is a local stand-in derived from the
+  id (the same gap the ADD TENANTS screen documents). Only the `tenantId` leaves the screen.
+- **The panel is reused, not forked** — and from v8 it is the panel that owns the tenant selection.
+  `AdditionalChargePanelComponent` gains two inputs, `tenants` and `isGroupInvoice`, and keeps its
+  `created`/`closed` outputs; `created` now carries `tenantShares`.
+  **A `null` roster is what keeps the lease screens unaffected**, and it is a stronger guarantee than
+  the old arrangement. Keeping the picker on the host page protected them by construction — there was
+  no renter control in the panel to leak — but it also left the Invoices page unable to split a fee it
+  was posting to the very endpoint that accepts one. The input inverts that: the lease screens pass no
+  roster and render nothing, which is a condition a test can pin, and requirement 22 has one.
+- ~~**Idempotency key is out of reach.**~~ **Withdrawn in v6.** The panel still emits no `id`, but the
+  page mints one, so the submission is replayable and requirement 16's retry is safe. The in-flight
+  block stays — it stops a second *distinct* submission, which a retry never is.
+
+## 2. Database Schema
+
+**No persistence.** This is a browser page: it holds a form and a split until the manager saves, and
+the service owns everything after that. Nothing is written to browser storage either, so a reload
+loses an unsaved fee by design.
+
+The data this page reads and writes is the service's, and its shape is in section 4 with the
+endpoints that carry it. The tables behind it are specified in
+`06-unified-invoice-generation.md` — `additional_charge` and `additional_charge_tenant_share`.
+
+## 3. Core Features & User Flows
 
 A property manager needs to bill something that was not known when the lease was written — a
 utility recharge, a repair cost, a pet fee — after the lease is saved and possibly after it is
@@ -52,7 +135,7 @@ Success: a manager pastes a lease id, sees that lease's tenants, ticks the ones 
 fills in the same fee panel they already know from the lease screen, and gets back the persisted
 charge with its real id.
 
-## Functional Requirements
+### Functional Requirements
 
 1. The system shall present a rent agreement id input and shall refuse to load anything until the
    entered text is a well-formed GUID, reporting the malformed id inline rather than calling the API.
@@ -334,27 +417,7 @@ charge with its real id.
     turns this from a silent loss into a `422` — which is a visible failure on a screen the owner was
     not editing the fee from, so the client fix is what keeps the lease editor usable.
 
-## Constraints
-
-- **Additive only.** `POST …/additional-charges` cannot edit or remove; the page must not imply it can.
-- **One charge per submission.** The endpoint takes exactly one charge, so the page submits once per
-  panel `created` event and never batches.
-- **No tenant-profile service exists.** The tenants endpoint stores shares against a `tenantId` and
-  carries no personal fields, so every name/email on this screen is a local stand-in derived from the
-  id (the same gap the ADD TENANTS screen documents). Only the `tenantId` leaves the screen.
-- **The panel is reused, not forked** — and from v8 it is the panel that owns the tenant selection.
-  `AdditionalChargePanelComponent` gains two inputs, `tenants` and `isGroupInvoice`, and keeps its
-  `created`/`closed` outputs; `created` now carries `tenantShares`.
-  **A `null` roster is what keeps the lease screens unaffected**, and it is a stronger guarantee than
-  the old arrangement. Keeping the picker on the host page protected them by construction — there was
-  no renter control in the panel to leak — but it also left the Invoices page unable to split a fee it
-  was posting to the very endpoint that accepts one. The input inverts that: the lease screens pass no
-  roster and render nothing, which is a condition a test can pin, and requirement 22 has one.
-- ~~**Idempotency key is out of reach.**~~ **Withdrawn in v6.** The panel still emits no `id`, but the
-  page mints one, so the submission is replayable and requirement 16's retry is safe. The in-flight
-  block stays — it stops a second *distinct* submission, which a retry never is.
-
-## Contract
+## 4. API Endpoints & Server Operations
 
 ### API Endpoints consumed
 
@@ -433,7 +496,32 @@ The page persists nothing of its own — it holds no client-side store beyond th
 this spec carries no Data Model or Table Structure section. The persisted shape is the backend's,
 specified in `innago-rent-accounting`'s `docs/specs/rent-agreements/01-rent-agreement.md`.
 
-## Out of Scope
+## 5. Automated & Background Systems
+
+**None.** Every request this page makes is one a person started by pressing a button. There is no
+polling, no retry timer and no background refresh: a failed save is reported and left for the
+manager to retry, which is FR 16 and is deliberate — a page that retries by itself can charge a fee
+twice while nobody is watching.
+
+## 6. Definition of Done
+
+- [ ] A fee saved as **Shared Lease** with nothing typed reaches the service with `splitMode:
+      "Shared"` and no `tenantShares`, and the service divides across the live roster.
+- [ ] A fee saved as **Shared Lease** *with* figures typed reaches the service with `splitMode:
+      "Shared"` **and** those figures. This is the case the field exists for.
+- [ ] A fee saved as **Split per Tenant** reaches the service with `splitMode: "PerTenant"` and its
+      figures, and is billed to exactly the renters it names.
+- [ ] Typing a share changes **how** the fee divides and never **who owes it**; only the mode control
+      does that, and the page says so beside that control.
+- [ ] Switching the mode in either direction keeps the typed figures. Only the reset control clears
+      them.
+- [ ] Reopening a fee for editing restores all five pieces of its split — mode, ticks, unit, fee
+      shares, paid shares.
+- [ ] A split whose amounts miss the fee, or whose percentages miss `100`, is refused by the page
+      before the service is asked.
+- [ ] A retried save carries the same charge id and is answered `200` rather than charging twice.
+
+### Out of Scope
 
 - **Editing or deleting** an additional fee — `PUT …/terms` on the lease screen only.
 - **Deposit-flavoured fees.** The panel's `depositOnly` mode is not offered here; a deposit fee is
