@@ -81,13 +81,15 @@
       <p class="split-note naming">
         <strong>This fee names the renters below.</strong>
         A renter added to the lease later <strong>will not</strong> be charged it. Pick
-        <em>Shared Lease</em> to go back to charging the whole lease — the figures you typed are kept.
+        <em>Shared Lease</em> to go back to charging the whole lease — the lease's own roster divides
+        it from then on, and the figures here become a reading rather than an instruction.
       </p>
     } @else {
       <p class="split-note">
         <strong>Charged to the lease and shared by every active renter.</strong>
         That is a complete instruction, not an unfinished one — and it keeps covering renters added
-        later. Type a share below to say what each one owes instead.
+        later. The figures below show how it divides today; they follow the lease, so they are shown
+        and not typed into. Pick <em>Split per Tenant</em> to say what each renter owes instead.
       </p>
     }
     <table class="split-table">
@@ -168,11 +170,25 @@
                   counterpart figure is still shown beneath, derived and never typed into.
                 -->
                 <span class="cell-input">
+                  <!--
+                    Requirement 30. Readable, not writable, unless the fee names its renters. A fee
+                    left to the lease resolves its payers from the LIVE roster when it bills, so a
+                    figure typed against it is correct only until somebody joins or leaves and is
+                    then replaced without a word -- which is why the service refuses one
+                    (requirement 211). The division is still shown: the service computes and stores
+                    it, so the owner sees what each renter will owe.
+
+                    readonly rather than disabled, deliberately: a disabled input leaves the tab
+                    order and stops being announced, and this figure is exactly the thing the owner
+                    came here to read.
+                  -->
                   <input
                     type="text"
                     inputmode="decimal"
                     class="share-input"
                     [class.invalid]="share.error"
+                    [class.read-only]="!namesRenters()"
+                    [readonly]="!namesRenters()"
                     [value]="share.text"
                     [attr.aria-label]="'Share of the fee for ' + share.name"
                     (input)="typeShare(share.tenantId, $any($event.target).value)"
@@ -181,7 +197,7 @@
                     type="button"
                     class="row-reset"
                     (click)="resetShareRow(share.tenantId)"
-                    [disabled]="share.authoredUnit === 'even'"
+                    [disabled]="!namesRenters() || share.authoredUnit === 'even'"
                     title="Hand this amount back to the even split"
                     aria-label="Hand this amount back to the even split"
                   >
@@ -209,11 +225,14 @@
                   others rather than re-dividing all three.
                 -->
                 <span class="cell-input">
+                  <!-- Requirement 30, on the same terms as the share beside it. -->
                   <input
                     type="text"
                     inputmode="decimal"
                     class="share-input"
                     [class.invalid]="share.paidError"
+                    [class.read-only]="!namesRenters()"
+                    [readonly]="!namesRenters()"
                     [value]="share.paidText"
                     [attr.aria-label]="'Amount paid by ' + share.name"
                     (input)="typePaid(share.tenantId, $any($event.target).value)"
@@ -222,7 +241,7 @@
                     type="button"
                     class="row-reset"
                     (click)="resetPaidRow(share.tenantId)"
-                    [disabled]="!share.paidAuthored"
+                    [disabled]="!namesRenters() || !share.paidAuthored"
                     title="Hand this paid amount back to the even split"
                     aria-label="Hand this paid amount back to the even split"
                   >

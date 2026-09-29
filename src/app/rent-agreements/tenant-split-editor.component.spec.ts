@@ -71,12 +71,15 @@ describe('TenantSplitEditorComponent', () => {
     return fixture.nativeElement.querySelectorAll('.roster-row');
   }
 
-  describe('switching the mode keeps the figures (FR 25 as corrected)', () => {
+  describe('switching the mode hands the division back (FR 25 as withdrawn by FR 30)', () => {
     // Until v14 setSplitMode('shared') called resetSplit(), because clearing the shares WAS the way
-    // back from naming. Under v14 naming is the mode, so that reset destroys data for no reason: the
-    // figures are a division, and a division is as meaningful on one mode as on the other.
+    // back from naming. Under v14 naming is the mode, so that reset destroyed data for no reason.
+    // v17, requirement 30: the service refuses typed figures on a fee that resolves its payers from
+    // the LIVE roster (its requirement 211), because they are correct only until somebody joins or
+    // leaves. The division is still SHOWN -- the service computes and stores it -- and is no longer
+    // SENT. These cases keep their subject and change what they expect of the emission.
 
-    it('keeps the typed figures when the owner picks Shared Lease', () => {
+    it('shows the division but stops sending it when the owner picks Shared Lease', () => {
       splitAcross(300, tenantA, tenantB);
       component.typeShare(tenantA, '200');
       fixture.detectChanges();
@@ -86,9 +89,9 @@ describe('TenantSplitEditorComponent', () => {
       fixture.detectChanges();
 
       expect(reported!.mode).toBe('Shared');
-      expect(reported!.shares!.map((share) => share.amount))
-        .withContext('the owner typed a division, and it still divides')
-        .toEqual([200, 100]);
+      expect(reported!.shares)
+        .withContext('a shared fee states no split; the lease roster divides it')
+        .toBeUndefined();
     });
 
     it('keeps them going the other way too, so neither direction is a quiet reset', () => {
@@ -140,8 +143,10 @@ describe('TenantSplitEditorComponent', () => {
       expect(reported!.shares).toBeUndefined();
     });
 
-    it('reports Shared when the owner picks Shared Lease and DOES type figures', () => {
-      // The case the field exists for. Typing says how the fee divides, never who owes it.
+    it('reports Shared, and no split, with the boxes read-only on Shared Lease', () => {
+      // v14 called this "the case the field exists for" and typed into both boxes. v17 requirement 30
+      // makes them read-only for this mode, so what the field now distinguishes is a shared fee from
+      // a named one -- not a shared fee with figures from one without.
       fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
       fixture.componentRef.setInput('feeTotal', 300);
       fixture.detectChanges();
@@ -149,13 +154,12 @@ describe('TenantSplitEditorComponent', () => {
       component.setSplitMode('shared');
       fixture.detectChanges();
 
-      typeInto(boxes(0).amount, '200');
-      typeInto(boxes(1).amount, '100');
-      fixture.detectChanges();
+      expect(boxes(0).amount.readOnly)
+        .withContext('the box takes no typing on a shared fee')
+        .toBeTrue();
 
       expect(reported!.mode).toBe('Shared');
-      expect(reported!.shares).toBeDefined();
-      expect(reported!.shares!.map((share) => share.amount)).toEqual([200, 100]);
+      expect(reported!.shares).toBeUndefined();
     });
 
     it('reports PerTenant when the owner picks Split per Tenant', () => {
@@ -173,7 +177,12 @@ describe('TenantSplitEditorComponent', () => {
     });
   });
 
-  describe('Shared Lease carries the same boxes (FR 25)', () => {
+  describe('Shared Lease shows the same boxes, read-only (FR 25 as narrowed by FR 30)', () => {
+    // v17, requirement 30: the service refuses typed figures on a fee that resolves its payers from
+    // the LIVE roster (its requirement 211), because they are correct only until somebody joins or
+    // leaves. The division is still SHOWN -- the service computes and stores it -- and is no longer
+    // SENT. These cases keep their subject and change what they expect of the emission.
+
     /** Renders the editor for `total` across the roster, left in Shared Lease. */
     function sharedAcross(total: number, ...tenantIds: string[]): void {
       fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
@@ -198,29 +207,40 @@ describe('TenantSplitEditorComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
     });
 
-    it('sends every renter shown the moment one share is typed, and still names nobody', () => {
-      // v14: this case asserted namesRenters() became TRUE here, which was FR 25's naming half. The
-      // user reversed it on 2026-09-22 in favour of the service's BR-30: typing says HOW the fee
-      // divides, the mode says WHO OWES it. So the figures go out exactly as before -- both rows,
-      // never one alone -- and the fee still covers renters added later.
+    it('sends nothing even when a figure reaches the rows, and still names nobody', () => {
+      // v14 asserted the figures went OUT here. Requirement 30 is why they no longer do: the service
+      // divides a shared fee across the live roster itself, and refuses a stated split it would have
+      // to overwrite the moment that roster moves.
+      //
+      // typeShare is called directly rather than through the box, which is read-only now. That is
+      // deliberate -- it proves the guard is on the EMISSION and not only on the input, so a figure
+      // arriving by another route, such as a reopened fee's seed, is not sent either.
       sharedAcross(300, tenantA, tenantB);
       component.typeShare(tenantA, '210');
       fixture.detectChanges();
 
       expect(component.namesRenters()).toBeFalse();
       expect(reported!.mode).toBe('Shared');
-      expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
-      expect(reported!.shares!.length).withContext('one row went out alone').toBe(2);
+      expect(reported!.shares).toBeUndefined();
+      expect(component.rows().map((row) => row.amount))
+        .withContext('the figure still reaches the rows the owner reads')
+        .toEqual([210, 90]);
     });
 
-    it('does the same in percent, stating both rows', () => {
+    it('does the same in percent: both rows shown, neither sent', () => {
+      // The percent lane reaches the same place as the money one, and for the same reason. Asserted
+      // separately because the two convert differently, and a guard written on the money path alone
+      // would let the percent path send a split the service refuses.
       sharedAcross(300, tenantA, tenantB);
       component.setSplitUnit('percent');
       component.typeShare(tenantA, '60');
       fixture.detectChanges();
 
-      expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([60, 40]);
-      expect(reported!.shares!.map((share) => share.amount)).toEqual([180, 120]);
+      expect(component.rows().map((row) => row.sharePercent)).toEqual([60, 40]);
+      expect(component.rows().map((row) => row.amount)).toEqual([180, 120]);
+      expect(reported!.shares)
+        .withContext('a shared fee states no split, in either unit')
+        .toBeUndefined();
       expect(component.blocker()).toBeNull();
     });
 
@@ -247,17 +267,23 @@ describe('TenantSplitEditorComponent', () => {
       expect(notice.textContent).toContain('added to the lease later');
     });
 
-    it('goes back to shared when the shares are cleared', () => {
+    it('goes back to the even division when the shares are cleared', () => {
+      // The emission was already undefined before the reset -- this fee is shared, so requirement 30
+      // sends no split whatever the rows hold. What the reset still does is put the ROWS back to the
+      // even division, which is what the owner sees.
       sharedAcross(300, tenantA, tenantB);
       component.typeShare(tenantA, '210');
       fixture.detectChanges();
-      expect(reported!.shares).toBeDefined();
+      expect(component.rows().map((row) => row.amount)).toEqual([210, 90]);
 
       component.resetSplit();
       fixture.detectChanges();
 
       expect(component.namesRenters()).toBeFalse();
       expect(reported!.shares).toBeUndefined();
+      expect(component.rows().map((row) => row.amount))
+        .withContext('back to the even division, not to nothing')
+        .toEqual([150, 150]);
       expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
     });
 
@@ -331,7 +357,7 @@ describe('TenantSplitEditorComponent', () => {
     expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
   });
 
-  it('returns to shared by everyone, and keeps the typed rows', () => {
+  it('returns to shared by everyone, keeps the rows, and sends no split', () => {
     splitAcross(300, tenantA, tenantB);
     component.typeShare(tenantA, '250');
     expect(component.hasTypedShares()).toBeTrue();
@@ -339,15 +365,15 @@ describe('TenantSplitEditorComponent', () => {
     component.setSplitMode('shared');
     fixture.detectChanges();
 
-    // v14: this case asserted the figures were DISCARDED here, on the reasoning that "there are no
-    // rows left for them to belong to". That reasoning was stale twice over. v13 already gave Shared
-    // Lease the whole roster with boxes, so the rows are still there; and v14 makes the mode -- not
-    // the figures -- say who owes the fee, so a division typed under one mode is just as true under
-    // the other. The reset control is what clears them, and it is its own deliberate click.
+    // v14 asserted the figures were still SENT here; v17 requirement 30 is why they are not. The
+    // reasoning v14 gave for keeping the ROWS stands and is unchanged: v13 gave Shared Lease the
+    // whole roster with boxes, so there is somewhere for the figures to live, and the reset control
+    // is still the only thing that clears them. What changed is that the service refuses a stated
+    // split on a fee whose payers it resolves itself.
     expect(component.isSharedByEveryone()).toBeTrue();
     expect(component.hasTypedShares()).toBeTrue();
     expect(reported!.mode).toBe('Shared');
-    expect(reported!.shares!.map((share) => share.amount)).toEqual([250, 50]);
+    expect(reported!.shares).toBeUndefined();
   });
 
   it('reads what is typed into a row, in the unit the split is set to', () => {

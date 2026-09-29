@@ -305,7 +305,14 @@ export class TenantSplitEditorComponent {
       //
       // A fee with nothing typed still sends no split at all: there is nothing to send, and the
       // service divides across the live roster and stores that (requirement 205 on the service).
-      const typed = this.hasTypedShares() || this.namesRenters();
+      //
+      // Requirement 30 (v17) drops the hasTypedShares half. A Shared fee sends no split AT ALL now,
+      // because the service refuses typed figures on any fee that resolves its payers from the live
+      // roster (requirement 211): they would be correct only until somebody joins or leaves. The
+      // boxes are read-only for that shape, so nothing new can be typed -- but a fee REOPENED from a
+      // save made before this rule still carries figures in its seed, and those would be resent and
+      // refused. Keying on the mode alone is what stops that.
+      const typed = this.namesRenters();
 
       this.splitChange.emit({
         shares: typed ? toTenantShareInputs(this.rows(), this.splitUnit()) : undefined,
