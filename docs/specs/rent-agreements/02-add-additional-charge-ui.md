@@ -4,6 +4,8 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v19 | 2026-09-29 | **A deposit fee shows a division the service will never raise, because the drawer divides it across the rent roster.** New **requirement 37**. *Found 2026-09-29 while auditing this screen against `additional-charge-every-case.html` after the v18 work landed — no report, and no test asserts it either way.* **The rule, in the decision's own words:** *"It is billed to the renters who carry a deposit share on the lease, which is not always the same set as the rent share. A renter recorded at nothing of the deposit is not billed a deposit fee, even though the same person is billed every other kind of fee."* The page flags it as surprising and asks for a frame — *"we were"*. **What the screen does instead.** `tenant-split-editor` reads `tenantId` and nothing else off the roster: `deposit` and `depositPercent` arrive on every row and are never consulted, so a \$900 deposit fee across three renters — one holding no deposit share — reads \$300 each, where the service bills \$450 to two. **This became visible on 2026-09-29 and was not visible before.** Requirement 34 handed both of the lease editor's drawers the lease roster; until then the deposit drawer received none and rendered no split, so the wrong arithmetic had nowhere to appear. The rule was always broken and only now has a surface. **Nothing is sent differently** — a deposit fee is `Shared`, so no shares go on the wire at all; what changes is the figure the owner is shown to check the fee by, which is the only figure they have. **No contract change and no new field**: both deposit columns are already on the roster this drawer receives. | [2026-09-29T1730-02-a-deposit-is-billed-to-whoever-holds-it](../../plans/rent-agreements/2026-09-29T1730-02-a-deposit-is-billed-to-whoever-holds-it.md) |
+| v18 | 2026-09-29 | **The drawer is showing the wrong state on two screens, because it reads which screen it is on instead of what the fee is.** New **requirements 34, 35 and 36**; **requirement 22's second sentence is withdrawn, 29 is corrected and 31 is narrowed**. *Raised by the user 2026-09-29 — "lease editor se additional charge ka flow to purana wala hi hai" — and settled against `additional-charge-every-case.html`, the product decision prepared for the design follow-up call of 24 September 2026.* **The rule all three requirements come from**, stated there in one line: *"The same drawer everywhere. What it shows is decided by the data, never by which screen it was opened from."* **Three ways this screen breaks it.** The split region renders under `@if (tenants; as roster)` and the **lease editor passes no roster**, so a fee reopened from Edit Terms shows the no-renters state on a lease that has renters — the decision names this as ours to fix, in those words. A fee that **rides the rent invoice** hides the share table as well as the setting, where the decision draws that state with *"No setting — … **Owes · read only** — Alice $150 · Bob $150"*: the setting goes, the figures stay. And the renter captions were cut to two by v17's requirement 31, where the decision names **four** — *On one invoice*, *Invoice 1 of 2*, *On the shared rent invoice*, *On their own rent invoice* — the last two of which are told apart by `isGroupInvoice`, which v17 removed outright. **v17 was right about the fee that raises its own invoice** and wrong to carry that reading onto the fee that raises none; requirement 36 states both arms instead of one. **No contract change and no new field** — the roster, `splitMode` and `isGroupInvoice` are all already on this screen; what changes is which of them is read, and when. | [2026-09-29T1600-02-the-drawer-shows-what-the-data-says](../../plans/rent-agreements/2026-09-29T1600-02-the-drawer-shows-what-the-data-says.md) |
 | v17 | 2026-09-29 | **The cadence picker and the payload have been describing opposite fees, and the share boxes on *Shared Lease* stop being editable.** New **requirements 28 to 33**; **requirement 25 is corrected — its editable half is withdrawn**. *Written from the billing service’s spec 01 v118 (FR-136 to FR-138) and spec 06 v128/v129 (requirements 209 to 215), which reverse three rules this screen was built against.* **The defect this version exists for.** The Frequency picker renders under `@if (!attachedWithRentalInvoice)` — on the fee that raises its **own** invoice — while the payload sends `frequency: isRecurring && ridesRentalInvoice ? value.frequency : null`, on the fee that **rides the rent invoice**. The conditions are opposites and never overlap: an owner on a standalone recurring fee sees a picker offering all six cadences, picks one, saves without complaint, and `null` goes on the wire; on an attached fee the picker is hidden and a stale `'monthly'` is sent. **Neither half was wrong on its own.** The screen put the picker where a cadence can mean something, which is what FR-136 now requires; the payload followed FR-088, which required it on the other shape. The service reversed, so the screen is now right and the payload is wrong — one expression, which is why this version is small. **What genuinely reverses on screen** is requirement 25: *Shared Lease* gained the same editable share boxes as *Split per Tenant* in v13, and the service’s requirement 211 now refuses typed figures on any fee that resolves its payers from the live roster. The boxes stay and stop being editable. **One assumption is left standing (A-1)**: nothing in `GET /rent/agreements/{id}` says a fee has taken money, so requirement 33’s read-only state is deferred and the refusal is reported instead. **No new endpoint and no new field** — every rule here is a condition on fields the request already carries. | [2026-09-29T1000-02-the-cadence-and-the-payload-describe-the-same-fee](../../plans/rent-agreements/2026-09-29T1000-02-the-cadence-and-the-payload-describe-the-same-fee.md) |
 | v16 | 2026-09-22 | **Restructured into the six-pillar blueprint. No requirement changed, and no line of content was rewritten.** *Doc-only.* This spec had kept the older layout — Overview, Business Scope, Functional Requirements, Constraints, Contract, Out of Scope — which the conventions say to restructure at the next substantive revision. v14 and v15 were that revision twice over, and doing it inside either would have buried the change. **Every section body was lifted whole**, not reworded: *Business Scope* and *Functional Requirements* become **Core Features & User Flows**, *Constraints* joins **System Architecture & Tech Stack**, *Contract* becomes **API Endpoints & Server Operations**, and *Out of Scope* joins **Definition of Done**. **Verified rather than asserted:** every non-heading line of the old file is present in the new one — zero lost — and all 16 requirements and 14 changelog rows survive. **What is new, because the blueprint requires it and this spec had none:** the three plain-English blocks, a **Database Schema** section saying *no persistence* and why, an **Automated & Background Systems** section saying *none* and why — a page that retries by itself can charge a fee twice while nobody is watching — and a **Definition of Done** with eight binary criteria. **No Business Rules Register.** This spec numbers its rules as FRs and four other documents cite those numbers; renumbering them would break every one of those references for no gain. | — |
 | v15 | 2026-09-22 | **Reopening a fee for editing throws its whole split away, and nothing says so.** New **FR 27**. *Found 2026-09-22 by reading the edit path end to end, not from a report — no test asserts it and the screen gives no sign.* **What happens.** In the new-agreement wizard, add a `$300` fee split `200 / 100`, press **Edit** on it, and the split table opens **blank**. Save, and the fee is `150 / 150`. The owner typed a division and it is gone. **Where it comes from.** `applyInitialCharge` restores notes, amount, dates, recurrence and items — everything except the split. The split editor takes no seed input at all: it is handed `tenants`, `feeTotal`, `alreadyPaid` and `isGroupInvoice`, and nothing about what was already typed. **Five pieces of state are lost**: the mode, the ticked renters, the unit, the typed fee shares and the typed paid shares. **It predates the split itself being sent.** This is not a consequence of v14 — the figures have been lost since the editor arrived in v7, and v9 added the paid boxes to what is lost. v14 only added the mode to the same hole. **Reach, stated so it is not over- or under-read.** Only the wizard passes `initialCharge`; `POST …/additional-charges` and the Invoices page do not, so **no saved fee travels this path today** and nothing in the database is harmed. What is harmed is the owner’s work in the wizard, before any of it is saved. **No contract change.** Everything FR 27 needs is already on `AdditionalChargeCreationRequest`. | [2026-09-22T1600-02-editing-a-fee-keeps-its-split](../../plans/rent-agreements/2026-09-22T1600-02-editing-a-fee-keeps-its-split.md) |
@@ -458,15 +460,22 @@ charge with its real id.
     was a wrong row. It now decides when the fee bills, so a weekly fee that sends `null` is refused,
     and one that sends a stale `'monthly'` bills monthly.
 
-29. **v17** — A fee that **rides the rent invoice** shall offer **no cadence, no mode and no share
-    boxes**, and shall send none of the three.
+29. **v17, corrected in v18** — A fee that **rides the rent invoice** shall offer **no cadence and no
+    mode control**, and shall **send** none of cadence, mode or shares.
 
     That invoice has already settled how many invoices there are, who is on them, and when they
     arrive. A control here would ask the owner for a decision the fee cannot carry, and the service
     refuses all three (spec `06` requirements 210 and 211, spec `01` FR-136).
 
-    **The screen already hides the cadence** (requirement 28’s left column). What it does not yet hide
-    is the **mode control and the split table**, which render for every fee.
+    **What v17 got wrong, and v18 corrects.** v17 also removed the **share table**, on the reasoning
+    that a field the service refuses should not be on screen. The two are not the same question: the
+    service refuses *typed* shares, and the table's job here is to **show** a division the owner may
+    not type. The product decision draws this state with the shares present —
+    *"No setting — the rent invoice has already decided how many invoices there are and who is on
+    them. **Owes · read only** — Alice $150 · Bob $150."* Requirement 35 restores them read-only.
+
+    **What remains hidden is the mode control**, which is what "no setting at all" names, and the
+    cadence picker (requirement 28's left column).
 
 30. **v17, correcting requirement 25** — The share boxes shall be **read-only** unless the fee is
     **Split per Tenant**.
@@ -496,7 +505,13 @@ charge with its real id.
 
     **Stated because it is the easy thing to get wrong.** The panel is handed `isGroupInvoice`, and a
     reader who has not seen the reversal will reach for it to decide which modes to offer. It decides
-    the **rent**, and nothing on this panel.
+    the **rent**, and — while the fee raises its own invoice — nothing on this panel.
+
+    **Its reach is narrowed in v18.** This requirement is about the **mode** and about the captions on
+    a fee that raises **its own invoice**, where the fee's own setting is the only thing that decides.
+    It does not reach a fee that **rides the rent invoice**: that fee raises no invoice of its own, so
+    how the rent is packaged is the only fact left that can say where its share lands. Requirement 36
+    states both arms, and `isGroupInvoice` is consulted in exactly one of them.
 
 32. **v17** — **Attaching to the rent invoice shall be offered only when the lease bills rent.**
     Where the lease’s rent is zero there is no rental invoice to ride, and the service refuses the
@@ -520,8 +535,12 @@ charge with its real id.
     recorded in Assumptions to Confirm rather than designed around.*
 
 22. **v7** — The **lease editor** shall carry a charge's saved split forward on every terms save,
-    exactly as it carries `tenantIds` today. It **does not gain a split editor** — that screen has no
-    tenant picker and is not getting one; who pays is authored on this page alone.
+    exactly as it carries `tenantIds` today.
+    **Its second sentence is withdrawn in v18.** It read *"It does not gain a split editor — that
+    screen has no tenant picker and is not getting one; who pays is authored on this page alone."*
+    That was written from this screen's own history rather than from the product decision, which says
+    the opposite in as many words: *"Edit Terms knows the renters, so it gets state B. That is ours to
+    fix."* Requirement 34 replaces it. The carry-forward rule above is unaffected and still holds.
     **Why a pass-through screen needs a requirement of its own.** `PUT …/terms` resubmits the
     complete charge, and an omitted field is not "unchanged" — it is removed. The lease editor
     already carries `tenantIds` for this reason and says so in its own comment: *a fee charged to two
@@ -531,6 +550,96 @@ charge with its real id.
     in its v109, refuses a terms save whose charge already holds shares and submits none. That guard
     turns this from a silent loss into a `422` — which is a visible failure on a screen the owner was
     not editing the fee from, so the client fix is what keeps the lease editor usable.
+
+34. **v18, replacing requirement 22's second sentence** — The fee drawer shall show **one of three
+    states, chosen from the fee and the lease roster — never from the screen it was opened from**.
+
+    | | When | Mode control | Share table |
+    |---|---|---|---|
+    | **A** | raises its own invoice · lease has no renters yet | shown, *Split per Tenant* disabled | none — nobody to list |
+    | **B** | raises its own invoice · lease has renters | shown, both live | shown; editable only on *Split per Tenant* |
+    | **C** | rides the rent invoice | **not shown at all** | shown, **read only** |
+
+    **The rule in the product decision's own words:** *"The same drawer everywhere. What it shows is
+    decided by the data, never by which screen it was opened from."*
+
+    **The defect this closes.** The panel renders its split region under `@if (tenants; as roster)`,
+    and the lease editor passes no roster — so a fee opened from **Edit Terms** shows state A on a
+    lease that already has renters, and the owner cannot reach *Split per Tenant* on the one screen
+    where the renters are already known. The decision names this as work rather than a question:
+    *"reopening the fee from the lease's own Edit Terms screen has to show state B. Today that screen
+    shows state A even when the lease already has renters, because it does not hand the drawer the
+    roster. That is ours to fix."*
+
+    **So the lease editor shall hand the drawer its saved roster**, and state A becomes what it was
+    always meant to be — a **lease with no renters**, not a screen that forgot to say.
+
+35. **v18, correcting requirement 29** — On a fee that **rides the rent invoice**, the share table
+    shall be **shown and read-only**, and the mode control shall be **absent** — replaced by a line
+    saying why.
+
+    **Showing nothing is not the same as showing no setting.** The owner still needs to know what each
+    renter ends up owing; what they may not do is decide it here. The decision draws the state with
+    the figures present and the setting gone, and gives the line it carries: *"No setting — the rent
+    invoice has already decided how many invoices there are and who is on them."*
+
+    **Nothing is sent.** `splitMode`, `tenantShares`, `frequency` and `frequencyConfig` stay off the
+    payload for this fee (requirements 28 and 29) — the table is a **reading**, and the service
+    computes and stores the real division itself (backend requirement 205).
+
+36. **v18, narrowing requirement 31** — The caption under each renter shall name **where that
+    renter's share lands**, and shall read:
+
+    | Fee | Caption |
+    |---|---|
+    | Its own invoice · *Shared Lease* | **On one invoice** |
+    | Its own invoice · *Split per Tenant* | **Invoice `N` of `M`** |
+    | Rides the rent invoice · lease bills one shared invoice | **On the shared rent invoice** |
+    | Rides the rent invoice · lease bills one per renter | **On their own rent invoice** |
+    | Not charged this fee | **Not charged this fee** |
+
+    **`isGroupInvoice` is consulted in the last two rows only.** Requirement 31 removed it from this
+    caption entirely, and for a fee that raises **its own** invoice that is right — the fee's own mode
+    decides, and reading the lease told the renter the wrong thing. A fee that **rides the rent
+    invoice** raises none of its own, so there is nothing left but the lease to read, and the two
+    captions differ by exactly that fact (product decision, cases 5 and 6).
+
+    **`N` of `M` is counted over the renters the fee names**, not over the roster: a `$300` fee naming
+    two of four renters reads *Invoice 1 of 2* and *Invoice 2 of 2*.
+
+37. **v19** — A **deposit** fee shall divide across **only the renters who carry a deposit share on
+    the lease**. A renter recorded at nothing of the deposit shall be listed and read
+    *Not charged this fee*.
+
+    **The deposit roster is not the rent roster.** The product decision states it and flags it as
+    surprising: *"It is billed to the renters who carry a deposit share on the lease, which is not
+    always the same set as the rent share. A renter recorded at nothing of the deposit is not billed a
+    deposit fee, even though the same person is billed every other kind of fee. This is worth a frame
+    if you think a manager would be surprised by it — **we were**."*
+
+    **What the screen shows today is a division that will never be raised.** A `$900` deposit fee on
+    three renters, one of whom holds no deposit share, reads `$300` each on screen; the service bills
+    `$450` to two. The figures are the only thing the owner has to check the fee by, so a wrong one is
+    worse than none.
+
+    **Introduced by requirement 34, on 2026-09-29.** Before it, the lease editor handed the drawer no
+    roster and the deposit drawer showed no split at all, so the wrong figures had nowhere to appear.
+    Giving both drawers the roster — which is what state B requires — exposed a rule the split editor
+    had never been asked to hold.
+
+    **A renter carries a deposit share when `deposit > 0` or `depositPercent > 0`.** Both are on the
+    roster the drawer already receives; neither is read today.
+
+    **The whole roster is still listed**, as it is for every other fee: seeing who is *not* on a fee is
+    half of reading a split, and it is the only place the surprise above can be noticed.
+
+    **A deposit fee that reaches nobody is still saveable** — every renter listed as not charged, no
+    blocker raised. That matches the decision's rule for a lease with no renters at all: *"a fee with
+    its own invoice still raises one, with nobody named on it, so money owed to the owner is not lost
+    while the unit is between tenancies."*
+
+    **Scope: the deposit drawer only.** The Add Additional Charge page never opens it, and its
+    catalog scope excludes deposit items, so no fee authored there can be a deposit.
 
 ## 4. API Endpoints & Server Operations
 
