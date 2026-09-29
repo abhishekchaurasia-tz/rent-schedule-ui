@@ -86,6 +86,15 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
   });
 
   afterEach(() => {
+    // A loaded lease also reads its renters, so the fee drawer can show the fee as it actually is
+    // (requirement 34). Answered here rather than in each test because no test in this file opens the
+    // drawer -- the roster's own behaviour is covered by the FR34_ tests in
+    // rent-agreement-create.component.spec.ts. 204 is the ordinary answer for a lease whose step 2
+    // was never saved, which is what these fixtures describe.
+    httpMock
+      .match((request) => request.url.endsWith('/tenants'))
+      .forEach((request) => request.flush(null, { status: 204, statusText: 'No Content' }));
+
     httpMock.verify();
   });
 

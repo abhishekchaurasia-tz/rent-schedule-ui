@@ -757,6 +757,8 @@
       [leaseMonthToMonthInvoiceCount]="formMonthToMonthInvoiceCount"
       [initialCharge]="editingCharge"
       [chargeHasTakenMoney]="editingChargeHasTakenMoney"
+      [tenants]="agreementTenants()"
+      [isGroupInvoice]="agreementIsGroupInvoice()"
       (created)="onAdditionalChargeCreated($event)"
       (closed)="closeAdditionalChargePanel()"
     />
@@ -772,6 +774,8 @@
       [leaseMonthToMonthInvoiceCount]="formMonthToMonthInvoiceCount"
       [initialCharge]="editingCharge"
       [chargeHasTakenMoney]="editingChargeHasTakenMoney"
+      [tenants]="agreementTenants()"
+      [isGroupInvoice]="agreementIsGroupInvoice()"
       (created)="onDepositChargeCreated($event)"
       (closed)="closeDepositChargePanel()"
     />
