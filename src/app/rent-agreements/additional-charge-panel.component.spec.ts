@@ -1036,6 +1036,62 @@ describe('AdditionalChargePanelComponent', () => {
     }
 
     /**
+     * Requirement 32 — attaching to the rent invoice needs a lease that bills rent.
+     *
+     * A lease billing zero raises no rental invoice, so a fee attached to one would be stored,
+     * expanded, and bill nothing for the life of the agreement (the service's FR-138). The reason is
+     * said on screen rather than left to a 422 after the owner has typed the whole fee.
+     */
+    it('disables the attach toggle and names the reason when the lease bills no rent', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', 0);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeFalse();
+      expect(toggle.disabled).toBeTrue();
+      expect(fixture.nativeElement.textContent).toContain('no rental invoice to add this to');
+    });
+
+    it('offers the attach toggle on a lease that bills rent', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', 1000);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeTrue();
+      expect(toggle.disabled).toBeFalse();
+      expect(fixture.nativeElement.textContent).not.toContain('no rental invoice to add this to');
+    });
+
+    /**
+     * A host that cannot answer must not silently remove a control the owner is entitled to. The
+     * service still refuses the save, and a refusal they can read beats a control that vanished for
+     * no stated reason.
+     */
+    it('leaves the attach toggle offered when the host states no rent at all', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', null);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeTrue();
+      expect(toggle.disabled).toBeFalse();
+    });
+
+    /**
      * Requirement 29 — a fee that rides the rent invoice offers no split and sends none.
      *
      * That invoice has already settled how many invoices there are and who is on them, so a mode

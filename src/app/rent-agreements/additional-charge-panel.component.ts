@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, signal, OnChanges } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -59,7 +59,7 @@ import { LineItemsService } from './line-items.service';
   templateUrl: './additional-charge-panel.component.html',
   styleUrl: './additional-charge-panel.component.scss'
 })
-export class AdditionalChargePanelComponent implements OnInit {
+export class AdditionalChargePanelComponent implements OnInit, OnChanges {
   /**
    * When `true`, this panel is the deposit-only entry point: the fetched catalog is scoped to
    * `DepositOnly` (deposit-flavored items only), and "attached to rental invoice" is hidden — a
@@ -113,6 +113,16 @@ export class AdditionalChargePanelComponent implements OnInit {
 
   /** Whether the lease bills its renters on one shared invoice — wording only, never sent. */
   @Input() isGroupInvoice = false;
+
+  /**
+   * The lease's rent, when the host knows it. Requirement 32: a fee may ride the rental invoice only
+   * where there is one, and a lease billing zero rent raises none (the service's FR-138).
+   *
+   * <b>Null means "not stated", and the toggle stays offered.</b> A host that cannot answer must not
+   * silently remove a control the owner is entitled to -- the service still refuses the save, and a
+   * refusal the owner can read beats a control that vanished for no stated reason.
+   */
+  @Input() leaseFullRent: number | null = null;
 
   /**
    * When set, the panel opens pre-filled with this already-created charge instead of a blank form
@@ -762,6 +772,46 @@ export class AdditionalChargePanelComponent implements OnInit {
   }
 
   /** Records what the split editor reports, so {@link create} can refuse or send it. */
+  /**
+   * Whether the lease bills rent, so a fee may ride its invoice (requirement 32). Unknown counts as
+   * yes -- see {@link leaseFullRent}.
+   */
+  get leaseBillsRent(): boolean {
+    return this.leaseFullRent === null || this.leaseFullRent > 0;
+  }
+
+  /**
+   * Keeps the attach toggle in step with the lease's rent (requirement 32).
+   *
+   * <b>Here rather than as a template binding.</b> Angular ignores <c>[disabled]</c> on a control a
+   * reactive form owns and warns instead of honouring it, so a toggle "disabled" that way stays
+   * clickable -- which is how this shipped broken on the first attempt.
+   *
+   * The lease editor's rent is a field the owner is editing, so this runs on every change and not
+   * only on init: typing the rent down to zero must close the toggle, and typing it back must
+   * reopen it.
+   */
+  ngOnChanges(): void {
+    const toggle = this.form?.get('attachedWithRentalInvoice');
+    if (!toggle) {
+      return;
+    }
+
+    if (this.leaseBillsRent) {
+      if (toggle.disabled) {
+        toggle.enable({ emitEvent: false });
+      }
+
+      return;
+    }
+
+    // Cleared as well as closed: a lease whose rent has just been typed down to zero may already
+    // carry a fee the owner attached a moment ago, and leaving it ticked behind a disabled control
+    // sends the very request FR-138 refuses.
+    toggle.setValue(false, { emitEvent: false });
+    toggle.disable({ emitEvent: false });
+  }
+
   onSplitChange(state: TenantSplitState): void {
     this.splitState.set(state);
   }

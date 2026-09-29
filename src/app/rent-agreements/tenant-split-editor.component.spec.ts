@@ -589,14 +589,24 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares).toBeUndefined();
   });
 
-  it('says how each share is billed, from the lease invoicing mode', () => {
+  it('says how each share is billed, from the FEE and not from the lease (FR 31)', () => {
+    // v17: this read isGroupInvoice until requirement 31. The service reversed BR-05 (its
+    // requirement 209), so a Shared fee raises one invoice for the lease whatever the lease bills
+    // and a Split per Tenant fee raises one per renter -- the two may disagree with the lease, and
+    // that is the feature. Taken from the lease, the caption told the renter the wrong thing for
+    // exactly the cases this release exists to make possible.
     splitAcross(300, tenantA, tenantB);
     expect(rendered()[0].textContent).toContain('Billed on its own invoice');
 
+    // The LEASE flips, and the caption does not: it is not the lease's question any more.
     fixture.componentRef.setInput('isGroupInvoice', true);
     fixture.detectChanges();
+    expect(rendered()[0].textContent).toContain('Billed on its own invoice');
 
-    expect(rendered()[0].textContent).toContain('group invoice');
+    // The FEE flips, and the caption follows it.
+    component.setSplitMode('shared');
+    fixture.detectChanges();
+    expect(rendered()[0].textContent).toContain('one invoice for the lease');
   });
   describe('the paid box', () => {
     it('gives each row its own amount box and paid box', () => {

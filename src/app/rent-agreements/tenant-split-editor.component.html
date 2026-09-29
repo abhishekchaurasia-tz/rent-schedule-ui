@@ -123,12 +123,20 @@
                   {{ row.name }} <code class="tenant-id">{{ row.shortId }}</code>
                 </span>
                 <span class="muted">
+                  <!--
+                    Requirement 31. Read from the FEE, not from how the lease bills. Since the
+                    service's BR-05 was reversed (its requirement 209) a Shared fee raises one
+                    invoice for the lease whatever the lease does, and a Split per Tenant fee raises
+                    one per renter it names. The two may disagree with the lease, and that is the
+                    feature -- so a caption taken from isGroupInvoice told the renter the wrong
+                    thing for exactly the cases this release exists to make possible.
+                  -->
                   @if (!row.selected) {
                     Not charged this fee
-                  } @else if (isGroupInvoice()) {
-                    On the lease's group invoice
-                  } @else {
+                  } @else if (namesRenters()) {
                     Billed on its own invoice
+                  } @else {
+                    On one invoice for the lease
                   }
                 </span>
               </span>

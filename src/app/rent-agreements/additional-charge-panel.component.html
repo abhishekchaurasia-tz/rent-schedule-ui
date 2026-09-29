@@ -120,10 +120,28 @@
         <span class="recurring-label">Make this a line item on the rental invoice?</span>
         <label class="toggle">
           <span [class.active]="!form.get('attachedWithRentalInvoice')!.value">No</span>
+          <!--
+            Disabled from the component, never with [disabled] here: Angular ignores that binding on
+            a control a reactive form owns, and logs a warning instead of honouring it. The control
+            is the form's, so the form disables it.
+          -->
           <input type="checkbox" formControlName="attachedWithRentalInvoice" />
           <span [class.active]="form.get('attachedWithRentalInvoice')!.value">Yes</span>
         </label>
       </div>
+      <!--
+        Requirement 32. A lease billing no rent raises no rental invoice, so a fee attached to one
+        would be stored, expanded, and bill nothing for the life of the agreement. The reason is said
+        here rather than left to a 422 after the owner has typed the whole fee -- and it says what to
+        do instead, because the fee itself is fine; only the attachment is not.
+      -->
+      @if (!leaseBillsRent) {
+        <p class="split-note attach-blocked">
+          <strong>This lease bills no rent, so there is no rental invoice to add this to.</strong>
+          Leave the toggle at <em>No</em> and the fee is sent as its own invoice, which bills it
+          correctly.
+        </p>
+      }
     }
 
     @if (!isRecurring) {

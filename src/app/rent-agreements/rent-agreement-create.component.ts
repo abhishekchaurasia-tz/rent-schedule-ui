@@ -759,6 +759,16 @@ export class RentAgreementCreateComponent {
     return !!id && this.appliedChargeIds().has(id);
   }
 
+  /**
+   * The rent the form currently states, for requirement 32. Read from the form rather than from the
+   * loaded agreement, because on this screen the owner may be in the middle of changing it -- and the
+   * fee they are authoring will be saved against the rent they are typing, not the one on file.
+   */
+  get formFullRent(): number | null {
+    const rent = this.form.get('rent')!.value;
+    return rent === null || rent === '' ? null : Number(rent);
+  }
+
   get frequency(): RentFrequency {
     return this.form.get('frequency')!.value;
   }
