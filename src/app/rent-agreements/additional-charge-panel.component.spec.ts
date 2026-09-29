@@ -283,7 +283,7 @@ describe('AdditionalChargePanelComponent', () => {
     });
   });
 
-  it('emits a recurring charge with frequency/startDate instead of dueDate', () => {
+  it('emits a standalone recurring charge with the cadence the owner picked (FR-136)', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
 
@@ -291,9 +291,11 @@ describe('AdditionalChargePanelComponent', () => {
     item.patchValue({ lineItemId: parkingItem.id, description: 'Monthly parking', quantity: 1, rate: 30 });
     component.recalculateAmount(0);
 
+    // Raises its OWN invoice, which since FR-136 is the shape that carries a cadence. It rode the
+    // rental invoice here until v17, because FR-088 put the pair on the other shape.
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      attachedWithRentalInvoice: false,
       frequency: 'monthly',
       dueOnDay: 15,
       startDate: '2026-08-01',
@@ -315,7 +317,7 @@ describe('AdditionalChargePanelComponent', () => {
     expect(emitted?.items[0].itemType).toBe('Parking');
   });
 
-  it('omits the cadence for a recurring charge that does not ride the rental invoice (FR-088)', () => {
+  it('omits the cadence for a recurring charge that rides the rental invoice (FR-136)', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
 
@@ -325,7 +327,7 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: false,
+      attachedWithRentalInvoice: true,
       frequency: 'monthly',
       dueOnDay: 15,
       startDate: '2026-08-01',
@@ -337,8 +339,12 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.create();
 
-    // A standalone recurring charge bills once per rent cycle, so it has no cadence of its own. Sending
-    // one is what the server rejects with 422.
+    // It arrives when the rent does, so a cadence of its own describes something the billing run will
+    // not do. The server refuses one outright (FR-136), where FR-088 required it.
+    //
+    // The form still HOLDS 'monthly' — the picker is hidden for this shape, so the control keeps its
+    // default. That the request drops it rather than echoing the default is the whole point: before
+    // v17 a stale 'monthly' went out from a control the owner never saw.
     expect(emitted?.isRecurring).toBeTrue();
     expect(emitted?.frequency).toBeNull();
     expect(emitted?.frequencyConfig).toBeNull();
@@ -356,7 +362,9 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      // FR-136: the cadence is carried by the charge that raises its own invoice, so that is the
+      // shape this builder has to be exercised on.
+      attachedWithRentalInvoice: false,
       frequency: 'bi_monthly',
       startDate: '2026-08-01',
       hasNoEndDate: true
@@ -382,7 +390,9 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      // FR-136: the cadence is carried by the charge that raises its own invoice, so that is the
+      // shape this builder has to be exercised on.
+      attachedWithRentalInvoice: false,
       frequency: 'custom',
       startDate: '2026-08-01',
       hasNoEndDate: true

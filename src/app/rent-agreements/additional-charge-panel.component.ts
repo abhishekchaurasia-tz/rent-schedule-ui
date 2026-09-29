@@ -802,11 +802,16 @@ export class AdditionalChargePanelComponent implements OnInit {
       isRecurring,
       dueDate: isRecurring ? null : toIsoDate(value.dueDate),
 
-      // FR-088: only a recurring charge that RIDES the rental invoice carries a cadence of its own. A
-      // standalone recurring charge bills once per rent cycle, so sending a frequency would be a second,
-      // contradictory cadence — and the server rejects it with 422.
-      frequency: isRecurring && ridesRentalInvoice ? value.frequency : null,
-      frequencyConfig: isRecurring && ridesRentalInvoice ? buildFrequencyConfig(value) : null,
+      // FR-136 (spec 01-rent-agreement.md v118, reversing FR-088): the cadence belongs to the recurring
+      // charge that raises its OWN invoice. That charge's dates are decided by nobody else, so it has to
+      // state them; one riding the rental invoice arrives when the rent does and may state none.
+      //
+      // This is the condition the TEMPLATE has always used to show the picker. The two disagreed from
+      // the day the picker arrived: it rendered under !attachedWithRentalInvoice while this line sent on
+      // attachedWithRentalInvoice, so an owner on a standalone fee picked a cadence and null went on the
+      // wire, and an attached fee sent a stale 'monthly' from a control they never saw.
+      frequency: isRecurring && !ridesRentalInvoice ? value.frequency : null,
+      frequencyConfig: isRecurring && !ridesRentalInvoice ? buildFrequencyConfig(value) : null,
       startDate: isRecurring ? toIsoDate(value.startDate) : null,
       endDate: isRecurring && !value.hasNoEndDate ? toIsoDate(value.endDate) : null,
       hasNoEndDate: isRecurring ? !!value.hasNoEndDate : false,
