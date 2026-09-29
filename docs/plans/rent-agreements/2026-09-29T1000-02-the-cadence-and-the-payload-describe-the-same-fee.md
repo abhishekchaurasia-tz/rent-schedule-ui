@@ -277,9 +277,13 @@ here.
 
 ## 6. Final Validation
 
-- [ ] Requirements 28 to 33 each named by at least one test.
-- [ ] The picker's condition and the payload's condition are the same expression.
-- [ ] No control on this panel reads `isGroupInvoice` to decide what the fee may be.
-- [ ] The notice under the split table no longer promises that typed figures are kept.
-- [ ] A-1 answered, or Milestone 5 explicitly deferred with the reason on the record.
-- [ ] The spec's v17 changelog row links to this plan.
+- [x] Requirements 28 to 33 each named by at least one test.
+- [x] The picker's condition and the payload's condition are the same expression.
+      *`!attachedWithRentalInvoice` in the template, `!ridesRentalInvoice` in the payload.*
+- [x] No control on this panel reads `isGroupInvoice` to decide what the fee may be. *It survives only
+      in a comment recording why it was removed.*
+- [x] The notice under the split table no longer promises that typed figures are kept. *Zero
+      occurrences of the phrase.*
+- [x] A-1 answered: the response already carried `isApplied`. Milestone 5 shipped in full, and no API
+      change was needed.
+- [x] The spec's v17 changelog row links to this plan.
