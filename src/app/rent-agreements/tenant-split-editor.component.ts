@@ -110,6 +110,35 @@ export class TenantSplitEditorComponent {
    */
   readonly hasTakenMoney = input<boolean>(false);
 
+  /**
+   * Whether this fee **rides the rent invoice** rather than raising one of its own — the drawer's
+   * state C (requirements 34 and 35).
+   *
+   * It raises no invoice, so there is nothing left for a setting to decide: the rent invoice has
+   * already settled how many invoices there are and who is on them. The control goes, and the
+   * division stays on screen and read-only, because the owner still has to be able to see what each
+   * renter ends up owing.
+   *
+   * **Held as one input rather than a second component.** The table, the chips, the even division and
+   * the paid column are identical in all three states; forking them would duplicate the file to
+   * change one gate.
+   */
+  readonly ridesRentInvoice = input<boolean>(false);
+
+  /**
+   * Whether this fee is a **deposit** — which changes who it reaches (requirement 37).
+   *
+   * A deposit is billed to the renters who carry a **deposit share on the lease**, and that is not
+   * always the same set as the rent share: a renter recorded at nothing of the deposit is not billed
+   * a deposit fee, though the same person is billed every other kind of fee. The product decision
+   * flags this as the surprising one, about itself as much as about the manager.
+   *
+   * **Set from the panel's `depositOnly`, not from the items.** This component never sees the line
+   * items, and the panel already restricts its catalog to the deposit scope when the flag is set, so
+   * the flag and the items cannot disagree.
+   */
+  readonly depositFee = input<boolean>(false);
+
   /** The split and its blocker, re-emitted whenever either changes. */
   readonly splitChange = output<TenantSplitState>();
 
@@ -172,7 +201,9 @@ export class TenantSplitEditorComponent {
   private readonly mode = signal<'Shared' | 'PerTenant'>('Shared');
 
   /** Whether the **selection** is empty. Not the mode, and not the same as sending no split. */
-  readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
+  readonly isSharedByEveryone = computed(
+    () => this.ridesRentInvoice() || this.selectedTenantIds().size === 0
+  );
 
   /** Whether any row has been typed over — what the "reset to even" control is offered for. */
   readonly hasTypedShares = computed(
@@ -194,7 +225,7 @@ export class TenantSplitEditorComponent {
    * `named.Where(roster.Contains)`, which drops a renter who leaves and **never adds one who joins**.
    * What changed is where the owner makes that choice — the control, not the first keystroke.
    */
-  readonly namesRenters = computed(() => this.mode() === 'PerTenant');
+  readonly namesRenters = computed(() => this.mode() === 'PerTenant' && !this.ridesRentInvoice());
 
   /**
    * Whether <b>who owes this fee</b> is settled (requirement 33) -- its mode and its renter set, and
@@ -208,12 +239,31 @@ export class TenantSplitEditorComponent {
    *
    * Shared Lease shows everybody because there has to be something to type into — and because the
    * figures are true either way. What differs is whether they are sent.
+   *
+   * **A deposit reaches fewer people** (requirement 37). It is billed from the lease's deposit
+   * shares, so a renter holding none of the deposit is not covered — and stays listed, reading
+   * *Not charged this fee*, because this is the one case the decision calls surprising and hiding it
+   * is how the surprise reaches production.
    */
   private readonly coveredTenants = computed(() =>
     this.tenants()
       .filter((tenant) => this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId))
+      .filter((tenant) => !this.depositFee() || TenantSplitEditorComponent.holdsADeposit(tenant))
       .map((tenant) => ({ tenantId: tenant.tenantId, name: this.tenantName(tenant.tenantId) }))
   );
+
+  /**
+   * Whether a renter carries any of the lease's deposit.
+   *
+   * **Both columns, not just the amount.** A share stated as a percentage leaves `deposit` at zero,
+   * so reading the amount alone would drop a renter who holds half the deposit.
+   *
+   * @param tenant The roster row being tested.
+   * @returns `true` when the renter is recorded at some of the deposit.
+   */
+  private static holdsADeposit(tenant: AgreementTenantShareResponse): boolean {
+    return tenant.deposit > 0 || (tenant.depositPercent ?? 0) > 0;
+  }
 
   /** The split table: each renter's slice of the fee, of what is paid, and what that leaves owing. */
   readonly rows = computed<SplitTableRow[]>(() =>
@@ -254,6 +304,60 @@ export class TenantSplitEditorComponent {
       share: byTenant.get(tenant.tenantId) ?? null
     }));
   });
+
+  /**
+   * Where each renter's share lands, in the words the product decision gives (requirement 36).
+   *
+   * Four captions, keyed off two facts in a fixed order:
+   *
+   * | Fee | Caption |
+   * |---|---|
+   * | Its own invoice, shared by the lease | `On one invoice` |
+   * | Its own invoice, naming its renters | `Invoice N of M` |
+   * | Rides the rent invoice, lease bills together | `On the shared rent invoice` |
+   * | Rides the rent invoice, lease bills separately | `On their own rent invoice` |
+   *
+   * **{@link isGroupInvoice} is consulted in the last two only.** A fee that raises its own invoice
+   * decides its own shape (requirement 31): a shared fee raises one invoice whatever the lease does,
+   * and a naming fee raises one per renter it names — so reading the lease there told the renter the
+   * wrong thing for exactly the cases this release exists to allow. A fee that **rides** the rent
+   * invoice raises none of its own, so how that invoice is packaged is the only fact left.
+   *
+   * **`N` counts over the renters the fee names**, never over the roster: an unnamed renter is
+   * charged nothing and so appears on none of the invoices being counted.
+   */
+  readonly captions = computed<ReadonlyMap<string, string>>(() => {
+    const covered = this.rows();
+    const ridesRent = this.ridesRentInvoice();
+    const perRenter = this.namesRenters();
+    const total = covered.length;
+
+    return new Map(
+      covered.map((row, index) => {
+        if (ridesRent) {
+          return [
+            row.tenantId,
+            this.isGroupInvoice() ? 'On the shared rent invoice' : 'On their own rent invoice'
+          ] as const;
+        }
+
+        return [
+          row.tenantId,
+          perRenter ? `Invoice ${index + 1} of ${total}` : 'On one invoice'
+        ] as const;
+      })
+    );
+  });
+
+  /**
+   * The caption for one renter, or the uncharged line when the fee does not reach them.
+   *
+   * @param tenantId The renter whose row is being rendered.
+   * @returns The sentence shown under that renter's name.
+   */
+  shareDestination(tenantId: string): string {
+    return this.captions().get(tenantId) ?? 'Not charged this fee';
+  }
 
   /** What the fee shares currently add up to. */
   readonly splitTotal = computed(

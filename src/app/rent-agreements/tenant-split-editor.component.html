@@ -5,6 +5,18 @@
     editable, because the service still performs a reprice -- locking the whole fee would put back
     the all-or-nothing lock its requirement 105 removed.
   -->
+  @if (ridesRentInvoice()) {
+    <!--
+      State C (requirement 35). Not a disabled control: a greyed-out radio invites clicking and
+      explains nothing, and there is no decision here to re-enable later. The fee raises no invoice of
+      its own, so the setting has nothing left to decide and is replaced by the reason.
+    -->
+    <p class="split-note rides-rent">
+      <strong>No setting — the rent invoice has already decided</strong>
+      how many invoices there are and who is on them. This fee is divided evenly across whoever that
+      invoice bills, and follows the lease if its renters change.
+    </p>
+  } @else {
   <div class="split-mode">
     <label class="mode-choice">
       <input
@@ -42,10 +54,12 @@
       </button>
     }
   </div>
+  }
 
-  @if (tenants().length > 0) {
+  @if (tenants().length > 0 && !ridesRentInvoice()) {
     <!--
-      The unit for the whole split, not for a row. v7 put this selector on every row, which let the
+      The unit for the whole split, not for a row. Absent on a fee that rides the rent invoice, where
+      nothing is typed and so there is no unit to state it in. v7 put this selector on every row, which let the
       owner say one renter's share in percent and leave the rest in money — and the service sums the
       percentages a request states and requires exactly 100.00, so that body was always refused while
       this page happily enabled Save. One control is what makes the refused combination impossible to
@@ -90,7 +104,13 @@
       corrected in v14 -- until then typing a share was the choice, and that is the half the user
       reversed on 2026-09-22 in favour of the service's BR-30).
     -->
-    @if (namesRenters()) {
+    @if (ridesRentInvoice()) {
+      <!--
+        Nothing here: the note above the table already says why there is no setting, and the shared
+        note below would invite the owner to "pick Split per Tenant" on a screen that no longer
+        offers it.
+      -->
+    } @else if (namesRenters()) {
       <p class="split-note naming">
         <strong>This fee names the renters below.</strong>
         A renter added to the lease later <strong>will not</strong> be charged it. Pick
@@ -137,20 +157,12 @@
                 </span>
                 <span class="muted">
                   <!--
-                    Requirement 31. Read from the FEE, not from how the lease bills. Since the
-                    service's BR-05 was reversed (its requirement 209) a Shared fee raises one
-                    invoice for the lease whatever the lease does, and a Split per Tenant fee raises
-                    one per renter it names. The two may disagree with the lease, and that is the
-                    feature -- so a caption taken from isGroupInvoice told the renter the wrong
-                    thing for exactly the cases this release exists to make possible.
+                    Requirement 36. Four captions, and the choice between them is a business rule, so
+                    it lives on the component rather than in three nested @ifs here. Requirement 31
+                    still holds inside it: how the LEASE bills is read only for a fee that rides the
+                    rent invoice, because that fee raises none of its own.
                   -->
-                  @if (!row.selected) {
-                    Not charged this fee
-                  } @else if (namesRenters()) {
-                    Billed on its own invoice
-                  } @else {
-                    On one invoice for the lease
-                  }
+                  {{ shareDestination(row.tenantId) }}
                 </span>
               </span>
             </td>

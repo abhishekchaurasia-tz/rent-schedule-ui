@@ -71,6 +71,190 @@ describe('TenantSplitEditorComponent', () => {
     return fixture.nativeElement.querySelectorAll('.roster-row');
   }
 
+  /**
+   * Requirement 35 — a fee that **rides the rent invoice** shows no setting and read-only shares.
+   *
+   * v17 removed the setting **and** the shares together, reasoning that a field the service refuses
+   * has no place on screen. The two are different questions: the service refuses *typed* shares, and
+   * the table's job in this state is to **show** a division the owner may not type. The product
+   * decision draws the state with the figures present — *"No setting — the rent invoice has already
+   * decided how many invoices there are and who is on them. Owes · read only — Alice 150 ·
+   * Bob 150."*
+   */
+  /**
+   * Requirement 36 — the caption under each renter names **where that renter's share lands**.
+   *
+   * Four captions, not two. The product decision's six cases give them in full: a fee on its own
+   * invoice reads them off its **own** mode, and a fee riding the rent invoice has no invoice of its
+   * own, so the only fact left is how the **lease** is billed. That is the single place
+   * `isGroupInvoice` may be consulted — requirement 31 keeps it out of the other two.
+   */
+  /**
+   * Requirement 37 — a **deposit** fee is billed to the renters who carry a deposit share, which is
+   * not always the same set as the rent share.
+   *
+   * The decision flags this as the surprising one and says so about itself: *"A renter recorded at
+   * nothing of the deposit is not billed a deposit fee, even though the same person is billed every
+   * other kind of fee. This is worth a frame if you think a manager would be surprised by it — we
+   * were."*
+   */
+  describe('a deposit fee (requirement 37)', () => {
+    /** A roster whose renters hold the deposit shares given, in order. */
+    function depositRoster(...deposits: readonly (readonly [number, number | null])[]) {
+      return deposits.map(([deposit, depositPercent], index) => ({
+        tenantId: [tenantA, tenantB, tenantC][index],
+        rentAmount: 1000,
+        rentPercent: null,
+        deposit,
+        depositPercent
+      }));
+    }
+
+    /** Renders the deposit drawer for a fee of `total` across that roster. */
+    function depositFeeOf(total: number, roster: ReturnType<typeof depositRoster>): void {
+      fixture.componentRef.setInput('tenants', roster);
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.componentRef.setInput('depositFee', true);
+      fixture.detectChanges();
+    }
+
+    it('FR37_ADepositFee_DividesAcrossDepositHoldersOnly', () => {
+      // Three renters, one holding no deposit. The service bills 450 to two; the screen said 300
+      // to three until this requirement.
+      depositFeeOf(900, depositRoster([1500, null], [1500, null], [0, null]));
+
+      expect(component.rows().map((row) => row.amount)).toEqual([450, 450]);
+    });
+
+    it('FR37_ADepositHeldAsAPercentage_StillCounts', () => {
+      // A share stated as a percentage leaves the amount at zero. Reading only the amount would drop
+      // a renter who holds half the deposit.
+      depositFeeOf(900, depositRoster([0, 50], [0, 50], [0, null]));
+
+      expect(component.rows().map((row) => row.amount)).toEqual([450, 450]);
+    });
+
+    it('FR37_ARenterWithNoDepositShare_IsListedAsNotCharged', () => {
+      depositFeeOf(900, depositRoster([1500, null], [1500, null], [0, null]));
+
+      // Listed, not hidden: seeing who is NOT on a fee is half of reading a split, and this is the
+      // one case the decision calls surprising.
+      expect(rendered().length).toBe(3);
+      expect(rendered()[2].textContent).toContain('Not charged this fee');
+    });
+
+    it('FR37_ADepositFeeReachingNobody_IsStillSaveable', () => {
+      depositFeeOf(900, depositRoster([0, null], [0, null]));
+
+      expect(component.rows()).toEqual([]);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('FR37_AnOrdinaryFee_IgnoresTheDepositColumns', () => {
+      // The same roster, without the deposit flag: an ordinary fee reaches everybody, because only a
+      // deposit is billed from the deposit column.
+      fixture.componentRef.setInput('tenants', depositRoster([1500, null], [1500, null], [0, null]));
+      fixture.componentRef.setInput('feeTotal', 900);
+      fixture.detectChanges();
+
+      expect(component.rows().map((row) => row.amount)).toEqual([300, 300, 300]);
+    });
+  });
+
+  describe("where each renter's share lands (requirement 36)", () => {
+    /** The caption rendered under each renter, in roster order. */
+    function captions(): string[] {
+      return Array.from<Element>(rendered()).map((row) =>
+        row.querySelector('.muted')!.textContent!.trim()
+      );
+    }
+
+    it('FR36_SharedOnItsOwnInvoice_SaysOnOneInvoice', () => {
+      splitAcross(300, tenantA, tenantB);
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On one invoice', 'On one invoice']);
+    });
+
+    it('FR36_SplitPerTenant_NumbersEachInvoice', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      expect(captions()).toEqual(['Invoice 1 of 2', 'Invoice 2 of 2']);
+    });
+
+    it('FR36_SplitPerTenantNamingSomeOfTheRoster_CountsOnlyTheNamed', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+
+      // The count is over the renters the fee NAMES, not over the roster: an unnamed renter is
+      // charged nothing and so is on none of the invoices being counted.
+      expect(captions()).toEqual(['Invoice 1 of 2', 'Invoice 2 of 2', 'Not charged this fee']);
+    });
+
+    it('FR36_OnTheRentInvoiceOfAGroupLease_SaysTheSharedRentInvoice', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.componentRef.setInput('isGroupInvoice', true);
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On the shared rent invoice', 'On the shared rent invoice']);
+    });
+
+    it('FR36_OnTheRentInvoiceOfAPerRenterLease_SaysTheirOwnRentInvoice', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.componentRef.setInput('isGroupInvoice', false);
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On their own rent invoice', 'On their own rent invoice']);
+    });
+
+  });
+
+  describe('a fee that rides the rent invoice (requirement 35)', () => {
+    /** Renders the editor for a fee that raises no invoice of its own. */
+    function ridingTheRent(total: number, ...tenantIds: string[]): void {
+      fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.detectChanges();
+    }
+
+    it('FR35_AFeeOnTheRentInvoice_ShowsNoModeControl', () => {
+      ridingTheRent(300, tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('the rent invoice has already decided');
+    });
+
+    it('FR35_AFeeOnTheRentInvoice_ShowsItsSharesReadOnly', () => {
+      ridingTheRent(300, tenantA, tenantB);
+
+      expect(rendered().length).toBe(2);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+      expect(boxes(0).amount.readOnly).toBeTrue();
+      expect(boxes(1).amount.readOnly).toBeTrue();
+    });
+
+    it('FR35_AFeeOnTheRentInvoice_DividesAcrossEveryoneEvenAfterRentersWerePicked', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+      expect(component.rows().length).toBe(2);
+
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.detectChanges();
+
+      // The rent invoice has already settled who is on it, so a fee riding it covers the whole
+      // roster again — the renters the owner had named describe a fee that no longer exists.
+      expect(component.rows().map((row) => row.amount)).toEqual([100, 100, 100]);
+    });
+  });
+
   describe('switching the mode hands the division back (FR 25 as withdrawn by FR 30)', () => {
     // Until v14 setSplitMode('shared') called resetSplit(), because clearing the shares WAS the way
     // back from naming. Under v14 naming is the mode, so that reset destroyed data for no reason.
@@ -668,18 +852,21 @@ describe('TenantSplitEditorComponent', () => {
     // and a Split per Tenant fee raises one per renter -- the two may disagree with the lease, and
     // that is the feature. Taken from the lease, the caption told the renter the wrong thing for
     // exactly the cases this release exists to make possible.
+    // The wording changed on 2026-09-29 with requirement 36, which replaced two captions with the
+    // four the product decision names. The subject of this case did not: for a fee that raises its
+    // OWN invoice, the caption still comes from the fee and never from the lease.
     splitAcross(300, tenantA, tenantB);
-    expect(rendered()[0].textContent).toContain('Billed on its own invoice');
+    expect(rendered()[0].textContent).toContain('Invoice 1 of 2');
 
     // The LEASE flips, and the caption does not: it is not the lease's question any more.
     fixture.componentRef.setInput('isGroupInvoice', true);
     fixture.detectChanges();
-    expect(rendered()[0].textContent).toContain('Billed on its own invoice');
+    expect(rendered()[0].textContent).toContain('Invoice 1 of 2');
 
     // The FEE flips, and the caption follows it.
     component.setSplitMode('shared');
     fixture.detectChanges();
-    expect(rendered()[0].textContent).toContain('one invoice for the lease');
+    expect(rendered()[0].textContent).toContain('On one invoice');
   });
   describe('the paid box', () => {
     it('gives each row its own amount box and paid box', () => {

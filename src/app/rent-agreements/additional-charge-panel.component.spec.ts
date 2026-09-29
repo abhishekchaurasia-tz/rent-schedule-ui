@@ -734,6 +734,29 @@ describe('AdditionalChargePanelComponent', () => {
     });
   });
 
+  /**
+   * Requirement 35 at the panel's own seam.
+   *
+   * The panel gated the whole split region on `!attachedWithRentalInvoice`, so ticking the box made
+   * the renters disappear from the drawer entirely. What "no setting at all" removes is the setting;
+   * what the owner still has to be able to read is what each renter ends up owing.
+   */
+  it('FR35_AFeeOnTheRentInvoice_KeepsTheShareTableOnScreen', () => {
+    component.tenants = [
+      '11111111-1111-1111-1111-111111111111',
+      '22222222-2222-2222-2222-222222222222'
+    ].map((tenantId) => ({ tenantId, rentAmount: 0, rentPercent: null, deposit: 0, depositPercent: null }));
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.form.patchValue({ attachedWithRentalInvoice: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+  });
+
   it('prefills a one-time charge from initialCharge (Edit)', () => {
     const existing: AdditionalChargeCreationRequest = {
       notes: 'Existing note',
@@ -1092,13 +1115,18 @@ describe('AdditionalChargePanelComponent', () => {
     });
 
     /**
-     * Requirement 29 — a fee that rides the rent invoice offers no split and sends none.
+     * Requirement 29 as corrected by 35 — a fee that rides the rent invoice offers no SETTING, and
+     * still shows what each renter owes.
      *
      * That invoice has already settled how many invoices there are and who is on them, so a mode
-     * control here would ask the owner for a decision the fee cannot carry. The service refuses both
-     * fields outright (backend requirements 210 and 211).
+     * control here would ask the owner for a decision the fee cannot carry, and the service refuses
+     * both fields outright (backend requirements 210 and 211).
+     *
+     * **This case changed its expectation on 2026-09-29 and kept its subject.** It asserted that the
+     * whole editor disappeared, which conflated refusing a TYPED figure with hiding a SHOWN one. The
+     * product decision draws this state with the figures present and the setting gone.
      */
-    it('hides the renter control for a fee that rides the rental invoice', () => {
+    it('hides the setting but not the shares for a fee that rides the rental invoice', () => {
       openWithRoster(tenantA, tenantB);
 
       expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
@@ -1106,7 +1134,8 @@ describe('AdditionalChargePanelComponent', () => {
       component.form.patchValue({ attachedWithRentalInvoice: true });
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).toBeNull();
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
     });
 
     it('sends neither splitMode nor tenantShares for a fee that rides the rental invoice', () => {
