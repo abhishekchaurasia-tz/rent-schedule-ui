@@ -35,9 +35,17 @@ plan changes no contract — every rule here is a condition on fields the reques
       correct only until the roster moves.
 - [x] **May a Split per Tenant fee sit on a lease that bills as a group?** *Yes — BR-05 as reversed,
       requirement 209.* The fee decides its own shape and may disagree with the lease.
-- [ ] **A-1 — can this screen tell that a fee has taken money?** Nothing in
-      `GET /rent/agreements/{id}` says so. **Blocks Milestone 5 only**, which is written to be the last
-      one for that reason; Milestones 1 to 4 do not depend on it.
+- [x] **A-1 — can this screen tell that a fee has taken money?** *Yes — answered 2026-09-29.* The
+      response carries `isApplied`, and this repo's model has held it all along. Its name is older than
+      its meaning: the service's FR-134 narrowed it from *"any invoice line references this charge"* to
+      *"has taken a payment"*, which is exactly the line requirement 33 freezes on. No API change was
+      needed; the service's own documentation described the wide rule and was corrected in the same pass.
+- [x] **D-5 — the fee panel on a lease that has no renters yet.** *Settled on the client page, and already
+      built.* That page proposes *"the setting shown with **Split per Tenant** greyed out and a line
+      saying when it becomes available"*, and `tenant-split-editor` has done exactly that since before
+      this plan: the radio is disabled on an empty roster and the note reads *"This lease has no renters
+      saved yet, so the fee is charged to the lease itself."*
+      **Outstanding is the design frame for that state, not the behaviour.**
 
 ### What the code actually looks like now, read before planning
 
