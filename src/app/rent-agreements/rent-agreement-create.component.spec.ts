@@ -623,6 +623,46 @@ describe('RentAgreementCreateComponent', () => {
     expect(component.editingCharge).toEqual(depositCharge);
   });
 
+  /**
+   * Requirement 33, at the seam that nearly shipped open.
+   *
+   * The split editor freezes a paid fee's mode and renters, and the panel passes the flag through --
+   * but the panel is handed one charge, not the agreement, so only this screen knows which fee has
+   * been paid against. Without this binding the freeze was proved in the editor's own tests and fired
+   * on no screen at all.
+   */
+  it('tells the panel when the fee it is reopening has taken a payment (FR 33)', () => {
+    fixture.detectChanges();
+
+    const paid: AdditionalChargeCreationRequest = {
+      id: '0198e0a4-1f2b-7c33-8d41-aaaaaaaaaaaa',
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: false,
+      dueDate: '2026-08-15',
+      hasNoEndDate: false,
+      items: [{ itemType: 'Parking', description: 'Bay', quantity: 1, rate: 50, amount: 50 }]
+    };
+    const unpaid: AdditionalChargeCreationRequest = {
+      ...paid,
+      id: '0198e0a4-1f2b-7c33-8d41-bbbbbbbbbbbb'
+    };
+
+    component.additionalCharges.set([paid, unpaid]);
+    component.appliedChargeIds.set(new Set([paid.id!]));
+
+    // Nothing is open yet: adding a fee is not editing one, and a fee that does not exist has taken
+    // nothing.
+    expect(component.editingChargeHasTakenMoney).toBeFalse();
+
+    component.editAdditionalCharge(0);
+    expect(component.editingChargeHasTakenMoney).toBeTrue();
+
+    component.closeAdditionalChargePanel();
+    component.editAdditionalCharge(1);
+    expect(component.editingChargeHasTakenMoney).toBeFalse();
+  });
+
   it('re-creating an edited charge replaces it in place, preserving its target and index', () => {
     fixture.detectChanges();
 

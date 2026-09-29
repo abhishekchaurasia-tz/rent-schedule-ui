@@ -760,6 +760,21 @@ export class RentAgreementCreateComponent {
   }
 
   /**
+   * Whether the fee currently open in the panel has taken a payment (requirement 33).
+   *
+   * <b>The panel needs this and cannot work it out.</b> It is handed one charge, not the agreement,
+   * so the applied set lives here. Without this the freeze would exist in the editor and never fire
+   * on any screen — proved in tests, unreachable in the product.
+   *
+   * False when adding rather than editing, which is right: a fee that does not exist yet has taken
+   * nothing.
+   */
+  get editingChargeHasTakenMoney(): boolean {
+    const index = this.editingChargeIndex();
+    return index !== null && this.isChargeApplied(index);
+  }
+
+  /**
    * The rent the form currently states, for requirement 32. Read from the form rather than from the
    * loaded agreement, because on this screen the owner may be in the middle of changing it -- and the
    * fee they are authoring will be saved against the rent they are typing, not the one on file.
