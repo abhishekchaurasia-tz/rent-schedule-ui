@@ -78,7 +78,19 @@ The one assumption this spec carried — whether stated figures and a live roste
 was answered in v14 rather than left standing: the service stores a row per payer on every charge and
 records the mode separately, so they can.
 
-**A-1 (v17) — this screen cannot tell whether a fee has taken money.** Requirement 33 freezes a paid
+**A-1 (v17) — ANSWERED 2026-09-29, and the answer was that the field was already there.**
+~~this screen cannot tell whether a fee has taken money.~~ It can: the response carries **`isApplied`**,
+and the UI model has held it since before this version. Its name is older than its meaning — FR-134
+narrowed it from *“any invoice line references this charge”* to *“has taken a payment”*, which is exactly
+the line requirement 33 freezes on. The service-side documentation still described the wide rule and
+was corrected in the same change.
+
+**So requirement 33 is a rendering rule, not an error-handling one**, and the owner is told before the
+save rather than after it. No API change was needed. *This is the outcome the assumption below
+named as the good case; it is kept, struck through, because the reasoning is what made it cheap to
+check.*
+
+~~**A-1 (v17) — this screen cannot tell whether a fee has taken money.** Requirement 33 freezes a paid
 fee's mode and renters, and `GET /rent/agreements/{id}` carries nothing that says a charge has been
 paid against. Until it does, the screen can only report the service's refusal; the read-only state is
 deferred.
@@ -88,7 +100,7 @@ to add — requirement 33 becomes a rendering rule instead of an error-handling 
 told before the save rather than after it.
 
 **Consequence of leaving it:** an owner edits a paid fee's renters, saves, and learns from a `422`
-what the screen could have shown them.
+what the screen could have shown them.~~
 
 ## 1. System Architecture & Tech Stack
 

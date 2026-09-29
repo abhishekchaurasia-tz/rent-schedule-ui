@@ -133,6 +133,12 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
   @Input() initialCharge: AdditionalChargeCreationRequest | null = null;
 
   /**
+   * Whether the fee being edited has already taken a payment (requirement 33). Passed straight to the
+   * split editor, which owns what that settles.
+   */
+  @Input() chargeHasTakenMoney = false;
+
+  /**
    * The split to open the editor on, built once from {@link initialCharge} (requirement 27).
    *
    * **Held rather than computed on every read**, because the editor applies a seed once per object

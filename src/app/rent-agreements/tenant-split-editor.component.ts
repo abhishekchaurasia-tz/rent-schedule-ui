@@ -97,6 +97,19 @@ export class TenantSplitEditorComponent {
   /** Whether the lease bills on one shared invoice — wording only, never sent. */
   readonly isGroupInvoice = input<boolean>(false);
 
+  /**
+   * Whether an invoice raised from this fee has already <b>taken a payment</b> (requirement 33).
+   *
+   * <b>Money, not issuance.</b> The service freezes on exactly this line: the rows that took the
+   * money cannot be re-divided, so the setting that produced them cannot move -- while repricing the
+   * fee is an edit it still performs. Freezing on issuance would put back the all-or-nothing lock its
+   * requirement 105 deliberately removed, which shut this very editor the hour it shipped.
+   *
+   * It arrives as the response's <c>isApplied</c>, whose name is older than its meaning: FR-134
+   * narrowed it from "any invoice line references this charge" to "has taken a payment".
+   */
+  readonly hasTakenMoney = input<boolean>(false);
+
   /** The split and its blocker, re-emitted whenever either changes. */
   readonly splitChange = output<TenantSplitState>();
 
@@ -182,6 +195,13 @@ export class TenantSplitEditorComponent {
    * What changed is where the owner makes that choice — the control, not the first keystroke.
    */
   readonly namesRenters = computed(() => this.mode() === 'PerTenant');
+
+  /**
+   * Whether <b>who owes this fee</b> is settled (requirement 33) -- its mode and its renter set, and
+   * nothing else. The amounts stay editable on purpose: the service accepts a reprice on a paid fee,
+   * so a screen that locked everything would forbid an edit the system performs.
+   */
+  readonly whoOwesIsSettled = computed(() => this.hasTakenMoney());
 
   /**
    * The renters the table covers: the ticked ones, or the whole roster while the fee is shared.
@@ -354,6 +374,11 @@ export class TenantSplitEditorComponent {
    * selected Alice alone and charged her the lot.
    */
   toggleTenant(tenantId: string): void {
+    // Requirement 33: the renter set is settled with the mode, and for the same reason.
+    if (this.whoOwesIsSettled()) {
+      return;
+    }
+
     // v14: the ticks belong to Split per Tenant. A Shared fee is billed to the LIVE ROSTER, so
     // unticking somebody there cannot take them off it -- the control would promise something the
     // invoice does not do. The template disables it; this guard is the same rule where it is enforced
@@ -391,6 +416,13 @@ export class TenantSplitEditorComponent {
    * deliberate click.
    */
   setSplitMode(mode: 'shared' | 'split'): void {
+    // Requirement 33: guarded here as well as on the control, because the control is not the only
+    // way in -- a host, a keyboard, or a later refactor can reach this method directly, and the rule
+    // is about the fee rather than about the radio button.
+    if (this.whoOwesIsSettled()) {
+      return;
+    }
+
     // Requirement 26: this is where the mode is decided, and the only place it is written.
     this.mode.set(mode === 'shared' ? 'Shared' : 'PerTenant');
 

@@ -589,6 +589,79 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares).toBeUndefined();
   });
 
+  describe('a fee that has taken money keeps who owes it (FR 33)', () => {
+    // The service freezes on MONEY, not on issuance -- user, 2026-09-29. Its requirement 105 removed
+    // an all-or-nothing edit lock because an issued UNPAID invoice is corrected forward, and that
+    // stale lock shut this editor the hour it shipped. Freezing on issuance would rebuild it.
+    //
+    // The flag arrives as the response's isApplied, whose name is older than its meaning: FR-134
+    // narrowed it from "any invoice line references this charge" to "has taken a payment".
+
+    function paidSplitAcross(total: number, ...tenantIds: string[]): void {
+      splitAcross(total, ...tenantIds);
+      fixture.componentRef.setInput('hasTakenMoney', true);
+      fixture.detectChanges();
+    }
+
+    it('locks both mode controls and says why', () => {
+      paidSplitAcross(300, tenantA, tenantB);
+
+      const choices = fixture.nativeElement.querySelectorAll('.mode-choice input');
+
+      expect(choices[0].disabled).toBeTrue();
+      expect(choices[1].disabled).toBeTrue();
+      expect(fixture.nativeElement.textContent).toContain('who owes it can no longer change');
+      expect(fixture.nativeElement.textContent).toContain('amounts can still be edited');
+    });
+
+    it('refuses a mode change reached past the control', () => {
+      // Guarded in the method as well as on the radio, because the radio is not the only way in --
+      // a host, a keyboard, or a later refactor can call this directly, and the rule is about the
+      // fee rather than about the control.
+      paidSplitAcross(300, tenantA, tenantB);
+      expect(reported!.mode).toBe('PerTenant');
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('PerTenant');
+    });
+
+    it('refuses a renter tick reached past the control', () => {
+      paidSplitAcross(300, tenantA, tenantB);
+      const before = reported!.shares!.map((share) => share.tenantId);
+
+      component.toggleTenant(tenantA);
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.tenantId)).toEqual(before);
+    });
+
+    it('still takes an amount edit, because the service still performs a reprice', () => {
+      // The assertion that keeps FR-134 honest. A screen that locked the whole fee would forbid an
+      // edit the system does happily, which is the failure requirement 105 removed a lock to avoid.
+      paidSplitAcross(300, tenantA, tenantB);
+
+      component.typeShare(tenantA, '200');
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([200, 100]);
+    });
+
+    it('leaves an unpaid fee alone', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      const choices = fixture.nativeElement.querySelectorAll('.mode-choice input');
+
+      expect(choices[0].disabled).toBeFalse();
+      expect(fixture.nativeElement.textContent).not.toContain('who owes it can no longer change');
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+      expect(reported!.mode).toBe('Shared');
+    });
+  });
+
   it('says how each share is billed, from the FEE and not from the lease (FR 31)', () => {
     // v17: this read isGroupInvoice until requirement 31. The service reversed BR-05 (its
     // requirement 209), so a Shared fee raises one invoice for the lease whatever the lease bills

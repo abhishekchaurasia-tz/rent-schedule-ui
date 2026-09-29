@@ -1,4 +1,10 @@
 <section class="split-editor">
+  <!--
+    Requirement 33. Once the fee has taken money, WHO OWES IT is settled: the rows that took the
+    money cannot be re-divided, so the setting that produced them cannot move. The amounts below stay
+    editable, because the service still performs a reprice -- locking the whole fee would put back
+    the all-or-nothing lock its requirement 105 removed.
+  -->
   <div class="split-mode">
     <label class="mode-choice">
       <input
@@ -6,6 +12,7 @@
         name="splitMode"
         [checked]="isSharedByEveryone()"
         (change)="setSplitMode('shared')"
+        [disabled]="whoOwesIsSettled()"
       />
       <span>Shared Lease</span>
     </label>
@@ -15,10 +22,16 @@
         name="splitMode"
         [checked]="!isSharedByEveryone()"
         (change)="setSplitMode('split')"
-        [disabled]="tenants().length === 0"
+        [disabled]="whoOwesIsSettled() || tenants().length === 0"
       />
       <span>Split per Tenant</span>
     </label>
+    @if (whoOwesIsSettled()) {
+      <p class="split-note settled">
+        <strong>This fee has taken a payment, so who owes it can no longer change.</strong>
+        Its amounts can still be edited.
+      </p>
+    }
     @if (hasTypedShares()) {
       <button type="button" class="link-btn reset-all" (click)="resetSplit()">
         @if (isSharedByEveryone()) {
