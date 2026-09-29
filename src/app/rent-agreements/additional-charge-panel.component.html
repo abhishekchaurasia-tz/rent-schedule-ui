@@ -317,8 +317,14 @@
       Who pays, last: everything above decides what the fee is, and the split can only divide a total
       that already exists. Rendered only when the host handed this panel a roster — the lease
       create/edit screens pass none and so show no renter control at all (requirement 22).
+
+      And never for a fee that rides the rent invoice (requirement 29). That invoice has already
+      settled how many invoices there are and who is on them, so a mode control here would ask the
+      owner for a decision the fee cannot carry — and the service refuses both fields outright
+      (backend requirements 210 and 211).
     -->
     @if (tenants; as roster) {
+      @if (!form.get('attachedWithRentalInvoice')!.value) {
       <app-tenant-split-editor
         [tenants]="roster"
         [feeTotal]="subAmount"
@@ -327,6 +333,7 @@
         [seed]="splitSeed"
         (splitChange)="onSplitChange($event)"
       />
+      }
     }
   </form>
 

@@ -786,16 +786,23 @@ export class AdditionalChargePanelComponent implements OnInit {
     // Requirement 20. `tenantShares` is absent for a fee shared by everybody rather than empty:
     // both read the same server-side, but omission says "not specified" where [] says "specified as
     // nobody". `tenantIds` is not sent at all — the split is what says who pays now.
-    const shares = this.splitState().shares;
+    // Requirement 29: a fee riding the rent invoice carries neither, whatever the editor last held.
+    // The table is hidden for that shape, so a split still in state was authored before the owner
+    // ticked the toggle -- and sending it would state a division from a control they can no longer
+    // see, which the service refuses.
+    const shares = ridesRentalInvoice ? undefined : this.splitState().shares;
 
     const request: AdditionalChargeCreationRequest = {
       ...(shares === undefined ? {} : { tenantShares: shares }),
 
-      // Requirement 26. Sent on EVERY submission, including one carrying no split. The service reads
-      // an absent field the way the payer-row count used to be read -- a split was sent, so the fee
-      // names its payers -- which is wrong for exactly the case this field exists for: a Shared Lease
-      // fee whose owner typed figures.
-      splitMode: this.splitState().mode,
+      // Requirement 26. Sent on every submission that CAN carry one, including one carrying no split.
+      // The service reads an absent field the way the payer-row count used to be read -- a split was
+      // sent, so the fee names its payers -- which is wrong for exactly the case this field exists
+      // for: a Shared Lease fee whose owner typed figures.
+      //
+      // Requirement 29 is the exception, and the only one: the fee that rides the rent invoice takes
+      // its payers from that invoice and records no setting of its own.
+      ...(ridesRentalInvoice ? {} : { splitMode: this.splitState().mode }),
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
       attachedWithRentalInvoice: ridesRentalInvoice,

@@ -1036,6 +1036,74 @@ describe('AdditionalChargePanelComponent', () => {
     }
 
     /**
+     * Requirement 29 — a fee that rides the rent invoice offers no split and sends none.
+     *
+     * That invoice has already settled how many invoices there are and who is on them, so a mode
+     * control here would ask the owner for a decision the fee cannot carry. The service refuses both
+     * fields outright (backend requirements 210 and 211).
+     */
+    it('hides the renter control for a fee that rides the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+
+      component.form.patchValue({ attachedWithRentalInvoice: true });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).toBeNull();
+    });
+
+    it('sends neither splitMode nor tenantShares for a fee that rides the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      component.form.patchValue({
+        isRecurring: true,
+        attachedWithRentalInvoice: true,
+        startDate: '2026-10-01',
+        hasNoEndDate: true
+      });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+
+      component.create();
+
+      expect(emitted?.splitMode).toBeUndefined();
+      expect(emitted?.tenantShares).toBeUndefined();
+    });
+
+    /**
+     * The order an owner actually reaches this by: author the split, then tick the toggle. Without
+     * the guard the request carries a division from a table they can no longer see, and the service
+     * answers 422 naming a field that is no longer on screen.
+     */
+    it('drops a split already authored when the fee is switched to ride the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      editor().setSplitMode("split");
+      fixture.detectChanges();
+
+      expect(component.splitState().shares).toBeDefined();
+
+      component.form.patchValue({
+        isRecurring: true,
+        attachedWithRentalInvoice: true,
+        startDate: '2026-10-01',
+        hasNoEndDate: true
+      });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+
+      component.create();
+
+      expect(emitted?.tenantShares).toBeUndefined();
+      expect(emitted?.splitMode).toBeUndefined();
+    });
+
+    /**
      * Requirement 22, in the one assertion that keeps it true.
      *
      * The lease create/edit screens host this same panel and must never gain a renter control. They
