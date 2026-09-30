@@ -167,6 +167,11 @@
           The fee will still be billed — its invoice is raised <strong>overdue</strong>, which is what
           recording past work does.
         </div>
+      } @else if (dueDateOutsideTheLease === 'after-end') {
+        <div class="banner warn due-date-warning" role="status">
+          <strong>This date is after the lease ends ({{ leaseEndDate }}).</strong>
+          The fee will still be billed. Check the date is the one you meant.
+        </div>
       }
     } @else {
       <!-- Attached to the rental invoice (Yes): the charge rides the already-existing rental invoice's

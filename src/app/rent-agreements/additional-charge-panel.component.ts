@@ -235,10 +235,16 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
    * a different rule with a different reason, and asserting anything about it here would have this
    * screen speak for the service.
    *
+   * **The end is guarded on existing, not compared against nothing.** `leaseEndDate` arrives `null`
+   * on a month-to-month lease — which this panel already reads to derive {@link leaseTermType} — and a
+   * lease with no last day has no date that can be after it. Written as a bare comparison every date
+   * would warn there, which is the loudest possible version of a warning that means nothing.
+   *
    * Compared as `YYYY-MM-DD` strings, which order lexicographically — {@link toIsoDate} writes the
    * datepicker's `Date` in local time, so no timezone shift can move the comparison across a day.
+   * Both bounds are **inclusive**: the lease's own first and last days are inside it.
    */
-  get dueDateOutsideTheLease(): 'before-start' | null {
+  get dueDateOutsideTheLease(): 'before-start' | 'after-end' | null {
     if (this.isRecurring) {
       return null;
     }
@@ -250,6 +256,10 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
 
     if (this.leaseStartDate && dueDate < this.leaseStartDate) {
       return 'before-start';
+    }
+
+    if (this.leaseEndDate && dueDate > this.leaseEndDate) {
+      return 'after-end';
     }
 
     return null;
