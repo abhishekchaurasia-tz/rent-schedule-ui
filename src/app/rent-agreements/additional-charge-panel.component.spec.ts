@@ -1286,4 +1286,177 @@ describe('AdditionalChargePanelComponent', () => {
       expect(component.splitState().blocker).toBeNull();
     });
   });
+
+  /**
+   * Requirement 39 (spec 02 v21) — a one-off fee dated outside the lease is warned about, never
+   * refused. This block holds the lower arm; the upper one is beside it.
+   *
+   * The screen said nothing at all before this: the Due Date picker carries no `min` and no `max`,
+   * and nothing on the panel compared the date to the lease it belonged to. A fee dated six months
+   * before the tenancy began was authored, saved and billed in exactly the same silence as one dated
+   * inside the term — and its invoice arrives overdue, which is the point of back-dating and was
+   * nowhere said.
+   */
+  describe('a fee dated outside the lease says so (requirement 39)', () => {
+    /** Opens the panel against a fixed-term lease running the whole of 2026. */
+    function openAgainstAFixedTermLease(): void {
+      component.leaseStartDate = '2026-01-01';
+      component.leaseEndDate = '2026-12-31';
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+    }
+
+    /** The warning element, or `null` when the panel is showing none. */
+    function warning(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.due-date-warning');
+    }
+
+    it('warns that the invoice will be overdue when the fee predates the lease', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2025-11-20' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBe('before-start');
+      expect(warning()?.textContent).toContain('overdue');
+    });
+
+    it('names the lease start date, so the owner can check it against what they typed', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2025-11-20' });
+      fixture.detectChanges();
+
+      expect(warning()?.textContent).toContain('2026-01-01');
+    });
+
+    it('leaves Save enabled — this is a warning, not a refusal', () => {
+      openAgainstAFixedTermLease();
+
+      const item = component.items.at(0);
+      item.patchValue({ lineItemId: parkingItem.id, description: 'Repair', quantity: 1, rate: 75 });
+      component.recalculateAmount(0);
+      component.form.patchValue({ dueDate: '2025-11-20' });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+      component.create();
+
+      expect(emitted).withContext('the back-dated fee was refused by the screen').toBeDefined();
+      expect(emitted!.dueDate).toBe('2025-11-20');
+    });
+
+    it('says nothing when the fee falls inside the term', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2026-06-15' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBeNull();
+      expect(warning()).toBeNull();
+    });
+
+    it('says nothing on the lease\'s own first day — the bound is inclusive', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2026-01-01' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBeNull();
+    });
+
+    it('says nothing about a recurring fee, whose window is the generation window', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ isRecurring: true, startDate: '2025-11-20' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBeNull();
+      expect(warning()).toBeNull();
+    });
+
+    it('warns that the date sits past the end when the fee outlives the lease', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2027-03-01' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBe('after-end');
+      expect(warning()?.textContent).toContain('2026-12-31');
+    });
+
+    it('leaves Save enabled past the end too — the service accepts it (its requirement 222)', () => {
+      openAgainstAFixedTermLease();
+
+      const item = component.items.at(0);
+      item.patchValue({ lineItemId: parkingItem.id, description: 'Repair', quantity: 1, rate: 75 });
+      component.recalculateAmount(0);
+      component.form.patchValue({ dueDate: '2027-03-01' });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+      component.create();
+
+      expect(emitted).withContext('the fee past the end was refused by the screen').toBeDefined();
+      expect(emitted!.dueDate).toBe('2027-03-01');
+    });
+
+    it('says nothing on the lease\'s own last day — the bound is inclusive', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2026-12-31' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBeNull();
+    });
+
+    /**
+     * The arm that is wrong if the null is not guarded. A month-to-month lease arrives with
+     * `leaseEndDate: null` — which this panel already reads to derive `leaseTermType` — and a lease
+     * with no last day has no date that can be after it. Compared against `null` rather than guarded,
+     * every date would warn: the loudest possible version of a warning that means nothing.
+     */
+    it('never warns about the end on a month-to-month lease, however far out the date', () => {
+      component.leaseStartDate = '2026-01-01';
+      component.leaseEndDate = null;
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+
+      component.form.patchValue({ dueDate: '2030-07-04' });
+      fixture.detectChanges();
+
+      expect(component.leaseTermType).toBe('month_to_month');
+      expect(component.dueDateOutsideTheLease).toBeNull();
+      expect(warning()).toBeNull();
+    });
+
+    it('still warns below the start on a month-to-month lease, which does have one', () => {
+      component.leaseStartDate = '2026-01-01';
+      component.leaseEndDate = null;
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+
+      component.form.patchValue({ dueDate: '2025-11-20' });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBe('before-start');
+    });
+
+    it('clears the warning when the date is cleared, rather than leaving the last one up', () => {
+      openAgainstAFixedTermLease();
+
+      component.form.patchValue({ dueDate: '2025-11-20' });
+      fixture.detectChanges();
+      expect(warning()).not.toBeNull();
+
+      component.form.patchValue({ dueDate: null });
+      fixture.detectChanges();
+
+      expect(component.dueDateOutsideTheLease).toBeNull();
+      expect(warning()).toBeNull();
+    });
+  });
+
 });
