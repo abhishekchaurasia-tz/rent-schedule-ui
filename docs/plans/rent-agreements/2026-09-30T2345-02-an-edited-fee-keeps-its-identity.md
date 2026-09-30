@@ -103,13 +103,28 @@ and an addition.
 
 ## 6. Final Validation
 
-*To be filled at execution.*
+**Suite 523 → 527**, all green. Three of the four new cases were **red before the fix** and the fourth
+— the newly added fee — passed throughout, which is what says the add branch was never the problem.
 
-- [ ] Requirement 40 named by at least one test.
-- [ ] A stored fee opened and saved unchanged keeps its `id`.
-- [ ] A stored fee whose **mode** changes keeps its `id` — the reported case.
-- [ ] A stored fee whose amount, items or dates change keeps its `id`.
-- [ ] A **newly added** fee is still sent with no `id`.
-- [ ] The **deposit** drawer behaves identically.
-- [ ] Removing a fee still removes it.
-- [ ] The reported case was **red before the fix**.
+### Diverged from the plan
+
+**The first version of the fix was wrong and an existing case caught it within one run.** It spread the
+id unconditionally, so a fee added on this screen and edited *before* the save — which has no id — came
+back carrying `id: undefined`, a key the drawer never emitted.
+`re-creating an edited charge replaces it in place, preserving its target and index` failed on exactly
+that.
+
+**That case was right, and it was not touched.** The implementation moved instead: the id is carried
+only when the replaced entry has one. A test that fails because the code grew a defect is the test
+working, and changing it would have hidden a real (if small) regression in the payload.
+
+- [x] Requirement 40 named by at least one test. *Four cases under one `describe` naming it.*
+- [x] A stored fee opened and saved unchanged keeps its `id`.
+- [x] A stored fee whose **mode** changes keeps its `id` — the reported case.
+- [x] A stored fee whose amount, items or dates change keeps its `id`. *Same path; the mode case is the
+      one that was reported, and is the one asserted.*
+- [x] A **newly added** fee is still sent with no `id`, and with no `id` key at all.
+- [x] The **deposit** drawer behaves identically. *It calls the same method, and a case pins it.*
+- [x] Removing a fee still removes it. *`removeAdditionalCharge` untouched; the suite's existing cases
+      for it pass unmodified.*
+- [x] The reported case was **red before the fix**, along with two others.
