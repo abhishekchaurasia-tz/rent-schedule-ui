@@ -41,7 +41,7 @@ So the warning lands on every one of them without a single call site changing.
 **One, and it is recorded in the spec as A-2 rather than assumed away.**
 
 The billing service bounded a one-off charge by **both** ends of the lease until 2026-09-30. Its spec
-`06` requirement 220 opened the **lower** one that day; the **upper** one still refuses with
+`06` requirement 221 opened the **lower** one that day; the **upper** one still refuses with
 `invoice.due_date_after_lease_end` and a `422`. The user's decision is that both ends are accepted and
 the owner is warned rather than refused, so the service is being changed to match — **in its own repo,
 under its own spec and plan.**
@@ -113,7 +113,7 @@ version of a warning that means nothing. *Start debugging here:* the `leaseEndDa
 **In scope:** the one-off **Due Date** on `AdditionalChargePanelComponent`, before the save.
 
 **Out of scope — the recurring window.** A recurring fee's Start and End dates are bounded by the
-service's **generation window**, a different rule with a different reason, which requirement 220 does
+service's **generation window**, a different rule with a different reason, which requirement 221 does
 not touch. Warning about it here would have this screen assert something the service does not.
 *(Confirmed by the user 2026-09-30.)*
 
@@ -151,8 +151,8 @@ changes nothing that is stored or sent. Milestone 1 stands alone if Milestone 2 
 
 **Suite 511 → 523**, all green. Twelve cases added, seven at Milestone 1 and five at Milestone 2.
 
-**A-2 was answered before Milestone 2 shipped, not assumed.** The billing service's spec `06` v132,
-requirement 221, withdrew its upper bound the same day — so Milestone 2 went in as a **warning**, as
+**A-2 was answered before Milestone 2 shipped, not assumed.** The billing service's spec `06` v133,
+requirement 222, withdrew its upper bound the same day — so Milestone 2 went in as a **warning**, as
 written, rather than as the Save-blocking rework the prerequisite named as the alternative.
 
 **The month-to-month guard was proved by removing it.** With `this.leaseEndDate &&` taken out and the
@@ -189,5 +189,5 @@ other resting on the template.
       clean form — the stale-notice case is the one worth holding.*
 - [x] All four screens that open the panel get it, because none of them changed. *No call site was
       touched; both inputs were already passed by all four.*
-- [x] **A-2 answered** — the service accepts a date past the lease's end (spec `06` v132, requirement
+- [x] **A-2 answered** — the service accepts a date past the lease's end (spec `06` v133, requirement
       221, implemented and green).

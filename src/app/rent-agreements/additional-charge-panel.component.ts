@@ -227,7 +227,7 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
    * The owner is **warned, never refused**: Save stays enabled, the Due Date picker gains no `max` and
    * keeps no `min`, and no control is disabled. A fee dated before the lease begins is the ordinary
    * way to bill work already done, and its invoice is *meant* to arrive overdue. The billing service
-   * accepts both ends (its requirement 221), so a refusal here would invent a rule the server does not
+   * accepts both ends (its requirement 222), so a refusal here would invent a rule the server does not
    * have.
    *
    * **Only a one-off fee has a date of its own to test.** The Due Date control exists only while

@@ -1386,7 +1386,7 @@ describe('AdditionalChargePanelComponent', () => {
       expect(warning()?.textContent).toContain('2026-12-31');
     });
 
-    it('leaves Save enabled past the end too — the service accepts it (its requirement 221)', () => {
+    it('leaves Save enabled past the end too — the service accepts it (its requirement 222)', () => {
       openAgainstAFixedTermLease();
 
       const item = component.items.at(0);
