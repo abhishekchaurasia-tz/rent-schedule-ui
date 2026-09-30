@@ -71,7 +71,356 @@ describe('TenantSplitEditorComponent', () => {
     return fixture.nativeElement.querySelectorAll('.roster-row');
   }
 
-  describe('Shared Lease carries the same boxes (FR 25)', () => {
+  /**
+   * Requirement 35 — a fee that **rides the rent invoice** shows no setting and read-only shares.
+   *
+   * v17 removed the setting **and** the shares together, reasoning that a field the service refuses
+   * has no place on screen. The two are different questions: the service refuses *typed* shares, and
+   * the table's job in this state is to **show** a division the owner may not type. The product
+   * decision draws the state with the figures present — *"No setting — the rent invoice has already
+   * decided how many invoices there are and who is on them. Owes · read only — Alice 150 ·
+   * Bob 150."*
+   */
+  /**
+   * Requirement 36 — the caption under each renter names **where that renter's share lands**.
+   *
+   * Four captions, not two. The product decision's six cases give them in full: a fee on its own
+   * invoice reads them off its **own** mode, and a fee riding the rent invoice has no invoice of its
+   * own, so the only fact left is how the **lease** is billed. That is the single place
+   * `isGroupInvoice` may be consulted — requirement 31 keeps it out of the other two.
+   */
+  /**
+   * Requirement 37 — a **deposit** fee is billed to the renters who carry a deposit share, which is
+   * not always the same set as the rent share.
+   *
+   * The decision flags this as the surprising one and says so about itself: *"A renter recorded at
+   * nothing of the deposit is not billed a deposit fee, even though the same person is billed every
+   * other kind of fee. This is worth a frame if you think a manager would be surprised by it — we
+   * were."*
+   */
+  describe('a deposit fee (requirement 37)', () => {
+    /** A roster whose renters hold the deposit shares given, in order. */
+    function depositRoster(...deposits: readonly (readonly [number, number | null])[]) {
+      return deposits.map(([deposit, depositPercent], index) => ({
+        tenantId: [tenantA, tenantB, tenantC][index],
+        rentAmount: 1000,
+        rentPercent: null,
+        deposit,
+        depositPercent
+      }));
+    }
+
+    /** Renders the deposit drawer for a fee of `total` across that roster. */
+    function depositFeeOf(total: number, roster: ReturnType<typeof depositRoster>): void {
+      fixture.componentRef.setInput('tenants', roster);
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.componentRef.setInput('depositFee', true);
+      fixture.detectChanges();
+    }
+
+    it('FR37_ADepositFee_DividesAcrossDepositHoldersOnly', () => {
+      // Three renters, one holding no deposit. The service bills 450 to two; the screen said 300
+      // to three until this requirement.
+      depositFeeOf(900, depositRoster([1500, null], [1500, null], [0, null]));
+
+      expect(component.rows().map((row) => row.amount)).toEqual([450, 450]);
+    });
+
+    it('FR37_ADepositHeldAsAPercentage_StillCounts', () => {
+      // A share stated as a percentage leaves the amount at zero. Reading only the amount would drop
+      // a renter who holds half the deposit.
+      depositFeeOf(900, depositRoster([0, 50], [0, 50], [0, null]));
+
+      expect(component.rows().map((row) => row.amount)).toEqual([450, 450]);
+    });
+
+    it('FR37_ARenterWithNoDepositShare_IsListedAsNotCharged', () => {
+      depositFeeOf(900, depositRoster([1500, null], [1500, null], [0, null]));
+
+      // Listed, not hidden: seeing who is NOT on a fee is half of reading a split, and this is the
+      // one case the decision calls surprising.
+      expect(rendered().length).toBe(3);
+      expect(rendered()[2].textContent).toContain('Not charged this fee');
+    });
+
+    it('FR37_ADepositFeeReachingNobody_IsStillSaveable', () => {
+      depositFeeOf(900, depositRoster([0, null], [0, null]));
+
+      expect(component.rows()).toEqual([]);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('FR37_AnOrdinaryFee_IgnoresTheDepositColumns', () => {
+      // The same roster, without the deposit flag: an ordinary fee reaches everybody, because only a
+      // deposit is billed from the deposit column.
+      fixture.componentRef.setInput('tenants', depositRoster([1500, null], [1500, null], [0, null]));
+      fixture.componentRef.setInput('feeTotal', 900);
+      fixture.detectChanges();
+
+      expect(component.rows().map((row) => row.amount)).toEqual([300, 300, 300]);
+    });
+  });
+
+  describe("where each renter's share lands (requirement 36)", () => {
+    /** The caption rendered under each renter, in roster order. */
+    function captions(): string[] {
+      return Array.from<Element>(rendered()).map((row) =>
+        row.querySelector('.muted')!.textContent!.trim()
+      );
+    }
+
+    it('FR36_SharedOnItsOwnInvoice_SaysOnOneInvoice', () => {
+      splitAcross(300, tenantA, tenantB);
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On one invoice', 'On one invoice']);
+    });
+
+    it('FR36_SplitPerTenant_NumbersEachInvoice', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      expect(captions()).toEqual(['Invoice 1 of 2', 'Invoice 2 of 2']);
+    });
+
+    it('FR36_SplitPerTenantNamingSomeOfTheRoster_CountsOnlyTheNamed', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+
+      // The count is over the renters the fee NAMES, not over the roster: an unnamed renter is
+      // charged nothing and so is on none of the invoices being counted.
+      expect(captions()).toEqual(['Invoice 1 of 2', 'Invoice 2 of 2', 'Not charged this fee']);
+    });
+
+    it('FR36_OnTheRentInvoiceOfAGroupLease_SaysTheSharedRentInvoice', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.componentRef.setInput('isGroupInvoice', true);
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On the shared rent invoice', 'On the shared rent invoice']);
+    });
+
+    it('FR36_OnTheRentInvoiceOfAPerRenterLease_SaysTheirOwnRentInvoice', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.componentRef.setInput('isGroupInvoice', false);
+      fixture.detectChanges();
+
+      expect(captions()).toEqual(['On their own rent invoice', 'On their own rent invoice']);
+    });
+
+  });
+
+  /**
+   * Requirement 38 — a fee that has taken money states its setting instead of greying it out, and its
+   * renter checkboxes stop inviting a click.
+   *
+   * The product decision asks for the first half and gives the reason: "a disabled radio invites
+   * clicking and explains nothing". The second half is requirement 33's own first line — "its mode and
+   * its renters shall be read-only" — of which only the mode was ever built.
+   */
+  describe('a fee that has taken money (requirement 38)', () => {
+    /** Renders a paid fee across two renters, split per tenant so the checkboxes would otherwise be live. */
+    function paidFee(): void {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('hasTakenMoney', true);
+      fixture.detectChanges();
+    }
+
+    it('FR38_APaidFee_OffersNoModeRadios', () => {
+      paidFee();
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+    });
+
+    it('FR38_APaidFee_StatesItsSettingAsText', () => {
+      paidFee();
+
+      const text = fixture.nativeElement.textContent;
+      expect(text).toContain('Split per Tenant');
+      expect(text).toContain('has taken a payment');
+    });
+
+    it('FR38_APaidFee_DisablesTheRenterCheckboxes', () => {
+      paidFee();
+
+      const boxes: HTMLInputElement[] = Array.from<HTMLInputElement>(
+        fixture.nativeElement.querySelectorAll('.split-tenant input[type="checkbox"]'));
+
+      expect(boxes.length).toBeGreaterThan(0);
+      expect(boxes.every((box) => box.disabled)).toBeTrue();
+    });
+
+    it('FR38_AnUnpaidFee_KeepsItsRadiosAndCheckboxes', () => {
+      // The other side of the rule. Without this, hiding the radios unconditionally would pass every
+      // case above and break the screen for every fee that has not been paid against.
+      splitAcross(300, tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(2);
+
+      const boxes: HTMLInputElement[] = Array.from<HTMLInputElement>(
+        fixture.nativeElement.querySelectorAll('.split-tenant input[type="checkbox"]'));
+
+      expect(boxes.every((box) => box.disabled)).toBeFalse();
+    });
+  });
+
+  describe('a fee that rides the rent invoice (requirement 35)', () => {
+    /** Renders the editor for a fee that raises no invoice of its own. */
+    function ridingTheRent(total: number, ...tenantIds: string[]): void {
+      fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
+      fixture.componentRef.setInput('feeTotal', total);
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.detectChanges();
+    }
+
+    it('FR35_AFeeOnTheRentInvoice_ShowsNoModeControl', () => {
+      ridingTheRent(300, tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('the rent invoice has already decided');
+    });
+
+    it('FR35_AFeeOnTheRentInvoice_ShowsItsSharesReadOnly', () => {
+      ridingTheRent(300, tenantA, tenantB);
+
+      expect(rendered().length).toBe(2);
+      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
+      expect(boxes(0).amount.readOnly).toBeTrue();
+      expect(boxes(1).amount.readOnly).toBeTrue();
+    });
+
+    it('FR35_AFeeOnTheRentInvoice_DividesAcrossEveryoneEvenAfterRentersWerePicked', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+      expect(component.rows().length).toBe(2);
+
+      fixture.componentRef.setInput('ridesRentInvoice', true);
+      fixture.detectChanges();
+
+      // The rent invoice has already settled who is on it, so a fee riding it covers the whole
+      // roster again — the renters the owner had named describe a fee that no longer exists.
+      expect(component.rows().map((row) => row.amount)).toEqual([100, 100, 100]);
+    });
+  });
+
+  describe('switching the mode hands the division back (FR 25 as withdrawn by FR 30)', () => {
+    // Until v14 setSplitMode('shared') called resetSplit(), because clearing the shares WAS the way
+    // back from naming. Under v14 naming is the mode, so that reset destroyed data for no reason.
+    // v17, requirement 30: the service refuses typed figures on a fee that resolves its payers from
+    // the LIVE roster (its requirement 211), because they are correct only until somebody joins or
+    // leaves. The division is still SHOWN -- the service computes and stores it -- and is no longer
+    // SENT. These cases keep their subject and change what they expect of the emission.
+
+    it('shows the division but stops sending it when the owner picks Shared Lease', () => {
+      splitAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '200');
+      fixture.detectChanges();
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([200, 100]);
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('Shared');
+      expect(reported!.shares)
+        .withContext('a shared fee states no split; the lease roster divides it')
+        .toBeUndefined();
+    });
+
+    it('keeps them going the other way too, so neither direction is a quiet reset', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.detectChanges();
+      component.typeShare(tenantA, '200');
+      fixture.detectChanges();
+
+      component.setSplitMode('split');
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('PerTenant');
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([200, 100]);
+    });
+
+    it('still clears them on the reset control, which is the only thing that should', () => {
+      splitAcross(300, tenantA, tenantB);
+      component.typeShare(tenantA, '200');
+      fixture.detectChanges();
+
+      component.resetSplit();
+      fixture.detectChanges();
+
+      expect(component.hasTypedShares()).toBeFalse();
+      expect(reported!.shares!.map((share) => share.amount))
+        .withContext('back to the even division, not to nothing')
+        .toEqual([150, 150]);
+    });
+  });
+
+  describe('the mode goes on the wire (FR 26)', () => {
+    // The service reads splitMode as the only thing that says WHO OWES the fee. Until v14 this
+    // component had no mode at all: "Shared Lease" WAS the empty selection, and typing a share flipped
+    // namesRenters to true. So a shared fee with figures in it looked exactly like a named one, and the
+    // service -- which falls back to "a split was sent, so it names payers" -- stored it as PerTenant.
+    //
+    // That is the defect these cases exist for, and the second one is the whole of it.
+
+    it('reports Shared when the owner picks Shared Lease and types nothing', () => {
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.detectChanges();
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('Shared');
+      expect(reported!.shares).toBeUndefined();
+    });
+
+    it('reports Shared, and no split, with the boxes read-only on Shared Lease', () => {
+      // v14 called this "the case the field exists for" and typed into both boxes. v17 requirement 30
+      // makes them read-only for this mode, so what the field now distinguishes is a shared fee from
+      // a named one -- not a shared fee with figures from one without.
+      fixture.componentRef.setInput('tenants', rosterOf(tenantA, tenantB));
+      fixture.componentRef.setInput('feeTotal', 300);
+      fixture.detectChanges();
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(boxes(0).amount.readOnly)
+        .withContext('the box takes no typing on a shared fee')
+        .toBeTrue();
+
+      expect(reported!.mode).toBe('Shared');
+      expect(reported!.shares).toBeUndefined();
+    });
+
+    it('reports PerTenant when the owner picks Split per Tenant', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      expect(reported!.mode).toBe('PerTenant');
+    });
+
+    it('reports PerTenant for a subset, because the mode says so and not the selection size', () => {
+      splitAcross(300, tenantA, tenantB, tenantC);
+      component.toggleTenant(tenantC);
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('PerTenant');
+    });
+  });
+
+  describe('Shared Lease shows the same boxes, read-only (FR 25 as narrowed by FR 30)', () => {
+    // v17, requirement 30: the service refuses typed figures on a fee that resolves its payers from
+    // the LIVE roster (its requirement 211), because they are correct only until somebody joins or
+    // leaves. The division is still SHOWN -- the service computes and stores it -- and is no longer
+    // SENT. These cases keep their subject and change what they expect of the emission.
+
     /** Renders the editor for `total` across the roster, left in Shared Lease. */
     function sharedAcross(total: number, ...tenantIds: string[]): void {
       fixture.componentRef.setInput('tenants', rosterOf(...tenantIds));
@@ -96,69 +445,107 @@ describe('TenantSplitEditorComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
     });
 
-    it('names every renter shown the moment one share is typed, never just that one', () => {
+    it('sends nothing even when a figure reaches the rows, and still names nobody', () => {
+      // v14 asserted the figures went OUT here. Requirement 30 is why they no longer do: the service
+      // divides a shared fee across the live roster itself, and refuses a stated split it would have
+      // to overwrite the moment that roster moves.
+      //
+      // typeShare is called directly rather than through the box, which is read-only now. That is
+      // deliberate -- it proves the guard is on the EMISSION and not only on the input, so a figure
+      // arriving by another route, such as a reopened fee's seed, is not sent either.
       sharedAcross(300, tenantA, tenantB);
       component.typeShare(tenantA, '210');
       fixture.detectChanges();
 
-      expect(component.namesRenters()).toBeTrue();
-      expect(reported!.shares!.map((share) => share.amount)).toEqual([210, 90]);
-      expect(reported!.shares!.length).withContext('one row went out alone').toBe(2);
+      expect(component.namesRenters()).toBeFalse();
+      expect(reported!.mode).toBe('Shared');
+      expect(reported!.shares).toBeUndefined();
+      expect(component.rows().map((row) => row.amount))
+        .withContext('the figure still reaches the rows the owner reads')
+        .toEqual([210, 90]);
     });
 
-    it('does the same in percent, stating both rows', () => {
+    it('does the same in percent: both rows shown, neither sent', () => {
+      // The percent lane reaches the same place as the money one, and for the same reason. Asserted
+      // separately because the two convert differently, and a guard written on the money path alone
+      // would let the percent path send a split the service refuses.
       sharedAcross(300, tenantA, tenantB);
       component.setSplitUnit('percent');
       component.typeShare(tenantA, '60');
       fixture.detectChanges();
 
-      expect(reported!.shares!.map((share) => share.sharePercent)).toEqual([60, 40]);
-      expect(reported!.shares!.map((share) => share.amount)).toEqual([180, 120]);
+      expect(component.rows().map((row) => row.sharePercent)).toEqual([60, 40]);
+      expect(component.rows().map((row) => row.amount)).toEqual([180, 120]);
+      expect(reported!.shares)
+        .withContext('a shared fee states no split, in either unit')
+        .toBeUndefined();
       expect(component.blocker()).toBeNull();
     });
 
-    it('says what naming a share costs, and only once it has been named', () => {
+    it('says what naming costs, and only once the owner has picked the mode that names', () => {
+      // v14: the notice is right and its trigger was wrong. A named fee is resolved by an
+      // intersection with the roster, so it drops a renter who leaves and never adds one who joins
+      // -- a different product from the one the owner had a moment ago. What changed is that the
+      // choice is the MODE CONTROL, not the first keystroke in a share box.
       sharedAcross(300, tenantA, tenantB);
       expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
 
       component.typeShare(tenantA, '210');
       fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.split-note.naming'))
+        .withContext('typing a figure is not naming anybody')
+        .toBeNull();
 
-      // The notice is the requirement. A named fee is resolved by an intersection with the roster,
-      // so it drops a renter who leaves and never adds one who joins -- a different product from
-      // the one the owner had a moment ago, chosen with a keystroke.
+      component.setSplitMode('split');
+      fixture.detectChanges();
+
       const notice = fixture.nativeElement.querySelector('.split-note.naming');
       expect(notice).not.toBeNull();
       expect(notice.textContent).toContain('will not');
       expect(notice.textContent).toContain('added to the lease later');
     });
 
-    it('goes back to shared when the shares are cleared', () => {
+    it('goes back to the even division when the shares are cleared', () => {
+      // The emission was already undefined before the reset -- this fee is shared, so requirement 30
+      // sends no split whatever the rows hold. What the reset still does is put the ROWS back to the
+      // even division, which is what the owner sees.
       sharedAcross(300, tenantA, tenantB);
       component.typeShare(tenantA, '210');
       fixture.detectChanges();
-      expect(reported!.shares).toBeDefined();
+      expect(component.rows().map((row) => row.amount)).toEqual([210, 90]);
 
       component.resetSplit();
       fixture.detectChanges();
 
       expect(component.namesRenters()).toBeFalse();
       expect(reported!.shares).toBeUndefined();
+      expect(component.rows().map((row) => row.amount))
+        .withContext('back to the even division, not to nothing')
+        .toEqual([150, 150]);
       expect(fixture.nativeElement.querySelector('.split-note.naming')).toBeNull();
     });
 
-    it('unticking a renter on a shared fee charges the others, not that one alone', () => {
+    it('cannot untick a renter on a shared fee, because the invoice would bill them anyway', () => {
+      // v14: this case used to assert that unticking on a shared fee narrowed the table. Under BR-30
+      // a Shared fee is billed to the LIVE ROSTER, so a tick that appears to remove somebody would
+      // promise what the invoice does not do. The ticks belong to Split per Tenant, where they
+      // decide something. (User, 2026-09-22.)
       sharedAcross(300, tenantA, tenantB, tenantC);
 
-      // Every box reads as ticked while the fee is shared, so toggling one has to remove that
-      // renter from the set on screen. Treating the empty selection literally added them instead,
-      // which charged the unticked renter the whole fee.
       component.toggleTenant(tenantC);
       fixture.detectChanges();
 
-      expect(component.rows().map((row) => row.tenantId)).toEqual([tenantA, tenantB]);
-      expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
-      expect(reported!.shares!.length).toBe(2);
+      expect(component.rows().map((row) => row.tenantId)).toEqual([tenantA, tenantB, tenantC]);
+      expect(component.rows().map((row) => row.amount)).toEqual([100, 100, 100]);
+      expect(reported!.mode).toBe('Shared');
+    });
+
+    it('disables the ticks on a shared fee, so the control does not promise what it cannot do', () => {
+      sharedAcross(300, tenantA, tenantB);
+
+      const ticks = fixture.nativeElement.querySelectorAll('.roster-row input[type="checkbox"]');
+      expect(ticks.length).toBe(2);
+      expect([...ticks].every((tick: HTMLInputElement) => tick.disabled)).toBeTrue();
     });
 
     it('keeps a lease with no renters on the note, with nothing to type into', () => {
@@ -176,7 +563,9 @@ describe('TenantSplitEditorComponent', () => {
     fixture.detectChanges();
 
     expect(component.isSharedByEveryone()).toBeTrue();
-    expect(reported).toEqual({ shares: undefined, blocker: null });
+    // v14: the reported state gained a mode. A fee nobody has touched is Shared, and says so
+    // explicitly rather than by sending nothing -- which is the whole of requirement 26.
+    expect(reported).toEqual({ shares: undefined, blocker: null, mode: 'Shared' });
     expect(fixture.nativeElement.textContent).toContain('shared by every active renter');
 
     // v13: the table IS rendered here now, and this case used to assert it was not. What it was
@@ -206,7 +595,7 @@ describe('TenantSplitEditorComponent', () => {
     expect(component.rows().map((row) => row.amount)).toEqual([150, 150]);
   });
 
-  it('returns to shared by everyone, discarding the typed rows with it', () => {
+  it('returns to shared by everyone, keeps the rows, and sends no split', () => {
     splitAcross(300, tenantA, tenantB);
     component.typeShare(tenantA, '250');
     expect(component.hasTypedShares()).toBeTrue();
@@ -214,10 +603,14 @@ describe('TenantSplitEditorComponent', () => {
     component.setSplitMode('shared');
     fixture.detectChanges();
 
-    // Going back to "the whole lease owes this" is a deliberate click, and it cannot leave typed
-    // per-renter figures behind it — there are no rows left for them to belong to.
+    // v14 asserted the figures were still SENT here; v17 requirement 30 is why they are not. The
+    // reasoning v14 gave for keeping the ROWS stands and is unchanged: v13 gave Shared Lease the
+    // whole roster with boxes, so there is somewhere for the figures to live, and the reset control
+    // is still the only thing that clears them. What changed is that the service refuses a stated
+    // split on a fee whose payers it resolves itself.
     expect(component.isSharedByEveryone()).toBeTrue();
-    expect(component.hasTypedShares()).toBeFalse();
+    expect(component.hasTypedShares()).toBeTrue();
+    expect(reported!.mode).toBe('Shared');
     expect(reported!.shares).toBeUndefined();
   });
 
@@ -434,14 +827,102 @@ describe('TenantSplitEditorComponent', () => {
     expect(reported!.shares).toBeUndefined();
   });
 
-  it('says how each share is billed, from the lease invoicing mode', () => {
-    splitAcross(300, tenantA, tenantB);
-    expect(rendered()[0].textContent).toContain('Billed on its own invoice');
+  describe('a fee that has taken money keeps who owes it (FR 33)', () => {
+    // The service freezes on MONEY, not on issuance -- user, 2026-09-29. Its requirement 105 removed
+    // an all-or-nothing edit lock because an issued UNPAID invoice is corrected forward, and that
+    // stale lock shut this editor the hour it shipped. Freezing on issuance would rebuild it.
+    //
+    // The flag arrives as the response's isApplied, whose name is older than its meaning: FR-134
+    // narrowed it from "any invoice line references this charge" to "has taken a payment".
 
+    function paidSplitAcross(total: number, ...tenantIds: string[]): void {
+      splitAcross(total, ...tenantIds);
+      fixture.componentRef.setInput('hasTakenMoney', true);
+      fixture.detectChanges();
+    }
+
+    // The MECHANISM changed on 2026-09-30 with requirement 38 and the subject did not: the mode is
+    // still locked and the reason is still said. It was two disabled radios; the product decision asks
+    // for plain text instead, because 'a disabled radio invites clicking and explains nothing'. The two
+    // text assertions below are the ones that matter and are untouched.
+    it('states the mode instead of offering it, and says why', () => {
+      paidSplitAcross(300, tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelectorAll('.mode-choice input').length).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('Split per Tenant');
+      expect(fixture.nativeElement.textContent).toContain('who owes it can no longer change');
+      expect(fixture.nativeElement.textContent).toContain('amounts can still be edited');
+    });
+
+    it('refuses a mode change reached past the control', () => {
+      // Guarded in the method as well as on the radio, because the radio is not the only way in --
+      // a host, a keyboard, or a later refactor can call this directly, and the rule is about the
+      // fee rather than about the control.
+      paidSplitAcross(300, tenantA, tenantB);
+      expect(reported!.mode).toBe('PerTenant');
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+
+      expect(reported!.mode).toBe('PerTenant');
+    });
+
+    it('refuses a renter tick reached past the control', () => {
+      paidSplitAcross(300, tenantA, tenantB);
+      const before = reported!.shares!.map((share) => share.tenantId);
+
+      component.toggleTenant(tenantA);
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.tenantId)).toEqual(before);
+    });
+
+    it('still takes an amount edit, because the service still performs a reprice', () => {
+      // The assertion that keeps FR-134 honest. A screen that locked the whole fee would forbid an
+      // edit the system does happily, which is the failure requirement 105 removed a lock to avoid.
+      paidSplitAcross(300, tenantA, tenantB);
+
+      component.typeShare(tenantA, '200');
+      fixture.detectChanges();
+
+      expect(reported!.shares!.map((share) => share.amount)).toEqual([200, 100]);
+    });
+
+    it('leaves an unpaid fee alone', () => {
+      splitAcross(300, tenantA, tenantB);
+
+      const choices = fixture.nativeElement.querySelectorAll('.mode-choice input');
+
+      expect(choices[0].disabled).toBeFalse();
+      expect(fixture.nativeElement.textContent).not.toContain('who owes it can no longer change');
+
+      component.setSplitMode('shared');
+      fixture.detectChanges();
+      expect(reported!.mode).toBe('Shared');
+    });
+  });
+
+  it('says how each share is billed, from the FEE and not from the lease (FR 31)', () => {
+    // v17: this read isGroupInvoice until requirement 31. The service reversed BR-05 (its
+    // requirement 209), so a Shared fee raises one invoice for the lease whatever the lease bills
+    // and a Split per Tenant fee raises one per renter -- the two may disagree with the lease, and
+    // that is the feature. Taken from the lease, the caption told the renter the wrong thing for
+    // exactly the cases this release exists to make possible.
+    // The wording changed on 2026-09-29 with requirement 36, which replaced two captions with the
+    // four the product decision names. The subject of this case did not: for a fee that raises its
+    // OWN invoice, the caption still comes from the fee and never from the lease.
+    splitAcross(300, tenantA, tenantB);
+    expect(rendered()[0].textContent).toContain('Invoice 1 of 2');
+
+    // The LEASE flips, and the caption does not: it is not the lease's question any more.
     fixture.componentRef.setInput('isGroupInvoice', true);
     fixture.detectChanges();
+    expect(rendered()[0].textContent).toContain('Invoice 1 of 2');
 
-    expect(rendered()[0].textContent).toContain('group invoice');
+    // The FEE flips, and the caption follows it.
+    component.setSplitMode('shared');
+    fixture.detectChanges();
+    expect(rendered()[0].textContent).toContain('On one invoice');
   });
   describe('the paid box', () => {
     it('gives each row its own amount box and paid box', () => {

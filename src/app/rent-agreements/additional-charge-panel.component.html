@@ -120,10 +120,28 @@
         <span class="recurring-label">Make this a line item on the rental invoice?</span>
         <label class="toggle">
           <span [class.active]="!form.get('attachedWithRentalInvoice')!.value">No</span>
+          <!--
+            Disabled from the component, never with [disabled] here: Angular ignores that binding on
+            a control a reactive form owns, and logs a warning instead of honouring it. The control
+            is the form's, so the form disables it.
+          -->
           <input type="checkbox" formControlName="attachedWithRentalInvoice" />
           <span [class.active]="form.get('attachedWithRentalInvoice')!.value">Yes</span>
         </label>
       </div>
+      <!--
+        Requirement 32. A lease billing no rent raises no rental invoice, so a fee attached to one
+        would be stored, expanded, and bill nothing for the life of the agreement. The reason is said
+        here rather than left to a 422 after the owner has typed the whole fee -- and it says what to
+        do instead, because the fee itself is fine; only the attachment is not.
+      -->
+      @if (!leaseBillsRent) {
+        <p class="split-note attach-blocked">
+          <strong>This lease bills no rent, so there is no rental invoice to add this to.</strong>
+          Leave the toggle at <em>No</em> and the fee is sent as its own invoice, which bills it
+          correctly.
+        </p>
+      }
     }
 
     @if (!isRecurring) {
@@ -315,8 +333,17 @@
     }
     <!--
       Who pays, last: everything above decides what the fee is, and the split can only divide a total
-      that already exists. Rendered only when the host handed this panel a roster — the lease
-      create/edit screens pass none and so show no renter control at all (requirement 22).
+      that already exists.
+
+      Rendered from the DATA, never from the screen this panel was opened on (requirement 34). Both
+      the lease editor and the Add Additional Charge page hand it the lease's saved roster; an empty
+      one means the lease genuinely has no renters yet, which is the drawer's state A.
+
+      It stays on screen for a fee that rides the rent invoice (requirement 35, correcting 29). That
+      fee raises no invoice of its own, so the SETTING has nothing left to decide and the editor drops
+      it — but the division is still real, and the owner still has to be able to read what each renter
+      will owe. The payload is unaffected either way: a fee riding the rent invoice sends neither
+      mode nor shares (backend requirements 210 and 211).
     -->
     @if (tenants; as roster) {
       <app-tenant-split-editor
@@ -324,6 +351,10 @@
         [feeTotal]="subAmount"
         [alreadyPaid]="alreadyPaidTotal"
         [isGroupInvoice]="isGroupInvoice"
+        [hasTakenMoney]="chargeHasTakenMoney"
+        [ridesRentInvoice]="form.get('attachedWithRentalInvoice')!.value"
+        [depositFee]="depositOnly"
+        [seed]="splitSeed"
         (splitChange)="onSplitChange($event)"
       />
     }

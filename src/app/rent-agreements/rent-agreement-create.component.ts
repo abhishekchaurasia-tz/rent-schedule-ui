@@ -35,6 +35,7 @@ import { parseIsoDate, toIsoDate } from '../shared/date.util';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
   AdditionalChargeCreationRequest,
+  AgreementTenantShareResponse,
   BlockedRemovalResponse,
   CreateRentAgreementRequest,
   CreateRentAgreementResponse,
@@ -260,6 +261,26 @@ export class RentAgreementCreateComponent {
   /** `id`s of loaded additional charges the server marked applied (already invoiced) — locked, and not editable/removable. */
   readonly appliedChargeIds = signal<Set<string>>(new Set());
 
+  /**
+   * The lease's saved renters, handed to the fee drawer so it can show **state B** (requirement 34).
+   *
+   * Empty on the create path, where the lease has no id and so no saved roster — which is the honest
+   * reason for the drawer's state A, unlike the previous one: this screen passed no roster at all, so
+   * a lease with four renters still read "no renters saved yet" and could not reach *Split per
+   * Tenant*. The drawer's state is a fact about the lease, never about which screen opened it.
+   */
+  readonly agreementTenants = signal<AgreementTenantShareResponse[]>([]);
+
+  /**
+   * Whether this lease bills its renters on **one shared rent invoice**.
+   *
+   * Read by the drawer for one purpose only (requirement 36): a fee that **rides the rent invoice**
+   * raises no invoice of its own, so this is the only fact left that says whether a renter's share
+   * lands on the shared rent invoice or on their own. It never decides which modes a fee may take —
+   * requirement 31 — because the fee decides its own shape.
+   */
+  readonly agreementIsGroupInvoice = signal(false);
+
   get isEditMode(): boolean {
     return this.agreementId() !== null;
   }
@@ -445,6 +466,34 @@ export class RentAgreementCreateComponent {
    * treat them as already previewed, so a regeneration only happens once the user actually changes
    * a schedule-affecting field.
    */
+  /**
+   * Reads the lease's saved renters so the fee drawer can show what the fee actually is
+   * (requirement 34).
+   *
+   * **The same call the Add Additional Charge page makes**, for the same two facts, rather than a
+   * second roster assembled from `scheduleRows[].tenants` the way the terms preview does. One call
+   * means one shape: a drawer opened from either screen is handed the same thing, which is the whole
+   * point of the requirement.
+   *
+   * **A failure here is not a load failure.** The terms are already on screen and editable; only the
+   * fee drawer is poorer for it, and it falls back to state A, which is what it showed before this
+   * existed. Blocking the lease editor on a roster it needs for one panel would be the worse trade.
+   *
+   * @param agreementId The lease whose roster is being read.
+   */
+  private loadTenantRoster(agreementId: string): void {
+    this.rentAgreementsService.getTenants(agreementId).subscribe({
+      next: (saved) => {
+        this.agreementTenants.set(saved?.tenants ?? []);
+        this.agreementIsGroupInvoice.set(saved?.isGroupInvoice ?? false);
+      },
+      error: () => {
+        this.agreementTenants.set([]);
+        this.agreementIsGroupInvoice.set(false);
+      }
+    });
+  }
+
   private loadAgreement(agreementId: string): void {
     this.loadingAgreement.set(true);
     this.loadError.set(null);
@@ -524,6 +573,7 @@ export class RentAgreementCreateComponent {
         this.lastPreviewSignature = this.scheduleSignature();
         this.loadingAgreement.set(false);
         this.refreshCandidateDates(true);
+        this.loadTenantRoster(agreementId);
       },
       error: (err: HttpErrorResponse) => {
         this.loadError.set(
@@ -757,6 +807,31 @@ export class RentAgreementCreateComponent {
   isChargeApplied(index: number): boolean {
     const id = this.additionalCharges()[index]?.id;
     return !!id && this.appliedChargeIds().has(id);
+  }
+
+  /**
+   * Whether the fee currently open in the panel has taken a payment (requirement 33).
+   *
+   * <b>The panel needs this and cannot work it out.</b> It is handed one charge, not the agreement,
+   * so the applied set lives here. Without this the freeze would exist in the editor and never fire
+   * on any screen — proved in tests, unreachable in the product.
+   *
+   * False when adding rather than editing, which is right: a fee that does not exist yet has taken
+   * nothing.
+   */
+  get editingChargeHasTakenMoney(): boolean {
+    const index = this.editingChargeIndex();
+    return index !== null && this.isChargeApplied(index);
+  }
+
+  /**
+   * The rent the form currently states, for requirement 32. Read from the form rather than from the
+   * loaded agreement, because on this screen the owner may be in the middle of changing it -- and the
+   * fee they are authoring will be saved against the rent they are typing, not the one on file.
+   */
+  get formFullRent(): number | null {
+    const rent = this.form.get('rent')!.value;
+    return rent === null || rent === '' ? null : Number(rent);
   }
 
   get frequency(): RentFrequency {

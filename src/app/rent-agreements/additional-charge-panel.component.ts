@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, signal, OnChanges } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -31,7 +31,7 @@ import {
 } from '../rent-schedule/frequency-options.util';
 import { toIsoDate } from '../shared/date.util';
 import { AdditionalChargeCreationRequest, AgreementTenantShareResponse } from './rent-agreement.models';
-import { TenantSplitEditorComponent, TenantSplitState } from './tenant-split-editor.component';
+import { TenantSplitEditorComponent, TenantSplitSeed, TenantSplitState } from './tenant-split-editor.component';
 import { LineItemResponse, LineItemScope } from './line-item.models';
 import { LineItemsService } from './line-items.service';
 
@@ -59,7 +59,7 @@ import { LineItemsService } from './line-items.service';
   templateUrl: './additional-charge-panel.component.html',
   styleUrl: './additional-charge-panel.component.scss'
 })
-export class AdditionalChargePanelComponent implements OnInit {
+export class AdditionalChargePanelComponent implements OnInit, OnChanges {
   /**
    * When `true`, this panel is the deposit-only entry point: the fetched catalog is scoped to
    * `DepositOnly` (deposit-flavored items only), and "attached to rental invoice" is hidden — a
@@ -115,12 +115,37 @@ export class AdditionalChargePanelComponent implements OnInit {
   @Input() isGroupInvoice = false;
 
   /**
+   * The lease's rent, when the host knows it. Requirement 32: a fee may ride the rental invoice only
+   * where there is one, and a lease billing zero rent raises none (the service's FR-138).
+   *
+   * <b>Null means "not stated", and the toggle stays offered.</b> A host that cannot answer must not
+   * silently remove a control the owner is entitled to -- the service still refuses the save, and a
+   * refusal the owner can read beats a control that vanished for no stated reason.
+   */
+  @Input() leaseFullRent: number | null = null;
+
+  /**
    * When set, the panel opens pre-filled with this already-created charge instead of a blank form
    * — the host's "Edit" action on a row in its running additional-charges list. `create()` still
    * just emits the built request; the host (not this component) decides whether that's a new
    * append or a replace of the charge being edited.
    */
   @Input() initialCharge: AdditionalChargeCreationRequest | null = null;
+
+  /**
+   * Whether the fee being edited has already taken a payment (requirement 33). Passed straight to the
+   * split editor, which owns what that settles.
+   */
+  @Input() chargeHasTakenMoney = false;
+
+  /**
+   * The split to open the editor on, built once from {@link initialCharge} (requirement 27).
+   *
+   * **Held rather than computed on every read**, because the editor applies a seed once per object
+   * identity: a fresh object each change-detection pass would re-apply it over the owner's typing.
+   * Null for a fresh add, which is what keeps the seed out of that path entirely.
+   */
+  splitSeed: TenantSplitSeed | null = null;
 
   @Output() readonly created = new EventEmitter<AdditionalChargeCreationRequest>();
   @Output() readonly closed = new EventEmitter<void>();
@@ -160,7 +185,7 @@ export class AdditionalChargePanelComponent implements OnInit {
    * blocker is what refuses the click (requirement 19). It starts as a fee shared by everybody, which
    * is what an untouched editor means and what a host passing no roster leaves standing.
    */
-  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null });
+  readonly splitState = signal<TenantSplitState>({ shares: undefined, blocker: null, mode: 'Shared' });
 
   /** Index of the item row whose "Select Type" dropdown is currently open, or `null` if none. */
   readonly openItemPickerIndex = signal<number | null>(null);
@@ -341,6 +366,15 @@ export class AdditionalChargePanelComponent implements OnInit {
       this.form.get('attachedWithRentalInvoice')!.disable();
     }
     if (this.initialCharge) {
+      // Requirement 27: the split is part of the charge being reopened, and was the one part
+      // applyInitialCharge never restored. Built here, once, so the editor applies it once.
+      this.splitSeed = this.initialCharge.tenantShares?.length
+        ? {
+            mode: this.initialCharge.splitMode ?? 'PerTenant',
+            shares: this.initialCharge.tenantShares.map((share) => ({ ...share }))
+          }
+        : null;
+
       this.applyInitialCharge(this.initialCharge);
     }
 
@@ -744,6 +778,46 @@ export class AdditionalChargePanelComponent implements OnInit {
   }
 
   /** Records what the split editor reports, so {@link create} can refuse or send it. */
+  /**
+   * Whether the lease bills rent, so a fee may ride its invoice (requirement 32). Unknown counts as
+   * yes -- see {@link leaseFullRent}.
+   */
+  get leaseBillsRent(): boolean {
+    return this.leaseFullRent === null || this.leaseFullRent > 0;
+  }
+
+  /**
+   * Keeps the attach toggle in step with the lease's rent (requirement 32).
+   *
+   * <b>Here rather than as a template binding.</b> Angular ignores <c>[disabled]</c> on a control a
+   * reactive form owns and warns instead of honouring it, so a toggle "disabled" that way stays
+   * clickable -- which is how this shipped broken on the first attempt.
+   *
+   * The lease editor's rent is a field the owner is editing, so this runs on every change and not
+   * only on init: typing the rent down to zero must close the toggle, and typing it back must
+   * reopen it.
+   */
+  ngOnChanges(): void {
+    const toggle = this.form?.get('attachedWithRentalInvoice');
+    if (!toggle) {
+      return;
+    }
+
+    if (this.leaseBillsRent) {
+      if (toggle.disabled) {
+        toggle.enable({ emitEvent: false });
+      }
+
+      return;
+    }
+
+    // Cleared as well as closed: a lease whose rent has just been typed down to zero may already
+    // carry a fee the owner attached a moment ago, and leaving it ticked behind a disabled control
+    // sends the very request FR-138 refuses.
+    toggle.setValue(false, { emitEvent: false });
+    toggle.disable({ emitEvent: false });
+  }
+
   onSplitChange(state: TenantSplitState): void {
     this.splitState.set(state);
   }
@@ -768,21 +842,39 @@ export class AdditionalChargePanelComponent implements OnInit {
     // Requirement 20. `tenantShares` is absent for a fee shared by everybody rather than empty:
     // both read the same server-side, but omission says "not specified" where [] says "specified as
     // nobody". `tenantIds` is not sent at all — the split is what says who pays now.
-    const shares = this.splitState().shares;
+    // Requirement 29: a fee riding the rent invoice carries neither, whatever the editor last held.
+    // The table is hidden for that shape, so a split still in state was authored before the owner
+    // ticked the toggle -- and sending it would state a division from a control they can no longer
+    // see, which the service refuses.
+    const shares = ridesRentalInvoice ? undefined : this.splitState().shares;
 
     const request: AdditionalChargeCreationRequest = {
       ...(shares === undefined ? {} : { tenantShares: shares }),
+
+      // Requirement 26. Sent on every submission that CAN carry one, including one carrying no split.
+      // The service reads an absent field the way the payer-row count used to be read -- a split was
+      // sent, so the fee names its payers -- which is wrong for exactly the case this field exists
+      // for: a Shared Lease fee whose owner typed figures.
+      //
+      // Requirement 29 is the exception, and the only one: the fee that rides the rent invoice takes
+      // its payers from that invoice and records no setting of its own.
+      ...(ridesRentalInvoice ? {} : { splitMode: this.splitState().mode }),
       notes: value.notes || null,
       alreadyPaid: Number(value.alreadyPaid),
       attachedWithRentalInvoice: ridesRentalInvoice,
       isRecurring,
       dueDate: isRecurring ? null : toIsoDate(value.dueDate),
 
-      // FR-088: only a recurring charge that RIDES the rental invoice carries a cadence of its own. A
-      // standalone recurring charge bills once per rent cycle, so sending a frequency would be a second,
-      // contradictory cadence — and the server rejects it with 422.
-      frequency: isRecurring && ridesRentalInvoice ? value.frequency : null,
-      frequencyConfig: isRecurring && ridesRentalInvoice ? buildFrequencyConfig(value) : null,
+      // FR-136 (spec 01-rent-agreement.md v118, reversing FR-088): the cadence belongs to the recurring
+      // charge that raises its OWN invoice. That charge's dates are decided by nobody else, so it has to
+      // state them; one riding the rental invoice arrives when the rent does and may state none.
+      //
+      // This is the condition the TEMPLATE has always used to show the picker. The two disagreed from
+      // the day the picker arrived: it rendered under !attachedWithRentalInvoice while this line sent on
+      // attachedWithRentalInvoice, so an owner on a standalone fee picked a cadence and null went on the
+      // wire, and an attached fee sent a stale 'monthly' from a control they never saw.
+      frequency: isRecurring && !ridesRentalInvoice ? value.frequency : null,
+      frequencyConfig: isRecurring && !ridesRentalInvoice ? buildFrequencyConfig(value) : null,
       startDate: isRecurring ? toIsoDate(value.startDate) : null,
       endDate: isRecurring && !value.hasNoEndDate ? toIsoDate(value.endDate) : null,
       hasNoEndDate: isRecurring ? !!value.hasNoEndDate : false,

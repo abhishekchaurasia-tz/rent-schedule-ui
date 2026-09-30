@@ -129,6 +129,15 @@ export class AddAdditionalChargeComponent {
   }
 
   /**
+   * The lease's rent, for requirement 32: a fee may ride the rental invoice only where there is one,
+   * and a lease billing zero raises none. Null until the lease has loaded, which the panel reads as
+   * "not stated" and leaves the toggle offered.
+   */
+  get leaseFullRent(): number | null {
+    return this.agreement()?.fullRent ?? null;
+  }
+
+  /**
    * How many cycles a month-to-month lease was generated for — what the panel's candidate-date
    * endpoint needs in place of an end date.
    *

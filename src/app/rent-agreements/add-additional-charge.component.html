@@ -164,12 +164,19 @@
   }
 
   @if (showPanel()) {
+    <!--
+      chargeHasTakenMoney is always false here, and stated rather than left to the default: this page
+      is additive only (requirement 12), so it never reopens a saved fee and the fee it authors has
+      taken nothing. Saying so keeps the next reader from assuming the flag was forgotten.
+    -->
     <app-additional-charge-panel
       [tenants]="tenants()"
       [isGroupInvoice]="isGroupInvoice()"
       [propertyOwnerId]="propertyOwnerId"
       [leaseStartDate]="leaseStartDate"
       [leaseEndDate]="leaseEndDate"
+      [leaseFullRent]="leaseFullRent"
+      [chargeHasTakenMoney]="false"
       [leaseMonthToMonthInvoiceCount]="leaseMonthToMonthInvoiceCount"
       (created)="onChargeCreated($event)"
       (closed)="closePanel()"

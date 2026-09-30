@@ -1,4 +1,36 @@
 <section class="split-editor">
+  <!--
+    Requirement 33. Once the fee has taken money, WHO OWES IT is settled: the rows that took the
+    money cannot be re-divided, so the setting that produced them cannot move. The amounts below stay
+    editable, because the service still performs a reprice -- locking the whole fee would put back
+    the all-or-nothing lock its requirement 105 removed.
+  -->
+  @if (ridesRentInvoice()) {
+    <!--
+      State C (requirement 35). Not a disabled control: a greyed-out radio invites clicking and
+      explains nothing, and there is no decision here to re-enable later. The fee raises no invoice of
+      its own, so the setting has nothing left to decide and is replaced by the reason.
+    -->
+    <p class="split-note rides-rent">
+      <strong>No setting — the rent invoice has already decided</strong>
+      how many invoices there are and who is on them. This fee is divided evenly across whoever that
+      invoice bills, and follows the lease if its renters change.
+    </p>
+  } @else if (whoOwesIsSettled()) {
+    <!--
+      Requirement 38. The same argument as the branch above, applied to the other state that has no
+      decision left in it: a disabled radio invites clicking and explains nothing, so the setting is
+      stated rather than greyed. The notice below carries the reason, and the amounts stay editable --
+      the service performs a reprice on a paid fee, so locking the whole fee would forbid an edit the
+      system itself carries out.
+    -->
+    <div class="split-mode">
+      <p class="split-note settled">
+        <strong>{{ namesRenters() ? 'Split per Tenant' : 'Shared Lease' }}</strong> — this fee has taken
+        a payment, so who owes it can no longer change. Its amounts can still be edited.
+      </p>
+    </div>
+  } @else {
   <div class="split-mode">
     <label class="mode-choice">
       <input
@@ -6,6 +38,7 @@
         name="splitMode"
         [checked]="isSharedByEveryone()"
         (change)="setSplitMode('shared')"
+        [disabled]="whoOwesIsSettled()"
       />
       <span>Shared Lease</span>
     </label>
@@ -15,10 +48,16 @@
         name="splitMode"
         [checked]="!isSharedByEveryone()"
         (change)="setSplitMode('split')"
-        [disabled]="tenants().length === 0"
+        [disabled]="whoOwesIsSettled() || tenants().length === 0"
       />
       <span>Split per Tenant</span>
     </label>
+    @if (whoOwesIsSettled()) {
+      <p class="split-note settled">
+        <strong>This fee has taken a payment, so who owes it can no longer change.</strong>
+        Its amounts can still be edited.
+      </p>
+    }
     @if (hasTypedShares()) {
       <button type="button" class="link-btn reset-all" (click)="resetSplit()">
         @if (isSharedByEveryone()) {
@@ -29,10 +68,12 @@
       </button>
     }
   </div>
+  }
 
-  @if (tenants().length > 0) {
+  @if (tenants().length > 0 && !ridesRentInvoice()) {
     <!--
-      The unit for the whole split, not for a row. v7 put this selector on every row, which let the
+      The unit for the whole split, not for a row. Absent on a fee that rides the rent invoice, where
+      nothing is typed and so there is no unit to state it in. v7 put this selector on every row, which let the
       owner say one renter's share in percent and leave the rest in money — and the service sums the
       percentages a request states and requires exactly 100.00, so that body was always refused while
       this page happily enabled Save. One control is what makes the refused combination impossible to
@@ -73,19 +114,29 @@
       fee that names people is resolved by named.Where(roster.Contains) -- an intersection, which
       drops a renter who leaves and never adds one who joins. Those are two different products, and
       before v13 the owner chose between them by picking a radio whose label says nothing about the
-      difference. Typing a share is the choice; this is where it gets said (requirement 25).
+      difference. The MODE CONTROL is the choice; this is where it gets said (requirement 25 as
+      corrected in v14 -- until then typing a share was the choice, and that is the half the user
+      reversed on 2026-09-22 in favour of the service's BR-30).
     -->
-    @if (namesRenters()) {
+    @if (ridesRentInvoice()) {
+      <!--
+        Nothing here: the note above the table already says why there is no setting, and the shared
+        note below would invite the owner to "pick Split per Tenant" on a screen that no longer
+        offers it.
+      -->
+    } @else if (namesRenters()) {
       <p class="split-note naming">
         <strong>This fee names the renters below.</strong>
-        A renter added to the lease later <strong>will not</strong> be charged it. Clear the shares to
-        go back to charging the whole lease.
+        A renter added to the lease later <strong>will not</strong> be charged it. Pick
+        <em>Shared Lease</em> to go back to charging the whole lease — the lease's own roster divides
+        it from then on, and the figures here become a reading rather than an instruction.
       </p>
     } @else {
       <p class="split-note">
         <strong>Charged to the lease and shared by every active renter.</strong>
         That is a complete instruction, not an unfinished one — and it keeps covering renters added
-        later. Type a share below to say what each one owes instead.
+        later. The figures below show how it divides today; they follow the lease, so they are shown
+        and not typed into. Pick <em>Split per Tenant</em> to say what each renter owes instead.
       </p>
     }
     <table class="split-table">
@@ -109,6 +160,7 @@
               <input
                 type="checkbox"
                 [checked]="row.selected"
+                [disabled]="!namesRenters() || whoOwesIsSettled()"
                 [attr.aria-label]="'Charge ' + row.name"
                 (change)="toggleTenant(row.tenantId)"
               />
@@ -118,13 +170,13 @@
                   {{ row.name }} <code class="tenant-id">{{ row.shortId }}</code>
                 </span>
                 <span class="muted">
-                  @if (!row.selected) {
-                    Not charged this fee
-                  } @else if (isGroupInvoice()) {
-                    On the lease's group invoice
-                  } @else {
-                    Billed on its own invoice
-                  }
+                  <!--
+                    Requirement 36. Four captions, and the choice between them is a business rule, so
+                    it lives on the component rather than in three nested @ifs here. Requirement 31
+                    still holds inside it: how the LEASE bills is read only for a fee that rides the
+                    rent invoice, because that fee raises none of its own.
+                  -->
+                  {{ shareDestination(row.tenantId) }}
                 </span>
               </span>
             </td>
@@ -165,11 +217,25 @@
                   counterpart figure is still shown beneath, derived and never typed into.
                 -->
                 <span class="cell-input">
+                  <!--
+                    Requirement 30. Readable, not writable, unless the fee names its renters. A fee
+                    left to the lease resolves its payers from the LIVE roster when it bills, so a
+                    figure typed against it is correct only until somebody joins or leaves and is
+                    then replaced without a word -- which is why the service refuses one
+                    (requirement 211). The division is still shown: the service computes and stores
+                    it, so the owner sees what each renter will owe.
+
+                    readonly rather than disabled, deliberately: a disabled input leaves the tab
+                    order and stops being announced, and this figure is exactly the thing the owner
+                    came here to read.
+                  -->
                   <input
                     type="text"
                     inputmode="decimal"
                     class="share-input"
                     [class.invalid]="share.error"
+                    [class.read-only]="!namesRenters()"
+                    [readonly]="!namesRenters()"
                     [value]="share.text"
                     [attr.aria-label]="'Share of the fee for ' + share.name"
                     (input)="typeShare(share.tenantId, $any($event.target).value)"
@@ -178,7 +244,7 @@
                     type="button"
                     class="row-reset"
                     (click)="resetShareRow(share.tenantId)"
-                    [disabled]="share.authoredUnit === 'even'"
+                    [disabled]="!namesRenters() || share.authoredUnit === 'even'"
                     title="Hand this amount back to the even split"
                     aria-label="Hand this amount back to the even split"
                   >
@@ -206,11 +272,14 @@
                   others rather than re-dividing all three.
                 -->
                 <span class="cell-input">
+                  <!-- Requirement 30, on the same terms as the share beside it. -->
                   <input
                     type="text"
                     inputmode="decimal"
                     class="share-input"
                     [class.invalid]="share.paidError"
+                    [class.read-only]="!namesRenters()"
+                    [readonly]="!namesRenters()"
                     [value]="share.paidText"
                     [attr.aria-label]="'Amount paid by ' + share.name"
                     (input)="typePaid(share.tenantId, $any($event.target).value)"
@@ -219,7 +288,7 @@
                     type="button"
                     class="row-reset"
                     (click)="resetPaidRow(share.tenantId)"
-                    [disabled]="!share.paidAuthored"
+                    [disabled]="!namesRenters() || !share.paidAuthored"
                     title="Hand this paid amount back to the even split"
                     aria-label="Hand this paid amount back to the even split"
                   >

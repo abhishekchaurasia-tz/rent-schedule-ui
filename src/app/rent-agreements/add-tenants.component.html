@@ -225,6 +225,38 @@
       }
 
       <!--
+        Requirement 12. Said BEFORE the save, unlike the banner below which reports what the server did:
+        this is a consequence of a removal the manager has not committed yet, so it belongs beside the
+        decision while it can still be reconsidered.
+
+        "will no longer be used" rather than "were replaced": the service does not rewrite the stored
+        rows. They stay exactly as saved, and a departed renter is dropped when the fee is billed. A
+        manager who reopens the fee and finds their figures intact would be right to distrust a screen
+        that said they were gone.
+      -->
+      @if (feesLosingTheirTypedFigures(); as reached) {
+        @if (reached.length > 0) {
+          <div class="banner warn">
+            <p>
+              <strong
+                >{{ reached.length }}
+                {{ reached.length === 1 ? 'fee names a renter' : 'fees name a renter' }} you have
+                removed.</strong
+              >
+              The figures typed on
+              {{ reached.length === 1 ? 'it' : 'them' }} will no longer be used — the fee divides across
+              the renters it still names.
+            </p>
+            <ul>
+              @for (fee of reached; track fee.id) {
+                <li><strong>{{ fee.notes || 'Additional fee' }}</strong></li>
+              }
+            </ul>
+          </div>
+        }
+      }
+
+      <!--
         Reported beside the success banner, not instead of it: the save did apply. What these months did
         not take is the new split — they were already due when it changed, so they keep the shares they
         were billed with. Without this the manager reads "saved" and then meets a bill that disagrees.

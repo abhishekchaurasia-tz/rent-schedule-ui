@@ -17,11 +17,39 @@ import {
 } from './tenant-split.util';
 
 /** What the editor reports upward on every change — the split, and why it cannot be saved. */
+/**
+ * A split the owner already authored, handed back to the editor when a fee is reopened for editing
+ * (spec `02-add-additional-charge-ui.md` v15, requirement 27).
+ *
+ * **Everything here is already on the request the panel holds.** Nothing new travels on the wire; the
+ * panel simply had no way to pass it on, so reopening a fee opened the table blank and the next save
+ * wrote an even division over what the owner had typed.
+ */
+export interface TenantSplitSeed {
+  /** The mode the fee was authored under. */
+  mode: 'Shared' | 'PerTenant';
+  /** The stored rows, in the order they were saved. */
+  shares: readonly {
+    tenantId: string;
+    amount: number;
+    sharePercent?: number | null;
+    alreadyPaid?: number;
+  }[];
+}
+
 export interface TenantSplitState {
   /** The `tenantShares` array, or `undefined` for a fee shared by every renter. */
   shares: TenantShareInput[] | undefined;
   /** A requirement 19 refusal, or `null` when the split is savable. */
   blocker: string | null;
+  /**
+   * Which mode the owner picked, and the **only** thing that says who owes the fee (requirement 26).
+   *
+   * **Deliberately not derivable from `shares`.** A `Shared` fee may carry a split — the owner typed
+   * how it divides without changing who pays — so a reader that infers the mode from the presence of
+   * an array gets exactly that case wrong. It is the case this field exists for.
+   */
+  mode: 'Shared' | 'PerTenant';
 }
 
 /**
@@ -69,8 +97,61 @@ export class TenantSplitEditorComponent {
   /** Whether the lease bills on one shared invoice — wording only, never sent. */
   readonly isGroupInvoice = input<boolean>(false);
 
+  /**
+   * Whether an invoice raised from this fee has already <b>taken a payment</b> (requirement 33).
+   *
+   * <b>Money, not issuance.</b> The service freezes on exactly this line: the rows that took the
+   * money cannot be re-divided, so the setting that produced them cannot move -- while repricing the
+   * fee is an edit it still performs. Freezing on issuance would put back the all-or-nothing lock its
+   * requirement 105 deliberately removed, which shut this very editor the hour it shipped.
+   *
+   * It arrives as the response's <c>isApplied</c>, whose name is older than its meaning: FR-134
+   * narrowed it from "any invoice line references this charge" to "has taken a payment".
+   */
+  readonly hasTakenMoney = input<boolean>(false);
+
+  /**
+   * Whether this fee **rides the rent invoice** rather than raising one of its own — the drawer's
+   * state C (requirements 34 and 35).
+   *
+   * It raises no invoice, so there is nothing left for a setting to decide: the rent invoice has
+   * already settled how many invoices there are and who is on them. The control goes, and the
+   * division stays on screen and read-only, because the owner still has to be able to see what each
+   * renter ends up owing.
+   *
+   * **Held as one input rather than a second component.** The table, the chips, the even division and
+   * the paid column are identical in all three states; forking them would duplicate the file to
+   * change one gate.
+   */
+  readonly ridesRentInvoice = input<boolean>(false);
+
+  /**
+   * Whether this fee is a **deposit** — which changes who it reaches (requirement 37).
+   *
+   * A deposit is billed to the renters who carry a **deposit share on the lease**, and that is not
+   * always the same set as the rent share: a renter recorded at nothing of the deposit is not billed
+   * a deposit fee, though the same person is billed every other kind of fee. The product decision
+   * flags this as the surprising one, about itself as much as about the manager.
+   *
+   * **Set from the panel's `depositOnly`, not from the items.** This component never sees the line
+   * items, and the panel already restricts its catalog to the deposit scope when the flag is set, so
+   * the flag and the items cannot disagree.
+   */
+  readonly depositFee = input<boolean>(false);
+
   /** The split and its blocker, re-emitted whenever either changes. */
   readonly splitChange = output<TenantSplitState>();
+
+  /**
+   * A split the owner already authored, for a fee reopened from the host's list (requirement 27).
+   *
+   * **Applied once per seed, never on every change.** A seed that re-applied itself would overwrite
+   * the owner mid-keystroke; the guard below is what makes it a starting point rather than a rule.
+   */
+  readonly seed = input<TenantSplitSeed | null>(null);
+
+  /** The seed already applied, so the same one is never applied twice. */
+  private appliedSeed: TenantSplitSeed | null = null;
 
   /**
    * Who the fee is charged to. **Empty is a complete instruction, not an unfinished one:** it means
@@ -108,8 +189,21 @@ export class TenantSplitEditorComponent {
    */
   private readonly paidOverrides = signal<ReadonlyMap<string, TenantShareOverride>>(new Map());
 
-  /** Whether the **mode** is Shared Lease — an empty selection. Not the same as sending no split. */
-  readonly isSharedByEveryone = computed(() => this.selectedTenantIds().size === 0);
+  /**
+   * Which mode the owner picked — the fact the wire carries, and the only thing that says who owes
+   * the fee (requirement 26).
+   *
+   * **Its own signal, on purpose.** Until v14 the mode was the selection: *Shared Lease* **was** an
+   * empty `selectedTenantIds`, and `namesRenters` then also counted a typed figure. So typing into a
+   * share box moved a fee from one product to the other without the owner touching the control that
+   * names them. Deriving this from the selection or from the typing reintroduces exactly that.
+   */
+  private readonly mode = signal<'Shared' | 'PerTenant'>('Shared');
+
+  /** Whether the **selection** is empty. Not the mode, and not the same as sending no split. */
+  readonly isSharedByEveryone = computed(
+    () => this.ridesRentInvoice() || this.selectedTenantIds().size === 0
+  );
 
   /** Whether any row has been typed over — what the "reset to even" control is offered for. */
   readonly hasTypedShares = computed(
@@ -120,31 +214,56 @@ export class TenantSplitEditorComponent {
    * Whether this fee **names** the renters it is showing, rather than being shared by whoever is
    * active (requirement 25).
    *
-   * **A subset selected, or any share typed.** Until v13 the mode radio decided this by itself, and
-   * Shared Lease had no boxes to type into — so the owner chose between two products by picking a
-   * radio whose label says nothing about the difference. The difference is real: a fee with no split
-   * is resolved against the live roster on every invoice it reaches, while a named one is resolved
-   * by `named.Where(roster.Contains)` — an intersection, which drops a renter who leaves and
-   * **never adds one who joins**.
+   * **The mode control decides it, and nothing else (v14, requirement 26).** v13 read it as *"a
+   * subset is selected, or any share was typed"*, which made a keystroke move the fee from one
+   * product to the other. The service settled the question the other way on 2026-09-21: a fee
+   * recorded as `Shared` resolves its payers from the **live roster** every time it is billed, and
+   * its stored rows are a record of how it divided at save (`06-unified-invoice-generation.md` v122,
+   * BR-30). So typing says *how it divides*; the mode says *who owes it*.
    *
-   * So the page lets them type wherever they are and tells them what the keystroke did. Clearing the
-   * shares is the way back, and it is the same gesture in reverse.
+   * The difference is still real and still worth showing: a named fee is resolved by
+   * `named.Where(roster.Contains)`, which drops a renter who leaves and **never adds one who joins**.
+   * What changed is where the owner makes that choice — the control, not the first keystroke.
    */
-  readonly namesRenters = computed(
-    () => !this.isSharedByEveryone() || this.amountOverrides().size > 0
-  );
+  readonly namesRenters = computed(() => this.mode() === 'PerTenant' && !this.ridesRentInvoice());
+
+  /**
+   * Whether <b>who owes this fee</b> is settled (requirement 33) -- its mode and its renter set, and
+   * nothing else. The amounts stay editable on purpose: the service accepts a reprice on a paid fee,
+   * so a screen that locked everything would forbid an edit the system performs.
+   */
+  readonly whoOwesIsSettled = computed(() => this.hasTakenMoney());
 
   /**
    * The renters the table covers: the ticked ones, or the whole roster while the fee is shared.
    *
    * Shared Lease shows everybody because there has to be something to type into — and because the
    * figures are true either way. What differs is whether they are sent.
+   *
+   * **A deposit reaches fewer people** (requirement 37). It is billed from the lease's deposit
+   * shares, so a renter holding none of the deposit is not covered — and stays listed, reading
+   * *Not charged this fee*, because this is the one case the decision calls surprising and hiding it
+   * is how the surprise reaches production.
    */
   private readonly coveredTenants = computed(() =>
     this.tenants()
       .filter((tenant) => this.isSharedByEveryone() || this.selectedTenantIds().has(tenant.tenantId))
+      .filter((tenant) => !this.depositFee() || TenantSplitEditorComponent.holdsADeposit(tenant))
       .map((tenant) => ({ tenantId: tenant.tenantId, name: this.tenantName(tenant.tenantId) }))
   );
+
+  /**
+   * Whether a renter carries any of the lease's deposit.
+   *
+   * **Both columns, not just the amount.** A share stated as a percentage leaves `deposit` at zero,
+   * so reading the amount alone would drop a renter who holds half the deposit.
+   *
+   * @param tenant The roster row being tested.
+   * @returns `true` when the renter is recorded at some of the deposit.
+   */
+  private static holdsADeposit(tenant: AgreementTenantShareResponse): boolean {
+    return tenant.deposit > 0 || (tenant.depositPercent ?? 0) > 0;
+  }
 
   /** The split table: each renter's slice of the fee, of what is paid, and what that leaves owing. */
   readonly rows = computed<SplitTableRow[]>(() =>
@@ -185,6 +304,60 @@ export class TenantSplitEditorComponent {
       share: byTenant.get(tenant.tenantId) ?? null
     }));
   });
+
+  /**
+   * Where each renter's share lands, in the words the product decision gives (requirement 36).
+   *
+   * Four captions, keyed off two facts in a fixed order:
+   *
+   * | Fee | Caption |
+   * |---|---|
+   * | Its own invoice, shared by the lease | `On one invoice` |
+   * | Its own invoice, naming its renters | `Invoice N of M` |
+   * | Rides the rent invoice, lease bills together | `On the shared rent invoice` |
+   * | Rides the rent invoice, lease bills separately | `On their own rent invoice` |
+   *
+   * **{@link isGroupInvoice} is consulted in the last two only.** A fee that raises its own invoice
+   * decides its own shape (requirement 31): a shared fee raises one invoice whatever the lease does,
+   * and a naming fee raises one per renter it names — so reading the lease there told the renter the
+   * wrong thing for exactly the cases this release exists to allow. A fee that **rides** the rent
+   * invoice raises none of its own, so how that invoice is packaged is the only fact left.
+   *
+   * **`N` counts over the renters the fee names**, never over the roster: an unnamed renter is
+   * charged nothing and so appears on none of the invoices being counted.
+   */
+  readonly captions = computed<ReadonlyMap<string, string>>(() => {
+    const covered = this.rows();
+    const ridesRent = this.ridesRentInvoice();
+    const perRenter = this.namesRenters();
+    const total = covered.length;
+
+    return new Map(
+      covered.map((row, index) => {
+        if (ridesRent) {
+          return [
+            row.tenantId,
+            this.isGroupInvoice() ? 'On the shared rent invoice' : 'On their own rent invoice'
+          ] as const;
+        }
+
+        return [
+          row.tenantId,
+          perRenter ? `Invoice ${index + 1} of ${total}` : 'On one invoice'
+        ] as const;
+      })
+    );
+  });
+
+  /**
+   * The caption for one renter, or the uncharged line when the fee does not reach them.
+   *
+   * @param tenantId The renter whose row is being rendered.
+   * @returns The sentence shown under that renter's name.
+   */
+  shareDestination(tenantId: string): string {
+    return this.captions().get(tenantId) ?? 'Not charged this fee';
+  }
 
   /** What the fee shares currently add up to. */
   readonly splitTotal = computed(
@@ -235,15 +408,40 @@ export class TenantSplitEditorComponent {
     // One effect rather than an emit inside every handler: the split is a function of the selection,
     // the typed rows and the fee total, and the last of those changes without anything here being
     // called at all — the owner edits an item's rate in the panel above.
+    // Requirement 27. Reading seed() here makes this effect depend on it, so a host that opens the
+    // panel on a different fee seeds that one too. The reference guard is what stops it re-running
+    // against the owner's typing, which changes the signals this effect would otherwise react to.
     effect(() => {
-      // A shared fee sends nothing at all, however many rows the table is showing (requirement 5,
-      // as corrected in v13). The table is there so the owner can start typing, not because the
-      // figures are going anywhere.
+      const seed = this.seed();
+      if (seed === null || seed === this.appliedSeed) {
+        return;
+      }
+
+      this.appliedSeed = seed;
+      this.applySeed(seed);
+    });
+
+    effect(() => {
+      // Requirement 26. The split and the mode travel separately, because they answer different
+      // questions: the split is HOW the fee divides, the mode is WHO OWES it. A shared fee with
+      // figures typed sends both -- that is the case the service cannot work out for itself, and the
+      // one this page got wrong until v14.
+      //
+      // A fee with nothing typed still sends no split at all: there is nothing to send, and the
+      // service divides across the live roster and stores that (requirement 205 on the service).
+      //
+      // Requirement 30 (v17) drops the hasTypedShares half. A Shared fee sends no split AT ALL now,
+      // because the service refuses typed figures on any fee that resolves its payers from the live
+      // roster (requirement 211): they would be correct only until somebody joins or leaves. The
+      // boxes are read-only for that shape, so nothing new can be typed -- but a fee REOPENED from a
+      // save made before this rule still carries figures in its seed, and those would be resent and
+      // refused. Keying on the mode alone is what stops that.
+      const typed = this.namesRenters();
+
       this.splitChange.emit({
-        shares: this.namesRenters()
-          ? toTenantShareInputs(this.rows(), this.splitUnit())
-          : undefined,
-        blocker: this.namesRenters() ? this.blocker() : null
+        shares: typed ? toTenantShareInputs(this.rows(), this.splitUnit()) : undefined,
+        blocker: typed ? this.blocker() : null,
+        mode: this.mode()
       });
     });
   }
@@ -280,6 +478,19 @@ export class TenantSplitEditorComponent {
    * selected Alice alone and charged her the lot.
    */
   toggleTenant(tenantId: string): void {
+    // Requirement 33: the renter set is settled with the mode, and for the same reason.
+    if (this.whoOwesIsSettled()) {
+      return;
+    }
+
+    // v14: the ticks belong to Split per Tenant. A Shared fee is billed to the LIVE ROSTER, so
+    // unticking somebody there cannot take them off it -- the control would promise something the
+    // invoice does not do. The template disables it; this guard is the same rule where it is enforced
+    // rather than merely displayed. (User, 2026-09-22.)
+    if (this.mode() === 'Shared') {
+      return;
+    }
+
     const everybody = this.tenants().map((tenant) => tenant.tenantId);
 
     this.selectedTenantIds.update((selected) => {
@@ -294,20 +505,75 @@ export class TenantSplitEditorComponent {
   /**
    * Switches between the two things a fee can be: shared by the whole lease, or split per renter.
    *
-   * These are the two ends of one selection rather than a mode of their own — an empty selection *is*
-   * "shared by everyone", which is the server's own encoding. So choosing "split per renter" from an
-   * empty selection has to tick somebody, and ticking everybody is the only choice that changes
-   * nothing about who owes the fee while making the split editable.
+   * <b>It is a mode of its own since v14</b>, and no longer the two ends of one selection. It used to
+   * be: an empty selection <em>was</em> "shared by everyone". Requirement 26 gives the mode a field on
+   * the wire, so the two are separate facts and the selection only decides who is ticked.
+   *
+   * Choosing "split per renter" from an empty selection still has to tick somebody, and ticking
+   * everybody is the only choice that changes nothing about who owes the fee while making the ticks
+   * useful.
+   *
+   * <b>Neither direction resets the figures.</b> Going to shared called resetSplit() until v14, because
+   * clearing the shares WAS the way back from naming. Naming is the mode now, so that reset destroyed
+   * what the owner typed for no reason — the figures are a division, and a division is as meaningful
+   * on one mode as on the other. The reset control is the only thing that clears them, and it is a
+   * deliberate click.
    */
   setSplitMode(mode: 'shared' | 'split'): void {
+    // Requirement 33: guarded here as well as on the control, because the control is not the only
+    // way in -- a host, a keyboard, or a later refactor can reach this method directly, and the rule
+    // is about the fee rather than about the radio button.
+    if (this.whoOwesIsSettled()) {
+      return;
+    }
+
+    // Requirement 26: this is where the mode is decided, and the only place it is written.
+    this.mode.set(mode === 'shared' ? 'Shared' : 'PerTenant');
+
     if (mode === 'shared') {
       this.selectedTenantIds.set(new Set<string>());
-      this.resetSplit();
       return;
     }
     if (this.selectedTenantIds().size === 0) {
       this.selectedTenantIds.set(new Set(this.tenants().map((tenant) => tenant.tenantId)));
     }
+  }
+
+  /**
+   * Restores a split the owner already authored (requirement 27).
+   *
+   * **All five pieces or none.** The mode, the ticks, the unit, the fee shares and the paid shares were
+   * lost together and come back together: restoring the mode over a blank table would say who owes a
+   * division that is not on screen, which is worse than restoring neither.
+   *
+   * **The unit is derived, not stored.** A row carrying a `sharePercent` was authored as a percentage
+   * — the same convention the service uses, where a null `share_percent` means the figure was typed as
+   * an amount (BR-06). So there is no sixth value to keep in step.
+   *
+   * @param seed The stored split.
+   */
+  private applySeed(seed: TenantSplitSeed): void {
+    const authoredInPercent = seed.shares.some((share) => share.sharePercent != null);
+    this.splitUnit.set(authoredInPercent ? 'percent' : 'amount');
+    this.mode.set(seed.mode);
+    this.selectedTenantIds.set(new Set(seed.shares.map((share) => share.tenantId)));
+
+    this.amountOverrides.set(
+      new Map(
+        seed.shares.map((share) => [
+          share.tenantId,
+          { text: String(authoredInPercent ? (share.sharePercent ?? 0) : share.amount) }
+        ])
+      )
+    );
+
+    this.paidOverrides.set(
+      new Map(
+        seed.shares
+          .filter((share) => share.alreadyPaid != null)
+          .map((share) => [share.tenantId, { text: String(share.alreadyPaid) }])
+      )
+    );
   }
 
   /**

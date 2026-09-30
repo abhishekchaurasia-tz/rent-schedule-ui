@@ -89,6 +89,96 @@ describe('AddTenantsComponent', () => {
     return body;
   };
 
+  /**
+   * Requirement 12 — removing a renter names the fees whose typed figures stop describing who is billed.
+   *
+   * The product decision calls this "the one place a manager can still be surprised, and it is the only
+   * one left on this page", and asks for it on this screen specifically.
+   *
+   * **Every case here turns on `splitMode`**, which is the field this repository never read. A naive
+   * test of `tenantShares.length` passes the first case and fails the third, because a *Shared* fee
+   * stores rows too — as a record of how it divided, not as an instruction.
+   */
+  describe('removing a renter names the fees it reaches (requirement 12)', () => {
+    const alice = 'aaaaaaaa-0000-0000-0000-000000000001';
+    const bob = 'bbbbbbbb-0000-0000-0000-000000000002';
+
+    /** A saved roster of Alice and Bob, evenly split. */
+    const roster: AgreementTenantsResponse = {
+      isGroupInvoice: false,
+      partialPaymentAllowed: false,
+      tenants: [
+        { tenantId: alice, rentAmount: 500, rentPercent: 50, deposit: 0, depositPercent: 0 },
+        { tenantId: bob, rentAmount: 500, rentPercent: 50, deposit: 0, depositPercent: 0 }
+      ]
+    };
+
+    /** A stored fee naming Alice and Bob, with the flags given. */
+    function fee(over: Record<string, unknown> = {}) {
+      return {
+        id: '0198e0a4-1f2b-7c33-8d41-cccccccccccc',
+        category: 'Rent',
+        notes: 'Reserved parking',
+        alreadyPaid: 0,
+        attachedWithRentalInvoice: false,
+        isRecurring: false,
+        hasNoEndDate: false,
+        splitMode: 'PerTenant',
+        isApplied: false,
+        tenantShares: [
+          { tenantId: alice, amount: 200 },
+          { tenantId: bob, amount: 100 }
+        ],
+        items: [],
+        ...over
+      };
+    }
+
+    /** Opens the screen on that roster with the fees given, then removes Alice. */
+    function removeAliceFrom(...charges: ReturnType<typeof fee>[]): void {
+      loadSaved(roster, { additionalCharges: charges as never });
+      fixture.detectChanges();
+      component.removeTenant(0);
+      fixture.detectChanges();
+    }
+
+    it('FR12_RemovingANamedRenter_NamesTheFeesItReaches', () => {
+      removeAliceFrom(fee());
+
+      expect(component.feesLosingTheirTypedFigures().length).toBe(1);
+      expect(fixture.nativeElement.textContent).toContain('Reserved parking');
+      expect(fixture.nativeElement.textContent).toContain('will no longer be used');
+    });
+
+    it('FR12_ASharedFee_IsNeverNamed', () => {
+      // The case a tenantShares.length test gets wrong: a Shared fee stores rows too, as a record of
+      // how it divided at save. It has always followed the roster, so nothing about it is surprising.
+      removeAliceFrom(fee({ splitMode: 'Shared' }));
+
+      expect(component.feesLosingTheirTypedFigures()).toEqual([]);
+    });
+
+    it('FR12_AFeeOnTheRentInvoice_IsNeverNamed', () => {
+      removeAliceFrom(fee({ attachedWithRentalInvoice: true, isRecurring: true, splitMode: null }));
+
+      expect(component.feesLosingTheirTypedFigures()).toEqual([]);
+    });
+
+    it('FR12_APaidFee_IsNeverNamed', () => {
+      // Its renters are frozen already, so a removal cannot reach it.
+      removeAliceFrom(fee({ isApplied: true }));
+
+      expect(component.feesLosingTheirTypedFigures()).toEqual([]);
+    });
+
+    it('FR12_RemovingARenterNoFeeNames_SaysNothing', () => {
+      removeAliceFrom(fee({ tenantShares: [{ tenantId: bob, amount: 300 }] }));
+
+      expect(component.feesLosingTheirTypedFigures()).toEqual([]);
+      expect(fixture.nativeElement.textContent).not.toContain('will no longer be used');
+    });
+  });
+
   it('should create', () => {
     load();
     expect(component).toBeTruthy();

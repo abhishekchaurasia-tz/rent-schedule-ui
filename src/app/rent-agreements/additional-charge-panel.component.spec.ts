@@ -261,6 +261,10 @@ describe('AdditionalChargePanelComponent', () => {
       attachedWithRentalInvoice: false,
       isRecurring: false,
       dueDate: '2026-08-15',
+
+      // v14, requirement 26: sent on EVERY submission, including one carrying no split. An absent
+      // field is not neutral -- the service reads it the way the payer-row count used to be read.
+      splitMode: 'Shared',
       frequency: null,
       frequencyConfig: null,
       startDate: null,
@@ -279,7 +283,7 @@ describe('AdditionalChargePanelComponent', () => {
     });
   });
 
-  it('emits a recurring charge with frequency/startDate instead of dueDate', () => {
+  it('emits a standalone recurring charge with the cadence the owner picked (FR-136)', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
 
@@ -287,9 +291,11 @@ describe('AdditionalChargePanelComponent', () => {
     item.patchValue({ lineItemId: parkingItem.id, description: 'Monthly parking', quantity: 1, rate: 30 });
     component.recalculateAmount(0);
 
+    // Raises its OWN invoice, which since FR-136 is the shape that carries a cadence. It rode the
+    // rental invoice here until v17, because FR-088 put the pair on the other shape.
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      attachedWithRentalInvoice: false,
       frequency: 'monthly',
       dueOnDay: 15,
       startDate: '2026-08-01',
@@ -311,7 +317,7 @@ describe('AdditionalChargePanelComponent', () => {
     expect(emitted?.items[0].itemType).toBe('Parking');
   });
 
-  it('omits the cadence for a recurring charge that does not ride the rental invoice (FR-088)', () => {
+  it('omits the cadence for a recurring charge that rides the rental invoice (FR-136)', () => {
     fixture.detectChanges();
     flushLineItems([parkingItem]);
 
@@ -321,7 +327,7 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: false,
+      attachedWithRentalInvoice: true,
       frequency: 'monthly',
       dueOnDay: 15,
       startDate: '2026-08-01',
@@ -333,8 +339,12 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.create();
 
-    // A standalone recurring charge bills once per rent cycle, so it has no cadence of its own. Sending
-    // one is what the server rejects with 422.
+    // It arrives when the rent does, so a cadence of its own describes something the billing run will
+    // not do. The server refuses one outright (FR-136), where FR-088 required it.
+    //
+    // The form still HOLDS 'monthly' — the picker is hidden for this shape, so the control keeps its
+    // default. That the request drops it rather than echoing the default is the whole point: before
+    // v17 a stale 'monthly' went out from a control the owner never saw.
     expect(emitted?.isRecurring).toBeTrue();
     expect(emitted?.frequency).toBeNull();
     expect(emitted?.frequencyConfig).toBeNull();
@@ -352,7 +362,9 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      // FR-136: the cadence is carried by the charge that raises its own invoice, so that is the
+      // shape this builder has to be exercised on.
+      attachedWithRentalInvoice: false,
       frequency: 'bi_monthly',
       startDate: '2026-08-01',
       hasNoEndDate: true
@@ -378,7 +390,9 @@ describe('AdditionalChargePanelComponent', () => {
 
     component.form.patchValue({
       isRecurring: true,
-      attachedWithRentalInvoice: true,
+      // FR-136: the cadence is carried by the charge that raises its own invoice, so that is the
+      // shape this builder has to be exercised on.
+      attachedWithRentalInvoice: false,
       frequency: 'custom',
       startDate: '2026-08-01',
       hasNoEndDate: true
@@ -559,6 +573,188 @@ describe('AdditionalChargePanelComponent', () => {
       rate: 75,
       amount: 75
     });
+  });
+
+  describe('reopening a fee keeps its split (FR 27)', () => {
+    // Until v15 applyInitialCharge restored notes, amount, dates, recurrence and items -- and nothing
+    // about the split. The editor took no seed input at all, so it opened as if the fee were new: the
+    // mode, the ticks, the unit, the typed shares and the typed paid figures were all gone, and the
+    // next save wrote an even division over what the owner had typed. Nobody was told.
+    //
+    // It predates splitMode. The figures have been lost since the editor arrived in v7 and the paid
+    // boxes since v9; v14 only added the mode to the same hole.
+
+    /** What create() emitted, captured by reopen() and by the fresh-add case. */
+    let emitted: AdditionalChargeCreationRequest | undefined;
+
+    const ravi = '11111111-1111-1111-1111-111111111111';
+    const sita = '22222222-2222-2222-2222-222222222222';
+    const amit = '33333333-3333-3333-3333-333333333333';
+
+    /** A stored fee of `total`, with the rows exactly as the owner left them. */
+    function storedFee(
+      total: number,
+      splitMode: 'Shared' | 'PerTenant',
+      tenantShares: AdditionalChargeCreationRequest['tenantShares']
+    ): AdditionalChargeCreationRequest {
+      return {
+        notes: 'Reserved parking',
+        alreadyPaid: 0,
+        attachedWithRentalInvoice: false,
+        isRecurring: false,
+        dueDate: '2026-08-20',
+        frequency: null,
+        frequencyConfig: null,
+        startDate: null,
+        endDate: null,
+        hasNoEndDate: false,
+        splitMode,
+        tenantShares,
+        items: [
+          {
+            lineItemId: parkingItem.id,
+            itemType: 'Parking',
+            description: 'Parking space',
+            quantity: 1,
+            rate: total,
+            amount: total
+          }
+        ]
+      };
+    }
+
+    /** Opens the panel on a stored fee, with the roster it was split across. */
+    function reopen(fee: AdditionalChargeCreationRequest, ...roster: string[]): void {
+      component.tenants = roster.map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }));
+      component.initialCharge = fee;
+      emitted = undefined;
+      component.created.subscribe((request) => (emitted = request));
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+    }
+
+    it('restores the typed shares rather than the even division', () => {
+      // Deliberately uneven: 150 / 150 is what a blank table produces, so an even split could pass
+      // this case without anything having been restored at all.
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.amount)).toEqual([200, 100]);
+    });
+
+    it('restores the mode, so a shared fee does not come back named', () => {
+      reopen(
+        storedFee(300, 'Shared', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.splitMode).toBe('Shared');
+    });
+
+    it('restores the unit, reading it off the rows that carry a percentage', () => {
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 180, sharePercent: 60 },
+          { tenantId: sita, amount: 120, sharePercent: 40 }
+        ]),
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.sharePercent)).toEqual([60, 40]);
+      expect(emitted!.tenantShares!.map((share) => share.amount)).toEqual([180, 120]);
+    });
+
+    it('restores each renter paid figure, which v9 added and this lost with the rest', () => {
+      const fee = storedFee(300, 'PerTenant', [
+        { tenantId: ravi, amount: 200, alreadyPaid: 100 },
+        { tenantId: sita, amount: 100, alreadyPaid: 0 }
+      ]);
+      reopen({ ...fee, alreadyPaid: 100 }, ravi, sita);
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.alreadyPaid)).toEqual([100, 0]);
+    });
+
+    it('ticks exactly the renters the fee names, not the whole roster', () => {
+      reopen(
+        storedFee(300, 'PerTenant', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]),
+        ravi,
+        sita,
+        amit
+      );
+
+      component.create();
+
+      expect(emitted!.tenantShares!.map((share) => share.tenantId)).toEqual([ravi, sita]);
+    });
+
+    it('seeds nothing on a fresh add, so the seed cannot leak into that path', () => {
+      component.tenants = [ravi, sita].map((tenantId) => ({
+        tenantId,
+        rentAmount: 0,
+        rentPercent: null,
+        deposit: 0,
+        depositPercent: null
+      }));
+      component.initialCharge = null;
+      fixture.detectChanges();
+      flushLineItems([parkingItem]);
+      fixture.detectChanges();
+
+      expect(component.splitState().shares).toBeUndefined();
+      expect(component.splitState().mode).toBe('Shared');
+    });
+  });
+
+  /**
+   * Requirement 35 at the panel's own seam.
+   *
+   * The panel gated the whole split region on `!attachedWithRentalInvoice`, so ticking the box made
+   * the renters disappear from the drawer entirely. What "no setting at all" removes is the setting;
+   * what the owner still has to be able to read is what each renter ends up owing.
+   */
+  it('FR35_AFeeOnTheRentInvoice_KeepsTheShareTableOnScreen', () => {
+    component.tenants = [
+      '11111111-1111-1111-1111-111111111111',
+      '22222222-2222-2222-2222-222222222222'
+    ].map((tenantId) => ({ tenantId, rentAmount: 0, rentPercent: null, deposit: 0, depositPercent: null }));
+
+    fixture.detectChanges();
+    flushLineItems([parkingItem]);
+
+    component.form.patchValue({ attachedWithRentalInvoice: true });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
   });
 
   it('prefills a one-time charge from initialCharge (Edit)', () => {
@@ -861,6 +1057,136 @@ describe('AdditionalChargePanelComponent', () => {
     function completeTheFee(): void {
       component.form.patchValue({ dueDate: new Date('2026-10-01T00:00:00') });
     }
+
+    /**
+     * Requirement 32 — attaching to the rent invoice needs a lease that bills rent.
+     *
+     * A lease billing zero raises no rental invoice, so a fee attached to one would be stored,
+     * expanded, and bill nothing for the life of the agreement (the service's FR-138). The reason is
+     * said on screen rather than left to a 422 after the owner has typed the whole fee.
+     */
+    it('disables the attach toggle and names the reason when the lease bills no rent', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', 0);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeFalse();
+      expect(toggle.disabled).toBeTrue();
+      expect(fixture.nativeElement.textContent).toContain('no rental invoice to add this to');
+    });
+
+    it('offers the attach toggle on a lease that bills rent', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', 1000);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeTrue();
+      expect(toggle.disabled).toBeFalse();
+      expect(fixture.nativeElement.textContent).not.toContain('no rental invoice to add this to');
+    });
+
+    /**
+     * A host that cannot answer must not silently remove a control the owner is entitled to. The
+     * service still refuses the save, and a refusal they can read beats a control that vanished for
+     * no stated reason.
+     */
+    it('leaves the attach toggle offered when the host states no rent at all', () => {
+      // setInput, not a direct assignment: ngOnChanges is what disables the control, and it runs
+      // only for an input the host actually binds -- which is how the real screens pass this.
+      fixture.componentRef.setInput('leaseFullRent', null);
+      openWithRoster(tenantA, tenantB);
+
+      const toggle: HTMLInputElement = fixture.nativeElement.querySelector(
+        'input[formControlName="attachedWithRentalInvoice"]'
+      );
+
+      expect(component.leaseBillsRent).toBeTrue();
+      expect(toggle.disabled).toBeFalse();
+    });
+
+    /**
+     * Requirement 29 as corrected by 35 — a fee that rides the rent invoice offers no SETTING, and
+     * still shows what each renter owes.
+     *
+     * That invoice has already settled how many invoices there are and who is on them, so a mode
+     * control here would ask the owner for a decision the fee cannot carry, and the service refuses
+     * both fields outright (backend requirements 210 and 211).
+     *
+     * **This case changed its expectation on 2026-09-29 and kept its subject.** It asserted that the
+     * whole editor disappeared, which conflated refusing a TYPED figure with hiding a SHOWN one. The
+     * product decision draws this state with the figures present and the setting gone.
+     */
+    it('hides the setting but not the shares for a fee that rides the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+
+      component.form.patchValue({ attachedWithRentalInvoice: true });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('app-tenant-split-editor')).not.toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+    });
+
+    it('sends neither splitMode nor tenantShares for a fee that rides the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      component.form.patchValue({
+        isRecurring: true,
+        attachedWithRentalInvoice: true,
+        startDate: '2026-10-01',
+        hasNoEndDate: true
+      });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+
+      component.create();
+
+      expect(emitted?.splitMode).toBeUndefined();
+      expect(emitted?.tenantShares).toBeUndefined();
+    });
+
+    /**
+     * The order an owner actually reaches this by: author the split, then tick the toggle. Without
+     * the guard the request carries a division from a table they can no longer see, and the service
+     * answers 422 naming a field that is no longer on screen.
+     */
+    it('drops a split already authored when the fee is switched to ride the rental invoice', () => {
+      openWithRoster(tenantA, tenantB);
+
+      editor().setSplitMode("split");
+      fixture.detectChanges();
+
+      expect(component.splitState().shares).toBeDefined();
+
+      component.form.patchValue({
+        isRecurring: true,
+        attachedWithRentalInvoice: true,
+        startDate: '2026-10-01',
+        hasNoEndDate: true
+      });
+      fixture.detectChanges();
+
+      let emitted: AdditionalChargeCreationRequest | undefined;
+      component.created.subscribe((c) => (emitted = c));
+
+      component.create();
+
+      expect(emitted?.tenantShares).toBeUndefined();
+      expect(emitted?.splitMode).toBeUndefined();
+    });
 
     /**
      * Requirement 22, in the one assertion that keeps it true.

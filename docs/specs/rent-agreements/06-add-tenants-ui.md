@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v2 | 2026-09-30 | **Removing a renter quietly stops a fee's typed figures from being used, and this screen says nothing.** New **requirement 12**. *Confirmed by the user 2026-09-30, answering the question `additional-charge-every-case.html` left open — that page names this screen and calls it "the one place a manager can still be surprised, and it is the only one left".* **What happens today.** A fee set to *Split per Tenant* naming Alice, Bob and Carol is billed by intersecting its payer list with the live roster. Remove Carol and the fee still bills \$300, now divided across Alice and Bob — the figures the manager typed for three people are no longer used. Nothing on the removal screen mentions it. **Computed here, not reported by the server.** `PUT …/tenants` answers with `tenantIds` and `skippedCycles` and says nothing about fees; it does not need to, because this screen already loads the agreement and every charge on it carries `splitMode` and `tenantShares`. **The gap is that this repository has never read `splitMode`** — the service has sent it since its v122 and no model here declares it, so the screen cannot today tell a *Shared* fee's stored rows (a record of how it divided, service BR-30) from a *Split per Tenant* fee's (an instruction). Only the second kind is worth a warning, so the field is what makes the requirement possible. **Said before the save**, unlike requirement 11 which reports what the server did: this is a consequence of a removal the manager has not committed yet. **The wording corrects the decision on one point.** That page says the figures are *replaced*; the service does not rewrite them — the rows stay as saved and are intersected at billing time. The notice says they **will no longer be used**, because a manager who reopens the fee and finds their figures intact would be right to distrust a screen that claimed otherwise. **No API change and no new endpoint** — one field added to a response model that already receives it. | [2026-09-30T1200-06-a-removal-says-which-fees-it-reaches](../../plans/rent-agreements/2026-09-30T1200-06-a-removal-says-which-fees-it-reaches.md) |
 | v1 | 2026-09-09 | **First spec for the tenants step — written because a save on this screen reports something it had never shown.** The screen itself is not new: `AddTenantsComponent` has existed since the wizard was built, and requirements 1–10 below **document it as found**, so there is a record to compare against next time. **The one behavioural change is requirement 11.** *Reported 2026-09-08: raising a tenant's share from 0% did not change an already-billed month.* The backend intends that — a cycle already due keeps the split it was billed with (backend requirement 104, decided at its spec v37) — and since **backend FR 155** it says so: a successful `PUT …/tenants` carries `skippedCycles`, each naming the cycle, its due date, and the reason `cycle_already_due`. **`skippedCycles` appeared nowhere in this repository** — no model field, no component code, no template branch — which is the same defect that `01-rent-agreement-edit-ui.md` v19 fixed for `blockedRemovals` one day earlier, in the same shape, on the sibling screen. So the owner read "Tenants saved." and then met a bill that disagreed with the roster, with nothing on screen connecting the two. **Reported beside the success banner, not instead of it:** the save did apply, and every month that had not been billed yet did take the new split — calling it a failure would be as wrong as saying nothing. **No navigation hold, unlike v19's fix:** this screen does not navigate on save, so the banner is rendered onto a page the user is already looking at. Two limits carried over deliberately from v19: the server's `message` is shown **verbatim**, because the wording belongs to whoever owns the rule; and the cycle is **named, not linked**, since a filtered route into `/invoices` does not exist. | [2026-09-09T1500-06-surface-skipped-cycles](../../plans/rent-agreements/2026-09-09T1500-06-surface-skipped-cycles.md) |
 
 ## Overview
@@ -75,6 +76,50 @@ requirement 11 is the only one added with it.
     **not** present it as a save failure, since the save succeeded and every cycle that had not been
     billed yet did take the new split. When `skippedCycles` is absent, `null`, or empty, nothing is
     shown. The cycle is **named, not linked**: no route into a filtered invoice list exists.
+
+12. **v2** — Where removing a renter would leave a fee's **typed figures no longer describing who is
+    billed**, the system shall say so **before the save**, naming those fees.
+
+    **The one place a manager can still be surprised.** The product decision
+    (`additional-charge-every-case.html`) says so outright and asks for this screen by name:
+
+    > *"Row 2 is the one place a manager can still be surprised, and it is the only one left on this
+    > page. A departure replaces typed figures even on Split per Tenant, because those figures were
+    > written for a group of people that no longer exists. **Should the manager be told when this
+    > happens — on the screen where they removed the renter? We think yes**, using the notice that
+    > screen already shows for months it deliberately left alone."*
+
+    *(Confirmed by the user 2026-09-30.)*
+
+    **Which fees qualify, and which deliberately do not:**
+
+    | The fee | On removing one of its renters | Told? |
+    |---|---|---|
+    | **Split per Tenant**, naming the removed renter | the remaining named renters divide the whole fee; what was typed no longer describes them | **yes** |
+    | **Split per Tenant**, not naming them | nothing changes | no |
+    | **Shared Lease** | it always followed the roster; its stored rows are a record, not an instruction (service BR-30) | no |
+    | **On the rent invoice** | it follows whoever that invoice bills, and holds no setting of its own | no |
+
+    **Computed on this screen, not reported by the server.** `PUT …/tenants` answers with
+    `tenantIds` and `skippedCycles` and says nothing about fees. It does not need to: this screen
+    already loads the agreement, and every charge on it carries `splitMode` and its `tenantShares`.
+    **The one thing missing is that this repository never reads `splitMode`** — the service has sent it
+    since its v122, and no model here declares it.
+
+    **Said before the save, not after it** — unlike requirement 11, which reports what the server did.
+    This is a consequence of a removal the manager has not committed yet, so it belongs beside the
+    decision while it can still be reconsidered.
+
+    **The wording states what actually happens, which is not quite what the decision says.** That page
+    says the figures are *replaced*; the service does not rewrite them. The stored rows stay exactly as
+    they were saved, and a departed renter is dropped when the fee is billed — the payer list is
+    intersected with the live roster and the total re-divides across those who remain. So the notice
+    shall say the typed figures **will no longer be used**, not that they have been erased: a manager
+    who reopens the fee and finds their figures intact would be right to distrust a screen that said
+    otherwise.
+
+    **A fee that has taken money is out of scope**, because its renters are already frozen and a
+    removal cannot reach it (spec `02` requirement 38; service requirement 218).
 
 ## Constraints
 

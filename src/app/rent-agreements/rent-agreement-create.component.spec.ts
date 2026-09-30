@@ -623,6 +623,46 @@ describe('RentAgreementCreateComponent', () => {
     expect(component.editingCharge).toEqual(depositCharge);
   });
 
+  /**
+   * Requirement 33, at the seam that nearly shipped open.
+   *
+   * The split editor freezes a paid fee's mode and renters, and the panel passes the flag through --
+   * but the panel is handed one charge, not the agreement, so only this screen knows which fee has
+   * been paid against. Without this binding the freeze was proved in the editor's own tests and fired
+   * on no screen at all.
+   */
+  it('tells the panel when the fee it is reopening has taken a payment (FR 33)', () => {
+    fixture.detectChanges();
+
+    const paid: AdditionalChargeCreationRequest = {
+      id: '0198e0a4-1f2b-7c33-8d41-aaaaaaaaaaaa',
+      alreadyPaid: 0,
+      attachedWithRentalInvoice: false,
+      isRecurring: false,
+      dueDate: '2026-08-15',
+      hasNoEndDate: false,
+      items: [{ itemType: 'Parking', description: 'Bay', quantity: 1, rate: 50, amount: 50 }]
+    };
+    const unpaid: AdditionalChargeCreationRequest = {
+      ...paid,
+      id: '0198e0a4-1f2b-7c33-8d41-bbbbbbbbbbbb'
+    };
+
+    component.additionalCharges.set([paid, unpaid]);
+    component.appliedChargeIds.set(new Set([paid.id!]));
+
+    // Nothing is open yet: adding a fee is not editing one, and a fee that does not exist has taken
+    // nothing.
+    expect(component.editingChargeHasTakenMoney).toBeFalse();
+
+    component.editAdditionalCharge(0);
+    expect(component.editingChargeHasTakenMoney).toBeTrue();
+
+    component.closeAdditionalChargePanel();
+    component.editAdditionalCharge(1);
+    expect(component.editingChargeHasTakenMoney).toBeFalse();
+  });
+
   it('re-creating an edited charge replaces it in place, preserving its target and index', () => {
     fixture.detectChanges();
 
@@ -681,4 +721,111 @@ describe('RentAgreementCreateComponent', () => {
       additionalCharges: []
     } as CreateRentAgreementResponse);
   }));
+});
+
+/**
+ * Requirement 34 — the drawer's state is chosen from the data, never from the screen it was opened
+ * from.
+ *
+ * These live in a suite of their own because every other test in this file runs in **create** mode,
+ * where the route carries no `:id`. The defect they close is only reachable in **edit** mode: a lease
+ * that already has renters, opened from Edit Terms, where the drawer showed the no-renters state
+ * because this screen never handed it a roster. The product decision names that gap in as many
+ * words — *"Edit Terms knows the renters, so it gets state B."*
+ */
+describe('RentAgreementCreateComponent — the fee drawer reads the lease, not the screen', () => {
+  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
+  const agreementId = '44444444-4444-4444-4444-444444444444';
+
+  const loadedAgreement = {
+    id: agreementId,
+    propertyUnitId: '11111111-1111-1111-1111-111111111111',
+    propertyId: '22222222-2222-2222-2222-222222222222',
+    propertyOwnerId: '33333333-3333-3333-3333-333333333333',
+    startDate: '2026-08-01',
+    endDate: '2027-08-01',
+    leaseTermType: 'fixed',
+    fullRent: 2000,
+    frequency: 'monthly',
+    firstRentalDueDate: '2026-08-01',
+    deposit: null,
+    depositDueDate: null,
+    depositCollected: false,
+    switchToMonthToMonth: false,
+    frequencyConfig: null,
+    isDepositEditable: true,
+    scheduleRows: [],
+    additionalCharges: []
+  };
+
+  /** Boots the component on a route that either carries an `:id` (edit) or does not (create). */
+  const boot = (id: string | null) => {
+    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    router.navigate.and.resolveTo(true);
+
+    TestBed.configureTestingModule({
+      imports: [RentAgreementCreateComponent, HttpClientTestingModule],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { paramMap: convertToParamMap(id ? { id } : {}) } }
+        },
+        { provide: Router, useValue: router }
+      ]
+    });
+
+    const fixture = TestBed.createComponent(RentAgreementCreateComponent);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    fixture.detectChanges();
+
+    return { fixture, component: fixture.componentInstance, httpMock };
+  };
+
+  /** Answers every outstanding due-date-options request, which several code paths fire. */
+  const drainOptions = (httpMock: HttpTestingController) => {
+    for (const request of httpMock.match(optionsUrl)) {
+      request.flush({ dates: [] } as CandidateDateResponse);
+    }
+  };
+
+  it('FR34_EditingASavedLease_HandsTheDrawerItsRoster', () => {
+    const { component, httpMock } = boot(agreementId);
+    drainOptions(httpMock);
+
+    httpMock
+      .expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}`)
+      .flush(loadedAgreement);
+
+    // Step 2 was saved and the lease bills its renters on one shared invoice.
+    httpMock.expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}/tenants`).flush({
+      isGroupInvoice: true,
+      partialPaymentAllowed: false,
+      tenants: [
+        { tenantId: 'aaaaaaaa-0000-0000-0000-000000000001', rentAmount: 1200, rentPercent: null, deposit: 0, depositPercent: null },
+        { tenantId: 'bbbbbbbb-0000-0000-0000-000000000002', rentAmount: 800, rentPercent: null, deposit: 0, depositPercent: null }
+      ]
+    });
+
+    drainOptions(httpMock);
+
+    expect(component.agreementTenants().map((t) => t.rentAmount)).toEqual([1200, 800]);
+    expect(component.agreementIsGroupInvoice()).toBeTrue();
+  });
+
+  it('FR34_CreatingALease_HandsTheDrawerAnEmptyRoster', () => {
+    const { component, httpMock } = boot(null);
+    drainOptions(httpMock);
+
+    // A lease being created has no id, so there is no roster to ask for -- and asking anyway is the
+    // bug in the other direction. State A is reached because the lease has nobody on it, which is
+    // true, and not because this screen forgot to say.
+    httpMock.expectNone(
+      (request) => request.url.endsWith('/tenants'),
+      'a lease with no id has no roster endpoint to call'
+    );
+
+    expect(component.agreementTenants()).toEqual([]);
+    expect(component.agreementIsGroupInvoice()).toBeFalse();
+  });
 });
