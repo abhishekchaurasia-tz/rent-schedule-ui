@@ -149,16 +149,45 @@ changes nothing that is stored or sent. Milestone 1 stands alone if Milestone 2 
 
 ## 6. Final Validation
 
-*To be filled at execution.*
+**Suite 511 → 523**, all green. Twelve cases added, seven at Milestone 1 and five at Milestone 2.
 
-- [ ] Requirement 39 named by at least one test.
-- [ ] A fee dated before the lease's start warns, and saves.
-- [ ] A fee dated after a fixed-term lease's end warns.
-- [ ] A month-to-month lease never produces the upper warning, however far out the date.
-- [ ] A fee dated on the lease's **last day** warns about nothing — the bound is inclusive.
-- [ ] A fee dated inside the term warns about nothing.
-- [ ] A recurring fee warns about nothing, whatever its Start and End dates.
-- [ ] Clearing the Due Date clears the warning.
-- [ ] All four screens that open the panel get it, because none of them changed.
-- [ ] **A-2 answered** — the service accepts a date past the lease's end, or Milestone 2 is reworked to
-      block rather than warn.
+**A-2 was answered before Milestone 2 shipped, not assumed.** The billing service's spec `06` v132,
+requirement 221, withdrew its upper bound the same day — so Milestone 2 went in as a **warning**, as
+written, rather than as the Save-blocking rework the prerequisite named as the alternative.
+
+**The month-to-month guard was proved by removing it.** With `this.leaseEndDate &&` taken out and the
+comparison written against an empty string instead, **exactly one case failed** — *"never warns about
+the end on a month-to-month lease"* — and the other 522 stayed green. The guard was then restored and
+the suite re-run. That is the check the plan asked for, and it is the difference between a test that
+covers a line and one that holds a rule.
+
+### Diverged from the plan
+
+**The test names are the repository's, not the plan's.** The plan listed C#-style names
+(`FR39_AFeeDatedBeforeTheLeaseStarts_SaysItWillBeOverdue`). This app names cases as Jasmine sentences
+inside a `describe` that carries the requirement — *"a fee dated outside the lease says so (requirement
+39)"* — which is what every other spec file here does. **The convention won**; inventing a second one
+for this slice would have made the requirement harder to find, not easier.
+
+**Twelve cases rather than the seven the plan named.** The extra five are the ones the plan's own
+reasoning implied and its list did not: the inclusive bound at **each** end, the start-side warning
+still firing on a month-to-month lease, and Save proving enabled on **both** arms rather than only the
+lower one. Save staying enabled is the whole decision; asserting it on one arm only would have left the
+other resting on the template.
+
+- [x] Requirement 39 named by at least one test. *Twelve, under one `describe` naming it.*
+- [x] A fee dated before the lease's start warns, and saves. *The warning names the start date, and the
+      emitted charge carries the back-dated `dueDate` unchanged.*
+- [x] A fee dated after a fixed-term lease's end warns. *And saves — asserted separately.*
+- [x] A month-to-month lease never produces the upper warning, however far out the date. *`2030-07-04`
+      on an open-ended lease; and the **lower** warning still fires there, which is the pair.*
+- [x] A fee dated on the lease's **last day** warns about nothing — the bound is inclusive. *And on its
+      **first** day, which the plan did not list.*
+- [x] A fee dated inside the term warns about nothing.
+- [x] A recurring fee warns about nothing, whatever its Start and End dates.
+- [x] Clearing the Due Date clears the warning. *Asserted after a warning was on screen, not from a
+      clean form — the stale-notice case is the one worth holding.*
+- [x] All four screens that open the panel get it, because none of them changed. *No call site was
+      touched; both inputs were already passed by all four.*
+- [x] **A-2 answered** — the service accepts a date past the lease's end (spec `06` v132, requirement
+      221, implemented and green).

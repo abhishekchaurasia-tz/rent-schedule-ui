@@ -89,7 +89,21 @@ narrowed it from *“any invoice line references this charge”* to *“has take
 the line requirement 33 freezes on. The service-side documentation still described the wide rule and
 was corrected in the same change.
 
-**A-2 (v21) — the service must open its upper bound before requirement 39's upper arm is honest.**
+**A-2 (v21) — ANSWERED 2026-09-30, the same day, and the service was changed.** The billing service's
+spec `06` **v132, requirement 221** withdraws requirement 220's upper half and requirement 169 entirely:
+a one-off charge is now bounded by **neither** end. Both arms of requirement 39 are therefore warnings,
+and neither describes a save the service will decline.
+
+**The argument the service used is worth carrying here**, because it is the answer to "then what stops a
+fee on a dead lease": nothing about this changed that. `InvoiceIssuingService` declines its whole pass
+unless the agreement is billable **today**, so a dead lease raises no invoice whatever any due date
+says. The bound that went only ever stopped a **live** lease booking a fee past its own end — the case
+this requirement exists for.
+
+*The original text is kept below, struck through, because the reasoning is what made the dependency
+visible before it was built rather than after.*
+
+~~**A-2 (v21) — the service must open its upper bound before requirement 39's upper arm is honest.**~~
 The billing service bounded a one-off charge by **both** ends of the lease until 2026-09-30. Its spec
 `06` requirement 220 opened the **lower** one that day — a back-dated fee is now billed, and billed
 overdue — and deliberately left the upper one refusing, with `invoice.due_date_after_lease_end` and a
