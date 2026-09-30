@@ -923,7 +923,28 @@ export class RentAgreementCreateComponent {
   private upsertAdditionalCharge(charge: AdditionalChargeCreationRequest, target: 'Rent' | 'Deposit'): void {
     const editIndex = this.editingChargeIndex();
     if (editIndex !== null) {
-      this.additionalCharges.update((charges) => charges.map((c, i) => (i === editIndex ? charge : c)));
+      // Requirement 40. The drawer authors a fee from its own form and emits no id -- it is handed one
+      // charge and no index, so it cannot know which stored row it is standing in for. This list can,
+      // and until now it threw that away: the replaced entry took its id with it, PUT .../terms
+      // sent an id-less fee, and AdditionalCharge.Reconcile matches on id alone -- so the service read the
+      // edit as a cancel plus a create. Measured 2026-09-30: the cancelled fee left its already-raised
+      // invoice standing beside the new one, $24 of invoices on a $12 fee.
+      //
+      // The ADD branch below is deliberately untouched. A new fee carries no id, and that absence is
+      // the contract's own signal for "this is new" -- inventing one would make every added fee claim
+      // to be an edit of whatever row it landed beside.
+      // Spread only when there IS an id to carry. A fee added on this screen and edited before the save
+      // has none, and writing `id: undefined` onto it would add a key the drawer never emitted --
+      // harmless on the wire, and caught immediately by the existing case asserting the edited payload
+      // is exactly what the drawer produced. That case was right; it is unchanged.
+      this.additionalCharges.update((charges) =>
+        charges.map((existing, i) => {
+          if (i !== editIndex) {
+            return existing;
+          }
+
+          return existing.id === undefined ? charge : { ...charge, id: existing.id };
+        }));
       this.additionalChargeTargets.update((targets) => targets.map((t, i) => (i === editIndex ? target : t)));
       this.editingChargeIndex.set(null);
     } else {

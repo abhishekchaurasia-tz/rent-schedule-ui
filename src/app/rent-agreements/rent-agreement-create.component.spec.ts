@@ -721,6 +721,106 @@ describe('RentAgreementCreateComponent', () => {
       additionalCharges: []
     } as CreateRentAgreementResponse);
   }));
+  /**
+   * Requirement 40 (spec 02 v22) — an edit is an edit, not a removal and an addition.
+   *
+   * Reported from the running application on 2026-09-30: "edit terms se update kiya but uske duplicate
+   * invoice ban gaye". The drawer builds its payload from its own form, where the id is not a field and
+   * never was, and `upsertAdditionalCharge` replaced the stored entry wholesale — so the id the list was
+   * holding went with it. `AdditionalCharge.Reconcile` matches on id alone, so the service read the edit
+   * as a cancel plus a create, and the cancelled fee left its already-raised invoice standing.
+   *
+   * The fix belongs here rather than in the panel: the panel is handed one fee and no index, so it
+   * cannot know which stored row it is standing in for. The list can.
+   */
+  describe('an edited fee keeps its identity (requirement 40)', () => {
+    /** A stored fee as the loaded agreement carries it — id and all. */
+    function storedFee(id: string): AdditionalChargeCreationRequest {
+      return {
+        id,
+        notes: null,
+        alreadyPaid: 0,
+        attachedWithRentalInvoice: false,
+        isRecurring: false,
+        dueDate: '2026-09-29',
+        frequency: null,
+        frequencyConfig: null,
+        startDate: null,
+        endDate: null,
+        hasNoEndDate: false,
+        splitMode: 'Shared',
+        tenantShares: [],
+        items: [
+          {
+            lineItemId: '11111111-1111-1111-1111-111111111111',
+            itemType: 'PetDeposit',
+            description: 'Pet Deposit',
+            quantity: 1,
+            rate: 12,
+            amount: 12
+          }
+        ]
+      } as AdditionalChargeCreationRequest;
+    }
+
+    /** What the drawer emits: the same fee, re-authored from its form, carrying no id. */
+    function asTheDrawerEmitsIt(fee: AdditionalChargeCreationRequest): AdditionalChargeCreationRequest {
+      const copy = { ...fee };
+      delete (copy as { id?: string }).id;
+      return copy;
+    }
+
+    it('keeps the id when a stored fee is re-saved from the drawer', () => {
+      const stored = storedFee('01a0f250-0000-0000-0000-000000000001');
+      component.additionalCharges.set([stored]);
+      component.additionalChargeTargets.set(['Rent']);
+
+      component.editAdditionalCharge(0);
+      component.onAdditionalChargeCreated(asTheDrawerEmitsIt(stored));
+
+      expect(component.additionalCharges()[0].id)
+        .withContext('the service reads an id-less fee as a new one and cancels the stored fee')
+        .toBe('01a0f250-0000-0000-0000-000000000001');
+    });
+
+    it('keeps the id when the split mode is what changed — the reported case', () => {
+      const stored = storedFee('01a0f250-0000-0000-0000-000000000002');
+      component.additionalCharges.set([stored]);
+      component.additionalChargeTargets.set(['Rent']);
+
+      component.editAdditionalCharge(0);
+      component.onAdditionalChargeCreated({
+        ...asTheDrawerEmitsIt(stored),
+        splitMode: 'PerTenant'
+      } as AdditionalChargeCreationRequest);
+
+      expect(component.additionalCharges()[0].id).toBe('01a0f250-0000-0000-0000-000000000002');
+      expect(component.additionalCharges()[0].splitMode).toBe('PerTenant');
+    });
+
+    it('keeps the id on the deposit drawer too, which shares the same method', () => {
+      const stored = storedFee('01a0f250-0000-0000-0000-000000000003');
+      component.additionalCharges.set([stored]);
+      component.additionalChargeTargets.set(['Deposit']);
+
+      component.editAdditionalCharge(0);
+      component.onDepositChargeCreated(asTheDrawerEmitsIt(stored));
+
+      expect(component.additionalCharges()[0].id).toBe('01a0f250-0000-0000-0000-000000000003');
+    });
+
+    it('sends a newly added fee with no id, so the service still reads it as new', () => {
+      component.additionalCharges.set([]);
+      component.additionalChargeTargets.set([]);
+
+      component.onAdditionalChargeCreated(asTheDrawerEmitsIt(storedFee('unused')));
+
+      expect(component.additionalCharges()[0].id)
+        .withContext('an invented id would make every new fee claim to be an edit')
+        .toBeUndefined();
+    });
+  });
+
 });
 
 /**
@@ -828,4 +928,6 @@ describe('RentAgreementCreateComponent — the fee drawer reads the lease, not t
     expect(component.agreementTenants()).toEqual([]);
     expect(component.agreementIsGroupInvoice()).toBeFalse();
   });
+
+
 });
