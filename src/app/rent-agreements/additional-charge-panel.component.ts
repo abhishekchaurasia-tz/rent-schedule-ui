@@ -221,6 +221,41 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
   }
 
   /**
+   * Which end of the lease a **one-off** fee's due date falls outside, or `null` when it falls inside
+   * — requirement 39.
+   *
+   * The owner is **warned, never refused**: Save stays enabled, the Due Date picker gains no `max` and
+   * keeps no `min`, and no control is disabled. A fee dated before the lease begins is the ordinary
+   * way to bill work already done, and its invoice is *meant* to arrive overdue. The billing service
+   * accepts both ends (its requirement 221), so a refusal here would invent a rule the server does not
+   * have.
+   *
+   * **Only a one-off fee has a date of its own to test.** The Due Date control exists only while
+   * `!isRecurring`; a recurring fee's Start/End window is bounded by the service's generation window,
+   * a different rule with a different reason, and asserting anything about it here would have this
+   * screen speak for the service.
+   *
+   * Compared as `YYYY-MM-DD` strings, which order lexicographically — {@link toIsoDate} writes the
+   * datepicker's `Date` in local time, so no timezone shift can move the comparison across a day.
+   */
+  get dueDateOutsideTheLease(): 'before-start' | null {
+    if (this.isRecurring) {
+      return null;
+    }
+
+    const dueDate = toIsoDate(this.form.get('dueDate')!.value);
+    if (!dueDate) {
+      return null;
+    }
+
+    if (this.leaseStartDate && dueDate < this.leaseStartDate) {
+      return 'before-start';
+    }
+
+    return null;
+  }
+
+  /**
    * The frequencies this panel may offer, narrowed by the lease it is authoring against.
    *
    * Semi-Annual disappears on a month-to-month lease. The charge's own cadence is resolved against

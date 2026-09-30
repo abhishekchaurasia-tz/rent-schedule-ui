@@ -4,6 +4,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v21 | 2026-09-30 | **A fee dated outside the lease is saved without a word, and the owner never finds out which invoice it will raise.** New **requirement 39**. *Decided by the user 2026-09-30: "invoice banegi, bas user ko warning show hoga out of lease jane pe."* **What the screen does today.** The Due Date picker carries no `min` and no `max`, and nothing on the panel compares the date to the lease it belongs to. A fee dated six months before the tenancy began is authored, saved and billed with the same silence as one dated inside the term — and its invoice arrives **overdue**, which is the point of back-dating but is nowhere said. **The warning is a warning, not a refusal.** Save stays enabled and no control is disabled: the owner is recording something real and the page's job is to make sure they meant it. **Month-to-month is the case that would otherwise be wrong** — `leaseEndDate` arrives `null` there, the panel already reads that as the term type, and the upper arm must be gated on an end existing at all rather than compared against nothing. **Scope is the one-off Due Date alone**; a recurring fee's window is bounded by the service's generation window, a different rule for a different reason *(confirmed by the user 2026-09-30)*. **No contract change, no new field, and nothing sent differently** — `leaseStartDate` and `leaseEndDate` are already `@Input`s on the panel and **all four screens that open it already pass both**, so the warning reaches every one of them without a call site changing. **One dependency is recorded rather than assumed (A-2)**: the billing service opened the *lower* bound on 2026-09-30 (spec `06` requirement 220) and still refuses the upper one, so requirement 39's upper arm is specified against a service change that has not landed. | [2026-09-30T1900-02-a-fee-outside-the-lease-says-so](../../plans/rent-agreements/2026-09-30T1900-02-a-fee-outside-the-lease-says-so.md) |
 | v20 | 2026-09-30 | **A paid fee shows a setting the owner can click and a set of renters that look editable, and neither does anything.** New **requirement 38**; **requirement 33 is corrected — its renter half was never built**. *Decided by the user 2026-09-30, answering the question `additional-charge-every-case.html` left open: "once frozen, should the setting appear as plain text rather than a greyed-out control — we think yes, because a disabled radio invites clicking and explains nothing."* **What v17 built** was two disabled radios and a notice. **What it did not build** is the other half of its own first sentence: requirement 33 reads *"its mode and its renters shall be read-only"*, and the renter checkboxes were left **enabled**. `toggleTenant` early-returns on a settled fee, so those boxes tick nothing, change nothing and explain nothing — the defect the decision objects to, one level down and without even the greying. **v20 replaces the radios with plain text** naming the setting in force, and **disables the checkboxes**. The existing notice is unchanged and is what carries the reason. **This panel already argued the case itself**: the fee that rides the rent invoice has its setting replaced by a sentence rather than greyed out, for the reason given in that branch's own comment. The two states now agree. **No contract change, no new field, and nothing sent differently** — the service refuses a mode or payer change on a paid fee however this screen renders (spec `06` requirement 218, BR-31). | [2026-09-30T1000-02-a-paid-fee-states-its-setting](../../plans/rent-agreements/2026-09-30T1000-02-a-paid-fee-states-its-setting.md) |
 | v19 | 2026-09-29 | **A deposit fee shows a division the service will never raise, because the drawer divides it across the rent roster.** New **requirement 37**. *Found 2026-09-29 while auditing this screen against `additional-charge-every-case.html` after the v18 work landed — no report, and no test asserts it either way.* **The rule, in the decision's own words:** *"It is billed to the renters who carry a deposit share on the lease, which is not always the same set as the rent share. A renter recorded at nothing of the deposit is not billed a deposit fee, even though the same person is billed every other kind of fee."* The page flags it as surprising and asks for a frame — *"we were"*. **What the screen does instead.** `tenant-split-editor` reads `tenantId` and nothing else off the roster: `deposit` and `depositPercent` arrive on every row and are never consulted, so a \$900 deposit fee across three renters — one holding no deposit share — reads \$300 each, where the service bills \$450 to two. **This became visible on 2026-09-29 and was not visible before.** Requirement 34 handed both of the lease editor's drawers the lease roster; until then the deposit drawer received none and rendered no split, so the wrong arithmetic had nowhere to appear. The rule was always broken and only now has a surface. **Nothing is sent differently** — a deposit fee is `Shared`, so no shares go on the wire at all; what changes is the figure the owner is shown to check the fee by, which is the only figure they have. **No contract change and no new field**: both deposit columns are already on the roster this drawer receives. | [2026-09-29T1730-02-a-deposit-is-billed-to-whoever-holds-it](../../plans/rent-agreements/2026-09-29T1730-02-a-deposit-is-billed-to-whoever-holds-it.md) |
 | v18 | 2026-09-29 | **The drawer is showing the wrong state on two screens, because it reads which screen it is on instead of what the fee is.** New **requirements 34, 35 and 36**; **requirement 22's second sentence is withdrawn, 29 is corrected and 31 is narrowed**. *Raised by the user 2026-09-29 — "lease editor se additional charge ka flow to purana wala hi hai" — and settled against `additional-charge-every-case.html`, the product decision prepared for the design follow-up call of 24 September 2026.* **The rule all three requirements come from**, stated there in one line: *"The same drawer everywhere. What it shows is decided by the data, never by which screen it was opened from."* **Three ways this screen breaks it.** The split region renders under `@if (tenants; as roster)` and the **lease editor passes no roster**, so a fee reopened from Edit Terms shows the no-renters state on a lease that has renters — the decision names this as ours to fix, in those words. A fee that **rides the rent invoice** hides the share table as well as the setting, where the decision draws that state with *"No setting — … **Owes · read only** — Alice $150 · Bob $150"*: the setting goes, the figures stay. And the renter captions were cut to two by v17's requirement 31, where the decision names **four** — *On one invoice*, *Invoice 1 of 2*, *On the shared rent invoice*, *On their own rent invoice* — the last two of which are told apart by `isGroupInvoice`, which v17 removed outright. **v17 was right about the fee that raises its own invoice** and wrong to carry that reading onto the fee that raises none; requirement 36 states both arms instead of one. **No contract change and no new field** — the roster, `splitMode` and `isGroupInvoice` are all already on this screen; what changes is which of them is read, and when. | [2026-09-29T1600-02-the-drawer-shows-what-the-data-says](../../plans/rent-agreements/2026-09-29T1600-02-the-drawer-shows-what-the-data-says.md) |
@@ -87,6 +88,22 @@ and the UI model has held it since before this version. Its name is older than i
 narrowed it from *“any invoice line references this charge”* to *“has taken a payment”*, which is exactly
 the line requirement 33 freezes on. The service-side documentation still described the wide rule and
 was corrected in the same change.
+
+**A-2 (v21) — the service must open its upper bound before requirement 39's upper arm is honest.**
+The billing service bounded a one-off charge by **both** ends of the lease until 2026-09-30. Its spec
+`06` requirement 220 opened the **lower** one that day — a back-dated fee is now billed, and billed
+overdue — and deliberately left the upper one refusing, with `invoice.due_date_after_lease_end` and a
+`422`. The user's decision on the same day is that **both** ends are accepted and the owner is warned
+rather than refused, so the service is being changed to match.
+
+**If this is wrong** — if the upper bound stays — requirement 39's **upper arm must block Save instead
+of warning**. A warning the owner is invited to ignore, followed by a refusal they cannot, is worse
+than a control that was never offered; that is the reading spec `03`'s decision D5 already took on
+this app, and the plan `2026-09-11T1200-the-ui-refuses-before-the-server-does` is where it was applied.
+
+**Consequence of leaving it:** an owner dates a fee past the lease's end, reads a warning that says the
+invoice will be raised, presses Save, and is refused by the service — told twice, and told two different
+things. The lower arm is unaffected either way and can ship on its own.
 
 **So requirement 33 is a rendering rule, not an error-handling one**, and the owner is told before the
 save rather than after it. No API change was needed. *This is the outcome the assumption below
@@ -672,6 +689,44 @@ charge with its real id.
     owes it can no longer change. Its amounts can still be edited."* It is the sentence the plain text
     needs beside it, and it already says the right thing.
 
+39. **v21** — A one-off fee whose **Due Date falls outside the lease's term** shall be **warned about,
+    and saved anyway**.
+
+    *Decided by the user 2026-09-30: "invoice banegi, bas user ko warning show hoga out of lease jane
+    pe."*
+
+    | Due Date | What the owner is doing | What the panel says |
+    |---|---|---|
+    | before the lease's **start** | recording work done before the tenancy began | the invoice will be raised **overdue** |
+    | after the lease's **end** | dating a fee past the term | the date sits **after the lease ends** |
+    | inside the term | the ordinary case | nothing |
+    | any date, **month-to-month** lease | there is no end to be past | the upper warning never appears |
+
+    **This is a warning, not a refusal.** Save stays enabled, the Due Date picker gains no `max` and
+    keeps no `min`, and no control is disabled. The owner is recording something real; the page's job is
+    to make sure they meant it, not to decide for them. A fee dated before the lease begins is the
+    ordinary way to bill work already done, and its invoice is *meant* to arrive overdue.
+
+    **Month-to-month is the arm that would otherwise be wrong.** `leaseEndDate` arrives `null` on a
+    month-to-month lease — the panel already reads exactly that to derive `leaseTermType` — so the
+    upper comparison must be gated on an end being **present**, not merely written against `null`. A
+    month-to-month lease has no last day, so no date can be after it.
+
+    **Scope: the one-off Due Date only.** The field exists only under `@if (!isRecurring)`, and a
+    recurring fee's Start/End window is bounded by the service's **generation window** — a different
+    rule, with a different reason, which requirement 220 on the service side does not touch. Warning
+    about a recurring window here would have this screen assert something the service does not.
+    *(Confirmed by the user 2026-09-30.)*
+
+    **No contract change, no new field, and nothing sent differently.** `leaseStartDate` and
+    `leaseEndDate` are already `@Input`s on `AdditionalChargePanelComponent`, and **all four screens
+    that open it already pass both** — Add Additional Fee, the lease editor's fee panel, its deposit
+    panel, and Invoices. The warning therefore lands on every one of them without a single call site
+    changing, which is the same property requirement 38 relied on.
+
+    **Depends on A-2.** The service opened its lower bound on 2026-09-30 and still refuses the upper
+    one. Until that changes, the upper arm of this requirement describes a save the service will decline.
+
 ## 4. API Endpoints & Server Operations
 
 ### API Endpoints consumed
@@ -803,6 +858,20 @@ twice while nobody is watching.
 - [ ] Every one of the four screens that opens the panel — Add Additional Fee, the lease editor's fee
       panel, its deposit panel, and Invoices — gets all of the above, because they share the one
       component. A fix proved on one and not reachable from another is a defect.
+
+**v21 — requirement 39.**
+
+- [ ] A one-off fee dated **before** the lease's start shows a warning naming the lease's start date and
+      saying the invoice will be raised **overdue**. Save stays enabled and the fee saves.
+- [ ] A one-off fee dated **after** a fixed-term lease's end shows a warning naming the lease's end date.
+      Save stays enabled. *(Honest only once A-2 is answered — see it.)*
+- [ ] A one-off fee dated **inside** the term shows no warning at all.
+- [ ] On a **month-to-month** lease no date produces the upper warning, however far out it is dated.
+      `leaseEndDate` is `null` there and no comparison is made against it.
+- [ ] A **recurring** fee shows neither warning, whatever its Start and End dates are.
+- [ ] Clearing the Due Date removes the warning rather than leaving the last one on screen.
+- [ ] Each arm is shown to **fail with its own guard removed**. A warning that has never been absent has
+      not been shown to depend on anything.
 
 ### Out of Scope
 

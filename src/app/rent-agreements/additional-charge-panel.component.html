@@ -156,6 +156,18 @@
         <mat-datepicker-toggle matIconSuffix [for]="dueDatePicker"></mat-datepicker-toggle>
         <mat-datepicker #dueDatePicker></mat-datepicker>
       </mat-form-field>
+
+      <!-- Requirement 39 — the date is outside the lease, and the owner is told rather than stopped.
+           Placed under the control that caused it, and rendered as a notice rather than a mat-error
+           because the control is *valid*: mat-error shows only on an invalid one, and making the field
+           invalid to borrow its styling would disable Save, which is the opposite of the decision. -->
+      @if (dueDateOutsideTheLease === 'before-start') {
+        <div class="banner warn due-date-warning" role="status">
+          <strong>This date is before the lease starts ({{ leaseStartDate }}).</strong>
+          The fee will still be billed — its invoice is raised <strong>overdue</strong>, which is what
+          recording past work does.
+        </div>
+      }
     } @else {
       <!-- Attached to the rental invoice (Yes): the charge rides the already-existing rental invoice's
            own cadence, so it needs no frequency of its own — just the Start/End Date window below.
