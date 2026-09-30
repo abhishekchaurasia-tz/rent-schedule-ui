@@ -122,6 +122,62 @@ export class AddTenantsComponent {
     return this.form.get('tenants') as FormArray;
   }
 
+  /**
+   * The fees whose typed figures will stop describing who is billed, because a renter they name is no
+   * longer on the roster (requirement 12).
+   *
+   * <b>Why this screen computes it rather than being told.</b> <code>PUT …/tenants</code> answers with
+   * <code>tenantIds</code> and <code>skippedCycles</code> and says nothing about fees. It does not need
+   * to: this screen already loads the agreement, and every charge on it carries its
+   * <code>splitMode</code> and its <code>tenantShares</code>.
+   *
+   * <b>Four conditions, and each excludes a real case rather than a hypothetical one:</b>
+   * <ul>
+   *   <li><b>Names its payers.</b> A <i>Shared</i> fee stores rows too — a record of how it divided at
+   *   save, not an instruction (service BR-30) — and has always followed the roster. Warning about it
+   *   would be warning about nothing, and it is the case a naive <code>tenantShares.length</code> test
+   *   gets wrong.</li>
+   *   <li><b>Off the rent invoice.</b> Such a fee holds no setting of its own and follows whoever that
+   *   invoice bills.</li>
+   *   <li><b>Unpaid.</b> A fee that has taken money has its renters frozen already, so a removal cannot
+   *   reach it.</li>
+   *   <li><b>Actually names the renter leaving.</b> Removing somebody a fee never named changes
+   *   nothing.</li>
+   * </ul>
+   *
+   * Recomputed from the form, so it appears and disappears as rows are removed and added back.
+   */
+  readonly feesLosingTheirTypedFigures = computed(() => {
+    const charges = this.loadedAgreement()?.additionalCharges ?? [];
+    const remaining = new Set(this.remainingTenantIds());
+
+    return charges.filter((charge) =>
+      charge.splitMode === 'PerTenant'
+      && !charge.attachedWithRentalInvoice
+      && !charge.isApplied
+      && (charge.tenantShares ?? []).some((share) => !remaining.has(share.tenantId)));
+  });
+
+  /**
+   * The tenant ids the form still carries, as a plain list.
+   *
+   * A signal rather than a getter so {@link feesLosingTheirTypedFigures} recomputes when a row goes: a
+   * `FormArray` is not reactive to Angular's signal graph, and reading it inside a computed would give
+   * the answer from whenever that computed last happened to run.
+   */
+  private readonly remainingTenantIds = signal<readonly string[]>([]);
+
+  /**
+   * Re-reads the form's tenant ids into {@link remainingTenantIds}.
+   *
+   * Called wherever the roster changes shape rather than on every keystroke: the rule turns on which
+   * ids are present, and nothing else on the row can change that.
+   */
+  private syncRemainingTenantIds(): void {
+    this.remainingTenantIds.set(
+      this.tenants.controls.map((row) => String(row.get('tenantId')?.value ?? '')));
+  }
+
   private loadAgreement(): void {
     if (!this.agreementId) {
       this.loadError.set('No lease id was given — open this screen from an existing lease.');
@@ -184,6 +240,7 @@ export class AddTenantsComponent {
 
     this.tenants.clear();
     saved.tenants.forEach((tenant) => this.tenants.push(this.buildSavedTenantGroup(tenant)));
+    this.syncRemainingTenantIds();
 
     this.form.patchValue(
       {
@@ -281,6 +338,7 @@ export class AddTenantsComponent {
    */
   addTenant(): void {
     this.tenants.push(this.buildTenantGroup(0, 0));
+    this.syncRemainingTenantIds();
 
     if (this.mode() === 'create') {
       this.rebalanceEqually();
@@ -299,6 +357,7 @@ export class AddTenantsComponent {
       return;
     }
     this.tenants.removeAt(index);
+    this.syncRemainingTenantIds();
 
     if (this.mode() === 'create') {
       this.rebalanceEqually();

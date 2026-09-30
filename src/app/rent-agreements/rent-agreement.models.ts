@@ -312,6 +312,18 @@ export interface RentAgreementAdditionalChargeResponse {
     sharePercent?: number | null;
     alreadyPaid?: number;
   }>;
+  /**
+   * Whether this fee names its payers or is owed by the lease (requirement 12).
+   *
+   * **The service has sent this since its v122 and this repository never declared it.** Without it,
+   * {@link tenantShares} cannot be read for what it means: a `Shared` fee stores rows too, as a record
+   * of how it divided at save, while a `PerTenant` fee's rows are the instruction. Only the second
+   * stops describing anybody when a renter leaves, so only the second is worth telling a manager about.
+   *
+   * Optional and nullable, because a fee that rides the rent invoice records no setting at all: that
+   * invoice has already decided how many invoices there are and who is on them.
+   */
+  splitMode?: 'Shared' | 'PerTenant' | null;
   items: RentAgreementAdditionalChargeItemResponse[];
   /**
    * Server-computed: this charge has already been attached to an invoice, so it may no longer be
