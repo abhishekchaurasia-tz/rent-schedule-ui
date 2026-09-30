@@ -215,6 +215,60 @@ describe('TenantSplitEditorComponent', () => {
 
   });
 
+  /**
+   * Requirement 38 — a fee that has taken money states its setting instead of greying it out, and its
+   * renter checkboxes stop inviting a click.
+   *
+   * The product decision asks for the first half and gives the reason: "a disabled radio invites
+   * clicking and explains nothing". The second half is requirement 33's own first line — "its mode and
+   * its renters shall be read-only" — of which only the mode was ever built.
+   */
+  describe('a fee that has taken money (requirement 38)', () => {
+    /** Renders a paid fee across two renters, split per tenant so the checkboxes would otherwise be live. */
+    function paidFee(): void {
+      splitAcross(300, tenantA, tenantB);
+      fixture.componentRef.setInput('hasTakenMoney', true);
+      fixture.detectChanges();
+    }
+
+    it('FR38_APaidFee_OffersNoModeRadios', () => {
+      paidFee();
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(0);
+    });
+
+    it('FR38_APaidFee_StatesItsSettingAsText', () => {
+      paidFee();
+
+      const text = fixture.nativeElement.textContent;
+      expect(text).toContain('Split per Tenant');
+      expect(text).toContain('has taken a payment');
+    });
+
+    it('FR38_APaidFee_DisablesTheRenterCheckboxes', () => {
+      paidFee();
+
+      const boxes: HTMLInputElement[] = Array.from<HTMLInputElement>(
+        fixture.nativeElement.querySelectorAll('.split-tenant input[type="checkbox"]'));
+
+      expect(boxes.length).toBeGreaterThan(0);
+      expect(boxes.every((box) => box.disabled)).toBeTrue();
+    });
+
+    it('FR38_AnUnpaidFee_KeepsItsRadiosAndCheckboxes', () => {
+      // The other side of the rule. Without this, hiding the radios unconditionally would pass every
+      // case above and break the screen for every fee that has not been paid against.
+      splitAcross(300, tenantA, tenantB);
+
+      expect(fixture.nativeElement.querySelectorAll('input[name="splitMode"]').length).toBe(2);
+
+      const boxes: HTMLInputElement[] = Array.from<HTMLInputElement>(
+        fixture.nativeElement.querySelectorAll('.split-tenant input[type="checkbox"]'));
+
+      expect(boxes.every((box) => box.disabled)).toBeFalse();
+    });
+  });
+
   describe('a fee that rides the rent invoice (requirement 35)', () => {
     /** Renders the editor for a fee that raises no invoice of its own. */
     function ridingTheRent(total: number, ...tenantIds: string[]): void {
@@ -787,13 +841,15 @@ describe('TenantSplitEditorComponent', () => {
       fixture.detectChanges();
     }
 
-    it('locks both mode controls and says why', () => {
+    // The MECHANISM changed on 2026-09-30 with requirement 38 and the subject did not: the mode is
+    // still locked and the reason is still said. It was two disabled radios; the product decision asks
+    // for plain text instead, because 'a disabled radio invites clicking and explains nothing'. The two
+    // text assertions below are the ones that matter and are untouched.
+    it('states the mode instead of offering it, and says why', () => {
       paidSplitAcross(300, tenantA, tenantB);
 
-      const choices = fixture.nativeElement.querySelectorAll('.mode-choice input');
-
-      expect(choices[0].disabled).toBeTrue();
-      expect(choices[1].disabled).toBeTrue();
+      expect(fixture.nativeElement.querySelectorAll('.mode-choice input').length).toBe(0);
+      expect(fixture.nativeElement.textContent).toContain('Split per Tenant');
       expect(fixture.nativeElement.textContent).toContain('who owes it can no longer change');
       expect(fixture.nativeElement.textContent).toContain('amounts can still be edited');
     });

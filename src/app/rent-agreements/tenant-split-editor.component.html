@@ -16,6 +16,20 @@
       how many invoices there are and who is on them. This fee is divided evenly across whoever that
       invoice bills, and follows the lease if its renters change.
     </p>
+  } @else if (whoOwesIsSettled()) {
+    <!--
+      Requirement 38. The same argument as the branch above, applied to the other state that has no
+      decision left in it: a disabled radio invites clicking and explains nothing, so the setting is
+      stated rather than greyed. The notice below carries the reason, and the amounts stay editable --
+      the service performs a reprice on a paid fee, so locking the whole fee would forbid an edit the
+      system itself carries out.
+    -->
+    <div class="split-mode">
+      <p class="split-note settled">
+        <strong>{{ namesRenters() ? 'Split per Tenant' : 'Shared Lease' }}</strong> — this fee has taken
+        a payment, so who owes it can no longer change. Its amounts can still be edited.
+      </p>
+    </div>
   } @else {
   <div class="split-mode">
     <label class="mode-choice">
@@ -146,7 +160,7 @@
               <input
                 type="checkbox"
                 [checked]="row.selected"
-                [disabled]="!namesRenters()"
+                [disabled]="!namesRenters() || whoOwesIsSettled()"
                 [attr.aria-label]="'Charge ' + row.name"
                 (change)="toggleTenant(row.tenantId)"
               />
