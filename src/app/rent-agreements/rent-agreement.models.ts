@@ -519,6 +519,16 @@ export function toChargeCreationRequest(
     // gains no way to AUTHOR a split: its fee panel has no renter control and is not getting one.
     // What it must do is not lose one, and the server refuses a terms save that drops a stored split
     // rather than resetting it silently.
+    //
+    // And the SETTING carries with the rows (requirement 41). Dropping it was the same mistake one
+    // field over: the drawer reopened a Shared fee with no mode, guessed PerTenant, and the service
+    // did as it was told -- it voided the fee's invoice and raised one per renter. Reported
+    // 2026-10-05 on a $20.00 deposit fee that became $10.00 + $10.00 on a save the owner made
+    // without changing anything.
+    // null is the response saying this fee records no mode of its own -- a fee riding the rent
+    // invoice takes its payers from that invoice (requirement 29). Carried as undefined, so the
+    // request omits the key rather than stating one, which is what an absent mode means on the wire.
+    splitMode: charge.splitMode ?? undefined,
     tenantShares: charge.tenantShares?.map((share) => ({
       tenantId: share.tenantId,
       amount: share.amount,

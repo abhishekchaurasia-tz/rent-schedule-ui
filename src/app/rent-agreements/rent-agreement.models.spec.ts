@@ -89,4 +89,49 @@ describe('toChargeCreationRequest', () => {
       expect('sharePercent' in result.tenantShares![0]).toBeFalse();
     });
   });
+
+  describe('the saved split MODE rides through too (requirement 41)', () => {
+    /**
+     * The hazard this exists for, measured on 2026-10-05.
+     *
+     * The mapper carried `tenantShares` for exactly the reason stated beside it — a terms save
+     * resubmits the whole fee, so an omitted field is a REMOVED field — and missed the field that
+     * decides the invoice's SHAPE. A `$20.00` Shared deposit fee came back to the drawer with no
+     * mode, the drawer guessed `PerTenant`, and the service did as it was told: it voided the
+     * `$20.00` invoice and raised `$10.00` + `$10.00`.
+     *
+     * The owner had changed nothing.
+     */
+    it('carries a stored Shared mode through untouched', () => {
+      const result = toChargeCreationRequest({
+        ...chargeResponse(),
+        attachedWithRentalInvoice: false,
+        splitMode: 'Shared'
+      });
+
+      expect(result.splitMode).toBe('Shared');
+    });
+
+    it('carries a stored PerTenant mode through untouched', () => {
+      const result = toChargeCreationRequest({
+        ...chargeResponse(),
+        attachedWithRentalInvoice: false,
+        splitMode: 'PerTenant'
+      });
+
+      expect(result.splitMode).toBe('PerTenant');
+    });
+
+    /**
+     * A fee riding the rental invoice records no mode of its own (requirement 29): its payers come
+     * from the invoice it rides. Carrying `undefined` is what this mapper should do with a field the
+     * response did not send — it is not the mapper's job to invent one, and inventing one is the
+     * whole defect.
+     */
+    it('carries nothing when the response carries no mode', () => {
+      const result = toChargeCreationRequest(chargeResponse());
+
+      expect(result.splitMode ?? null).toBeNull();
+    });
+  });
 });
