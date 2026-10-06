@@ -217,6 +217,33 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/rent-agreements', agreementId, 'tenants']);
   });
 
+  // Requirement 41, and the case that lived in the gap between two units that each passed.
+  //
+  // The mapper had tests. The drawer had tests — `restores the mode, so a shared fee does not come
+  // back named` has passed since v15. Neither could fail, because the defect was that the mapper
+  // never handed the drawer the field the drawer was being tested with.
+  //
+  // Reported 2026-10-05: a Shared deposit fee, opened and saved with nothing changed, came back
+  // `PerTenant`. The service did as it was told — voided the fee's invoice and raised one per
+  // renter. Same shape as the month-to-month switch above, one field over: read it back, patch the
+  // form, resubmit it, and the value must be the one the agreement held.
+  it('resubmits the split mode it loaded, rather than guessing one', () => {
+    fixture.detectChanges();
+    const body = detail();
+    body.additionalCharges[0].splitMode = 'Shared';
+    httpMock.expectOne(detailUrl).flush(body);
+    httpMock.match(optionsUrl).forEach((req) => req.flush({ dates: ['2026-01-01'] }));
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    expect(req.request.body.additionalCharges[0].splitMode)
+      .withContext('a dropped mode is guessed back as PerTenant, which voids the fee’s invoice')
+      .toBe('Shared');
+
+    req.flush(detail());
+  });
+
   it('sends a deleted row flagged isCancelled: true, carrying its edited due date (spec v45)', () => {
     load();
 
