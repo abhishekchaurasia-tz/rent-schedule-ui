@@ -672,6 +672,37 @@ describe('AdditionalChargePanelComponent', () => {
       expect(emitted!.splitMode).toBe('Shared');
     });
 
+    /**
+     * Requirement 41. The fallback, and why it moved.
+     *
+     * A fee arriving with rows but no mode is what `toChargeCreationRequest` produced before it
+     * carried the field, and the seed guessed `PerTenant` — the guess that voided a live `$20.00`
+     * invoice and raised `$10.00` + `$10.00` on a save the owner made without changing anything
+     * (2026-10-05).
+     *
+     * The mapper now carries the mode, so this branch should be unreachable. It is pinned anyway,
+     * because "unreachable" is exactly what the last default was assumed to be. Of the two guesses
+     * available to it, `Shared` merges invoices the owner can still correct; `PerTenant` withdraws a
+     * number a payer may already hold. An unreachable branch falls to the reversible side.
+     *
+     * The field is still SENT either way — requirement 26 — because the service resolves an absent
+     * mode from the payer-row count on create, which is the defect that requirement put to rest.
+     */
+    it('falls back to Shared, not PerTenant, for a fee that arrives with rows but no mode', () => {
+      reopen(
+        { ...storedFee(300, 'Shared', [
+          { tenantId: ravi, amount: 200 },
+          { tenantId: sita, amount: 100 }
+        ]), splitMode: undefined },
+        ravi,
+        sita
+      );
+
+      component.create();
+
+      expect(emitted!.splitMode).toBe('Shared');
+    });
+
     it('restores the unit, reading it off the rows that carry a percentage', () => {
       reopen(
         storedFee(300, 'PerTenant', [
