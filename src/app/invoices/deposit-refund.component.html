@@ -1,0 +1,249 @@
+<div class="refund-page">
+  <h1>Deposit Refund</h1>
+  <p class="subtitle">
+    A deposit invoice's refund view: what was paid, what has been returned and what is still held — read
+    live from Finance through Billing. Return the deposit offline or online, and cancel or remove a return
+    under Funds Returned.
+  </p>
+
+  <section class="lookup-box">
+    <label for="depositInvoiceId">Invoice ID</label>
+    <div class="lookup-row">
+      <input
+        id="depositInvoiceId"
+        type="text"
+        [formControl]="invoiceIdInput"
+        placeholder="8f14e45f-ceea-467e-bd9f-000000000001"
+        autocomplete="off"
+        spellcheck="false"
+        (keyup.enter)="load()"
+      />
+      <button type="button" class="primary-btn" (click)="load()" [disabled]="loading()">
+        {{ loading() ? 'Loading…' : 'Load' }}
+      </button>
+    </div>
+
+    @if (idError(); as message) {
+      <p class="inline-error">{{ message }}</p>
+    }
+  </section>
+
+  @if (notice(); as outcome) {
+    <div class="banner" [class.success]="outcome.kind === 'success'" [class.warn]="outcome.kind === 'warn'">
+      <strong>{{ outcome.title }}</strong>
+      @if (outcome.body) {
+        <p>{{ outcome.body }}</p>
+      }
+    </div>
+  }
+
+  @if (actionError(); as failure) {
+    <div class="banner error">
+      <strong>{{ failure.title }}</strong>
+      <p>{{ failure.problem.message }}</p>
+      @if (failure.problem.code) {
+        <p class="code">{{ failure.problem.code }}</p>
+      }
+    </div>
+  }
+
+  @if (loadError(); as problem) {
+    <div class="banner error">
+      <strong>Could not load the refund view.</strong>
+      <p>{{ problem.message }}</p>
+      @if (problem.code) {
+        <p class="code">{{ problem.code }}</p>
+      }
+    </div>
+  }
+
+  @if (view(); as loaded) {
+    <section class="summary-bar">
+      <span class="invoice-number">{{ loaded.invoiceNumber }}</span>
+
+      @if (showsRefundAction) {
+        <!--
+          FR 4. The tooltip sits on a wrapper as well as on the button: a disabled button fires no pointer
+          events in some browsers, and the reason it is disabled is the whole message.
+        -->
+        <span class="refund-action" [title]="refundActionDisabled ? fullyRefundedTooltip : ''">
+          <button
+            type="button"
+            class="primary-btn"
+            [disabled]="refundActionDisabled"
+            [title]="refundActionDisabled ? fullyRefundedTooltip : ''"
+            (click)="openPanel()"
+          >
+            Refund Deposit
+          </button>
+        </span>
+      }
+    </section>
+
+    <dl class="facts">
+      <dt>Deposit invoice</dt>
+      <dd>{{ loaded.isDepositInvoice ? 'Yes' : 'No' }}</dd>
+      <dt>Fully paid</dt>
+      <dd>{{ loaded.isFullyPaid ? 'Yes' : 'No' }}</dd>
+      <dt>Refund started</dt>
+      <dd>{{ loaded.isDepositRefundStarted ? 'Yes' : 'No' }}</dd>
+      <dt>Fully refunded</dt>
+      <dd>{{ loaded.isDepositFullyRefunded ? 'Yes' : 'No' }}</dd>
+    </dl>
+
+    @if (!loaded.isDepositInvoice) {
+      <div class="banner warn">
+        <strong>{{ loaded.invoiceNumber }} is not a deposit invoice.</strong>
+        <p>Only a deposit invoice's deposit can be returned, so there is nothing to show here.</p>
+      </div>
+    } @else {
+      @if (!loaded.isFullyPaid) {
+        <div class="banner warn">
+          <strong>The deposit is not fully paid yet, so it cannot be returned.</strong>
+          <p>Refund Deposit appears once every dollar of it has been paid.</p>
+        </div>
+      }
+
+      <h2>Funds Returned</h2>
+
+      @if (loaded.fundsReturned.length === 0) {
+        <p class="empty">No deposit has been returned on this invoice yet.</p>
+      } @else {
+        <div class="table-scroll">
+          <table class="funds-table">
+            <thead>
+              <tr>
+                <th>Payer</th>
+                <th>Received On</th>
+                <th>Returned On</th>
+                <th>Status</th>
+                <th>Method</th>
+                <th>Check/MO No.</th>
+                <th class="num">Amount Returned</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of loaded.fundsReturned; track row.refundId) {
+                <tr>
+                  <td [title]="row.tenantId">{{ payerLabel(row) }}</td>
+                  <td [title]="row.receivedOn ?? ''">{{ datePart(row.receivedOn) }}</td>
+                  <td [title]="row.returnedOn">{{ datePart(row.returnedOn) }}</td>
+                  <td>
+                    <span [class]="'status ' + row.status">{{ statusLabel(row.status) }}</span>
+                  </td>
+                  <td>{{ methodLabel(row.method) }}</td>
+                  <td class="mono">{{ checkNumberLabel(row) }}</td>
+                  <td class="num">{{ row.amountReturned | currency }}</td>
+                  <td>
+                    @if (hasRowActions(row)) {
+                      <button
+                        type="button"
+                        class="row-menu-btn"
+                        aria-label="Return actions"
+                        (click)="toggleRowMenu(row, $event)"
+                      >
+                        ⋮
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Siblings of .table-scroll, positioned from the clicked button: its overflow would clip them. -->
+        @if (openRowMenuRefundId() !== null) {
+          <div class="row-menu-overlay" (click)="closeRowMenu()"></div>
+        }
+
+        @if (menuRow(); as row) {
+          @if (rowMenuPosition(); as pos) {
+            <div class="row-menu" [style.top.px]="pos.top" [style.left.px]="pos.left">
+              @if (pendingRowAction(); as pending) {
+                <div class="row-confirm">
+                  <span>
+                    {{
+                      pending.action === 'cancel'
+                        ? 'Cancel this online return? Finance stops the transfer to the tenant.'
+                        : 'Remove this offline return? It is taken off Funds Returned.'
+                    }}
+                  </span>
+                  <div class="row-confirm-actions">
+                    <button
+                      type="button"
+                      class="danger"
+                      [disabled]="workingRefundId() === row.refundId"
+                      (click)="confirmRowAction(row)"
+                    >
+                      {{
+                        workingRefundId() === row.refundId
+                          ? 'Working…'
+                          : pending.action === 'cancel'
+                            ? 'Yes, cancel it'
+                            : 'Remove'
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      [disabled]="workingRefundId() === row.refundId"
+                      (click)="cancelRowAction()"
+                    >
+                      Keep it
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                @if (row.canCancel) {
+                  <button type="button" class="row-menu-item" (click)="beginRowAction(row, 'cancel')">Cancel</button>
+                }
+                @if (row.canRemove) {
+                  <button type="button" class="row-menu-item" (click)="beginRowAction(row, 'remove')">Remove</button>
+                }
+              }
+            </div>
+          }
+        }
+      }
+
+      <!-- FR 17. Exactly as served; the page recomputes none of them. -->
+      <dl class="totals">
+        <dt>Total Paid</dt>
+        <dd>{{ loaded.totals.totalPaid | currency }}</dd>
+        <dt>Total Returned</dt>
+        <dd>{{ loaded.totals.totalReturned | currency }}</dd>
+        <dt>Deposit Interest</dt>
+        <dd>{{ loaded.totals.depositInterest | currency }}</dd>
+        <dt>Amount Applied To Open Invoices</dt>
+        <dd>{{ loaded.totals.totalApplied | currency }}</dd>
+        <dt class="strong">Remaining Deposit Liability</dt>
+        <dd class="strong">{{ loaded.totals.remaining | currency }}</dd>
+      </dl>
+    }
+  }
+
+  <!--
+    The panel is a fixed overlay, so a refusal is rendered floating above it — an error left in the page
+    flow would sit behind the very form that has to be corrected.
+  -->
+  @if (panelOpen() && view(); as loaded) {
+    @if (submitError(); as problem) {
+      <div class="banner error floating">
+        <strong>The deposit return was not recorded.</strong>
+        <p>{{ problem.message }}</p>
+        @if (problem.code) {
+          <p class="code">{{ problem.code }}</p>
+        }
+      </div>
+    }
+
+    <app-return-deposit-panel
+      [view]="loaded"
+      [submitting]="submitting()"
+      (submitted)="onReturnSubmitted($event)"
+      (closed)="closePanel()"
+    />
+  }
+</div>

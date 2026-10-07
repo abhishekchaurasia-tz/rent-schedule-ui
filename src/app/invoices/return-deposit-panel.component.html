@@ -1,0 +1,226 @@
+<div class="panel-overlay" (click)="close()"></div>
+
+<aside class="side-panel" role="dialog" aria-label="Return Deposit">
+  <div class="panel-head">
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">&times;</button>
+    <h2>Return Deposit</h2>
+    <span class="panel-invoice">{{ view.invoiceNumber }}</span>
+  </div>
+
+  <div class="panel-body">
+    <!-- FR 5. Two forms behind one choice; switching keeps what was typed into each. -->
+    <div class="mode-toggle" role="group" aria-label="How the deposit goes back">
+      <button type="button" [class.selected]="mode() === 'offline'" (click)="chooseMode('offline')">
+        Return Offline
+      </button>
+      <button type="button" [class.selected]="mode() === 'online'" (click)="chooseMode('online')">
+        Return Online
+      </button>
+    </div>
+
+    @if (mode() === null) {
+      <p class="hint">
+        <strong>Offline</strong> records a return you have already made — by check, cash or money order —
+        for any of the tenants who paid. <strong>Online</strong> pulls the money from your bank and pays
+        one tenant through Innago.
+      </p>
+    }
+
+    @if (view.tenants.length === 0) {
+      <div class="banner warn">
+        No tenant has a payment on this deposit, so there is nobody to return it to.
+      </div>
+    }
+
+    @if (mode() === 'offline') {
+      <p class="hint">One row per tenant who paid. A row with no amount is not sent.</p>
+
+      <div class="offline-table" [formGroup]="offlineForm">
+        <div class="offline-head">
+          <span>Payer</span>
+          <span class="num">Deposit Held</span>
+          <span>Method</span>
+          <span>Check/MO No.</span>
+          <span>Amount to Return</span>
+          <span>Deposit Interest</span>
+        </div>
+
+        <ng-container formArrayName="rows">
+          @for (row of offlineRows.controls; track $index) {
+            <!-- Keyed by the row's own tenant, not by position in `view.tenants`, which a re-read may reorder. -->
+            <div class="offline-row" [formGroupName]="$index">
+              <span class="payer" [title]="row.getRawValue().tenantId">
+                {{ tenantName(row.getRawValue().tenantId) }}
+              </span>
+              <span class="num">{{ heldFor(row.getRawValue().tenantId) | currency }}</span>
+              <select formControlName="method" [attr.aria-label]="'Method for ' + tenantName(row.getRawValue().tenantId)">
+                @for (option of methodOptions; track option.value) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              <input
+                type="text"
+                formControlName="checkNumber"
+                maxlength="25"
+                [placeholder]="isCash($index) ? 'N/A' : 'Number'"
+                [class.invalid]="isInvalid('offline.' + $index + '.checkNumber')"
+              />
+              <input
+                type="number"
+                formControlName="amount"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                [class.invalid]="isInvalid('offline.' + $index + '.amount')"
+              />
+              <input
+                type="number"
+                formControlName="interest"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                [class.invalid]="isInvalid('offline.' + $index + '.interest')"
+              />
+            </div>
+          }
+        </ng-container>
+      </div>
+    }
+
+    @if (mode() === 'online') {
+      <form [formGroup]="online" class="online-form">
+        <label class="field wide">
+          <span>Tenant</span>
+          <select formControlName="tenantId" [class.invalid]="isInvalid('online.tenantId')">
+            <option value="">Choose a tenant</option>
+            @for (tenant of view.tenants; track tenant.tenantId) {
+              <option [value]="tenant.tenantId">
+                {{ tenantName(tenant.tenantId) }} — holds {{ tenant.held | currency }}
+              </option>
+            }
+          </select>
+        </label>
+        <label class="field">
+          <span>Amount to Return</span>
+          <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0.00"
+                 [class.invalid]="isInvalid('online.amount')" />
+        </label>
+        <label class="field">
+          <span>Deposit Interest</span>
+          <input type="number" formControlName="interest" min="0" step="0.01" placeholder="0.00"
+                 [class.invalid]="isInvalid('online.interest')" />
+        </label>
+
+        <h3 class="wide">Owner bank account</h3>
+        <!--
+          FR 10. The owner app picks an account from merlin's GetPropertyOwnerBankDetails, which this
+          application cannot reach — so each value is copied across by hand. The last three are handed
+          out ENCRYPTED by that list and Billing passes them to Finance unread (BR-22): paste, never type.
+        -->
+        <p class="hint wide">
+          Copy these from the owner's bank list (merlin's <code>GetPropertyOwnerBankDetails</code>) — this
+          app cannot read it. The three encrypted values are pasted exactly as that list gives them.
+        </p>
+        <label class="field">
+          <span>Bank ID (GUID)</span>
+          <input type="text" formControlName="bankId" spellcheck="false" autocomplete="off"
+                 [class.invalid]="isInvalid('online.bankId')" />
+        </label>
+        <label class="field">
+          <span>Bank name</span>
+          <input type="text" formControlName="bankName" [class.invalid]="isInvalid('online.bankName')" />
+        </label>
+        <label class="field">
+          <span>Account holder</span>
+          <input type="text" formControlName="accountHolder" />
+        </label>
+        <label class="field">
+          <span>Account type ID</span>
+          <input type="number" formControlName="accountTypeId" min="0" step="1"
+                 [class.invalid]="isInvalid('online.accountTypeId')" />
+        </label>
+        <label class="field wide">
+          <span>Account number (encrypted)</span>
+          <input type="text" formControlName="accountNumber" spellcheck="false" autocomplete="off"
+                 [class.invalid]="isInvalid('online.accountNumber')" />
+        </label>
+        <label class="field wide">
+          <span>Routing number (encrypted)</span>
+          <input type="text" formControlName="routingNumber" spellcheck="false" autocomplete="off"
+                 [class.invalid]="isInvalid('online.routingNumber')" />
+        </label>
+        <label class="field wide">
+          <span>Funding source (encrypted)</span>
+          <input type="text" formControlName="fundingSource" spellcheck="false" autocomplete="off"
+                 [class.invalid]="isInvalid('online.fundingSource')" />
+        </label>
+
+        <label class="check wide">
+          <input type="checkbox" formControlName="includeBackupAddress" />
+          Add a backup mailing address — used to mail a check if the tenant never confirms a bank account
+        </label>
+
+        @if (includesBackupAddress) {
+          <label class="field wide">
+            <span>Address line 1</span>
+            <input type="text" formControlName="line1" [class.invalid]="isInvalid('online.line1')" />
+          </label>
+          <label class="field wide">
+            <span>Address line 2 (optional)</span>
+            <input type="text" formControlName="line2" />
+          </label>
+          <label class="field">
+            <span>City</span>
+            <input type="text" formControlName="city" [class.invalid]="isInvalid('online.city')" />
+          </label>
+          <label class="field">
+            <span>State</span>
+            <input type="text" formControlName="state" [class.invalid]="isInvalid('online.state')" />
+          </label>
+          <label class="field">
+            <span>ZIP</span>
+            <input type="text" formControlName="zip" maxlength="5" inputmode="numeric"
+                   [class.invalid]="isInvalid('online.zip')" />
+          </label>
+        }
+      </form>
+    }
+
+    @if (mode() !== null) {
+      <!-- FR 7. The owner's entries measured against what the server says remains. -->
+      <dl class="totals">
+        <dt>Total Held</dt>
+        <dd>{{ totalHeld | currency }}</dd>
+        <dt>Deposit Interest</dt>
+        <dd>{{ enteredInterest | currency }}</dd>
+        <dt>Amount to Return</dt>
+        <dd>{{ amountToReturn | currency }}</dd>
+        <dt>Remaining Deposit</dt>
+        <dd [class.over]="exceedsRemaining">{{ remainingAfter | currency }}</dd>
+      </dl>
+    }
+
+    @if (errors.length > 0) {
+      <div class="banner error" role="alert">
+        <strong>Nothing was sent.</strong>
+        <ul class="error-list">
+          @for (message of errors; track message) {
+            <li>{{ message }}</li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+
+  <div class="panel-foot">
+    <button type="button" class="ghost-btn" (click)="close()">Cancel</button>
+    <button
+      type="button"
+      class="primary-btn"
+      (click)="submit()"
+      [disabled]="submitting || mode() === null || view.tenants.length === 0"
+    >
+      {{ submitting ? 'Recording…' : 'Return Deposit' }}
+    </button>
+  </div>
+</aside>
