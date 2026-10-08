@@ -177,6 +177,34 @@ describe('scopeHeadersInterceptor', () => {
   // only way to cover all four builds from one suite.
   // -----------------------------------------------------------------------------------------------
 
+  it('Req15h_MonolithRequest_CarriesTheBearerAndNeverTheScopeIds', () => {
+    // merlin is reached through the same gateway on the same token, but the three scope ids are
+    // Billing's stand-in for sign-in and mean nothing to merlin, which reads the caller from the bearer.
+    scope.setAccessToken('merlin-token');
+
+    http.get(`${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`).subscribe();
+
+    const request = httpMock.expectOne(
+      `${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`
+    );
+    expect(request.request.headers.get('Authorization')).toBe('Bearer merlin-token');
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
+    expect(request.request.headers.has('IdentityId')).toBeFalse();
+    request.flush([]);
+  });
+
+  it('Req15h_MonolithRequestWithoutAToken_GoesOutBareRatherThanWithInventedIds', () => {
+    http.get(`${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`).subscribe();
+
+    const request = httpMock.expectOne(
+      `${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`
+    );
+    expect(request.request.headers.has('Authorization')).toBeFalse();
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    request.flush([]);
+  });
+
   it('Req15g_DevAndQaBuilds_NeverSendTheScopeIdsEvenWithNoTokenYet', () => {
     // The ids are typed into a box those builds do not show. Before v26 they were still sent -- three
     // GUIDs invented by crypto.randomUUID(), which nobody could see, set or correct, travelling as

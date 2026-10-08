@@ -5,5 +5,8 @@ export const environment = {
   // http://localhost:5169) so the browser stays same-origin. Without this the
   // local API only allows the http://localhost:4200 origin, so any fallback
   // port (4201, 4202, ...) fails CORS preflight.
-  apiBaseUrl: ''
+  apiBaseUrl: '',
+  // merlin, through the same gateway. Nothing serves it locally, so the owner's bank list is empty
+  // on a local run and the panel says so rather than pretending.
+  monolithBaseUrl: '/api'
 };

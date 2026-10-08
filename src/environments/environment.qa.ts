@@ -3,5 +3,7 @@ export const environment = {
   name: 'qa',
   // Served through the dev-server proxy (proxy.conf.qa.json ->
   // https://api-qa-my.innago.com).
-  apiBaseUrl: '/billing'
+  apiBaseUrl: '/billing',
+  // merlin on the same gateway host (proxy.conf.qa.json -> https://api-qa-my.innago.com/api).
+  monolithBaseUrl: '/api'
 };

@@ -120,6 +120,19 @@ describe('DepositRefundComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * Answers the owner-bank read the panel makes when it opens. merlin owns that list, so the panel
+   * asks for it directly; these tests are about the deposit screen, not the list, so one empty answer
+   * is enough to let the panel settle.
+   */
+  function answerOwnerBanks(): void {
+    httpMock
+      .match(`${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`)
+      .forEach((request) => request.flush([]));
+    fixture.detectChanges();
+  }
+
+
   function page(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
   }
@@ -242,6 +255,7 @@ describe('DepositRefundComponent', () => {
 
       refundButton()!.click();
       fixture.detectChanges();
+      answerOwnerBanks();
 
       expect(component.panelOpen()).toBeTrue();
       expect(page().querySelector('app-return-deposit-panel')).not.toBeNull();
@@ -256,6 +270,7 @@ describe('DepositRefundComponent', () => {
       loadView();
       component.openPanel();
       fixture.detectChanges();
+      answerOwnerBanks();
     });
 
     it('posts the panel\'s request once, ignoring a second submission while the first is in flight', () => {

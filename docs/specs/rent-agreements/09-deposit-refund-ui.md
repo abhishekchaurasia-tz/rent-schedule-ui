@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v2 | 2026-10-08 | **The owner's bank account is picked from merlin's list, not typed.** `OwnerBankService` reads `GET Home/DropDown/GetPropertyOwnerBankDetails` through the same gateway and on the same bearer as every Billing call — merlin takes no parameters and answers the caller's own organization — and the panel binds the result to one dropdown, labelled *bank name — masked account number*. The six typed fields are gone; the chosen account's `bankId`, `bankAccountName`, `accountHolder`, `accountTypeId` and its three **encrypted** values travel to Billing exactly as merlin gave them, never shown and never edited. **No change to merlin**: the endpoint already exists and already backs the owner app's own picker. **New FR 10a** (the list and its failure), **FR 10 revised** (pick, not type). `environment.monolithBaseUrl` is added per build and `scopeHeadersInterceptor` now sends the bearer — and only the bearer, never the three scope ids — to merlin. | [2026-10-08T1900-09-deposit-refund-owner-bank-list](../../plans/rent-agreements/2026-10-08T1900-09-deposit-refund-owner-bank-list.md) |
 | v1 | 2026-10-07 | **Initial spec: the Deposit Refund page — read a deposit invoice's refund view, return the deposit offline or online, and cancel or remove a return.** The client half of backend `15-deposit-refund.md` **v2**, which made Billing the front door for every refund of a deposit invoice it raised: `GET /invoices/{id}/deposit-refund` for the flags, totals, per-tenant rows and *Funds Returned* rows (BR-01 – BR-15), and `POST …/deposit-refunds`, `POST …/deposit-refunds/{refundId}/cancel` and `DELETE …/deposit-refunds/{refundId}` for the writes (BR-16 – BR-26), all of which Billing checks before forwarding to Finance. The screen mirrors the production owner app's *Refund Deposit* → *Return Deposit* → *Return Offline* / *Return Online* flow and its *Funds Returned* block, adapted to this harness: **the owner's bank account is typed, not picked**, because the bank list is merlin's (`GET Home/DropDown/GetPropertyOwnerBankDetails`) and this application cannot reach it. Reached from a new **Deposit Refund** item on the Invoices list's row menu (spec [`04-invoice-list-ui.md`](04-invoice-list-ui.md) v10, FR 27), from the sidebar, and by `?invoiceId=`. Numbered 09 because 07 and 08 are taken by work in flight on another branch. | [2026-10-07T1800-09-deposit-refund-ui](../../plans/rent-agreements/2026-10-07T1800-09-deposit-refund-ui.md) |
 
 ## Overview
@@ -75,15 +76,24 @@ shows, before a request is sent.
    `ownerBank` or `backupAddress`.
 10. **Online** shall take **exactly one** tenant, chosen from `tenants[]` (preselected when there is only
     one), an amount greater than 0 and within `remaining`, interest ≥ 0, the owner's bank account and
-    an optional backup mailing address. Because this application cannot reach the owner's bank list,
-    the bank account shall be **typed**, field by field, each labelled with where its value comes from:
-    `bankId` (a GUID), `bankName`, `accountHolder`, `accountTypeId` (a whole number), and the
-    **already-encrypted** `accountNumber`, `routingNumber` and `fundingSource`, pasted verbatim. The
-    client shall require what BR-17 requires (`bankId`, `bankName`, `accountNumber`, `routingNumber`,
-    `fundingSource`) plus a whole-number `accountTypeId`, which the wire types as `int`. When the backup
+    an optional backup mailing address. The bank account shall be **chosen from the owner's own
+    accounts** (FR 10a), never typed: one dropdown, each option read *bank name — masked account
+    number*. The request's `ownerBank` shall be built from the chosen account — `bankId`,
+    `bankAccountName`, `accountHolder`, `accountTypeId`, and the **already-encrypted**
+    `bankAccountNumber`, `routingNumber` and `fundingSourceId` — passed on exactly as merlin gave
+    them. No encrypted value shall be shown on the screen or put in a form control. The client shall
+    require that an account was chosen and that it is still one of the accounts on offer. When the backup
     address is included it shall require `line1`, a `city` of letters and spaces, `state` and a
     5-digit `zip`; `line2` is optional and omitted when blank. The online request shall carry no
     `method` or `checkNumber`.
+10a. **The owner's bank accounts come from merlin**, read once when the panel opens, from
+    `GET {monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails` through the same gateway and
+    carrying the same bearer as every Billing call. merlin takes no parameters — it reads the
+    organization from the caller's session — and **merlin is not changed in any way** to serve this.
+    A single account shall be preselected. **A failed read shall answer an empty list, not an error**:
+    the panel shall then say an online return cannot be started and suggest returning offline, and the
+    offline tab shall keep working. The bearer alone shall be sent to merlin — never the three scope
+    ids, which are Billing's stand-in for sign-in and mean nothing there.
 11. The system shall send `POST /api/v1/invoices/{id}/deposit-refunds` **once** per submission, keep the
     panel open until the server answers, and ignore a second submission while one is in flight — the
     call reaches Finance at most once (BR-23) and a double click must not ask twice.
@@ -216,7 +226,6 @@ The page persists nothing of its own, so this spec carries no Data Model or Tabl
 
 ## Out of Scope
 
-- **The owner's bank list.** It is merlin's; this harness types the account instead (FR 10).
 - **The Update Invoice page.** A *Deposit Refund* link there, and surfacing backend BR-27's
   `422 deposit_refund.refund_in_progress` on a correction, both belong to that page's spec (`03`) and
   touch files another branch is changing; they are a follow-up, not part of this version.

@@ -1,6 +1,10 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { environment } from '../../environments/environment';
 import { CreateDepositRefundRequest, DepositRefundResponse } from './deposit-refund.models';
+import { OwnerBankDetail } from './owner-bank.models';
 import { ReturnDepositPanelComponent } from './return-deposit-panel.component';
 
 /**
@@ -15,6 +19,39 @@ describe('ReturnDepositPanelComponent', () => {
   const tenantA = '11111111-1111-1111-1111-111111111111';
   const tenantB = '22222222-2222-2222-2222-222222222222';
   const bankId = '33333333-3333-3333-3333-333333333333';
+  const otherBankId = '44444444-4444-4444-4444-444444444444';
+
+  /** merlin's answer, field for field — the three encrypted values are opaque here on purpose. */
+  const ownerBanks: OwnerBankDetail[] = [
+    {
+      bankId,
+      bankAccountNumber: 'enc-account==',
+      bankAccountName: 'First Bank',
+      routingNumber: 'enc-routing==',
+      fundingSourceId: 'enc-funding==',
+      accountHolder: 'Pat Owner',
+      accountTypeId: 1,
+      paymentServiceTypeId: 2,
+      displayBankAccountNumber: '****6789',
+      companyName: 'Pat Owner LLC',
+      verifier: null
+    },
+    {
+      bankId: otherBankId,
+      bankAccountNumber: 'enc-account-2==',
+      bankAccountName: 'Second Bank',
+      routingNumber: 'enc-routing-2==',
+      fundingSourceId: 'enc-funding-2==',
+      accountHolder: 'Pat Owner',
+      accountTypeId: 2,
+      paymentServiceTypeId: 2,
+      displayBankAccountNumber: '****4321',
+      companyName: 'Pat Owner LLC',
+      verifier: null
+    }
+  ];
+
+  let http: HttpTestingController;
 
   /** Two tenants who paid a $21 deposit; nothing returned yet, so all $21 remains. */
   const view: DepositRefundResponse = {
@@ -33,19 +70,33 @@ describe('ReturnDepositPanelComponent', () => {
     fundsReturned: []
   };
 
-  function create(source: DepositRefundResponse = view): void {
+  function create(source: DepositRefundResponse = view, banks: OwnerBankDetail[] | 'fail' = ownerBanks): void {
     fixture = TestBed.createComponent(ReturnDepositPanelComponent);
     component = fixture.componentInstance;
     component.view = source;
     emitted = [];
     component.submitted.subscribe((request) => emitted.push(request));
     fixture.detectChanges();
+
+    const request = http.expectOne(`${environment.monolithBaseUrl}/Home/DropDown/GetPropertyOwnerBankDetails`);
+    if (banks === 'fail') {
+      request.flush('nope', { status: 500, statusText: 'Server Error' });
+    } else {
+      request.flush(banks);
+    }
+    fixture.detectChanges();
   }
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [ReturnDepositPanelComponent] }).compileComponents();
+    await TestBed.configureTestingModule({
+      imports: [ReturnDepositPanelComponent],
+      providers: [provideHttpClient(), provideHttpClientTesting()]
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
     create();
   });
+
+  afterEach(() => http.verify());
 
   /** Fills offline row `index`; anything left out keeps its current value. */
   function fillRow(
@@ -63,12 +114,6 @@ describe('ReturnDepositPanelComponent', () => {
       amount: 9,
       interest: 1,
       bankId,
-      bankName: 'First Bank',
-      accountHolder: 'Pat Owner',
-      accountTypeId: 1,
-      accountNumber: 'enc-account==',
-      routingNumber: 'enc-routing==',
-      fundingSource: 'enc-funding==',
       ...overrides
     });
     fixture.detectChanges();
@@ -292,7 +337,7 @@ describe('ReturnDepositPanelComponent', () => {
 
   // ---- online (FR 10) ----------------------------------------------------------------------------
 
-  it('requires one tenant, an amount, the bank fields and a whole-number account type online', () => {
+  it('requires one tenant, an amount and a chosen bank account online', () => {
     component.chooseMode('online');
 
     component.submit();
@@ -301,23 +346,17 @@ describe('ReturnDepositPanelComponent', () => {
     const errors = component.errors;
     expect(errors).toContain('Choose the tenant to return the deposit to.');
     expect(errors).toContain('Enter an amount to return.');
-    expect(errors).toContain('Enter the bank ID.');
-    expect(errors).toContain('Enter the bank name.');
-    expect(errors).toContain('Enter the account type ID as a whole number.');
-    expect(errors).toContain('Enter the encrypted account number.');
-    expect(errors).toContain('Enter the encrypted routing number.');
-    expect(errors).toContain('Enter the encrypted funding source.');
+    expect(errors).toContain('Choose the bank account to return from.');
   });
 
-  it('refuses a bank id that is not a GUID, a fractional account type and a principal above Remaining', () => {
+  it('refuses an account that is not one merlin offered, and a principal above Remaining', () => {
     component.chooseMode('online');
-    fillOnline({ bankId: 'first-bank', accountTypeId: 1.5, amount: 22 });
+    fillOnline({ bankId: '99999999-9999-9999-9999-999999999999', amount: 22 });
 
     component.submit();
 
     expect(emitted).toEqual([]);
-    expect(component.errors).toContain('The bank ID must be a GUID, like 8f14e45f-ceea-467e-bd9f-000000000001.');
-    expect(component.errors).toContain('Enter the account type ID as a whole number.');
+    expect(component.errors).toContain('Choose the bank account to return from.');
     expect(component.errors).toContain('Amount to return should be less than remaining amount.');
   });
 
@@ -382,13 +421,70 @@ describe('ReturnDepositPanelComponent', () => {
     expect(component.online.getRawValue().tenantId).toBe(tenantA);
   });
 
-  it('labels the three encrypted bank fields as already encrypted', () => {
+  it('lists the owner\'s accounts from merlin, masked, and never shows an encrypted value', () => {
     component.chooseMode('online');
     fixture.detectChanges();
 
-    expect(text()).toContain('Account number (encrypted)');
-    expect(text()).toContain('Routing number (encrypted)');
-    expect(text()).toContain('Funding source (encrypted)');
+    expect(text()).toContain('First Bank — ****6789');
+    expect(text()).toContain('Second Bank — ****4321');
+    expect(text()).not.toContain('enc-account==');
+    expect(text()).not.toContain('enc-routing==');
+    expect(text()).not.toContain('enc-funding==');
+  });
+
+  it('preselects the only account, and leaves the choice open when there are two', () => {
+    create(view, [ownerBanks[0]]);
+
+    expect(component.online.getRawValue().bankId).toBe(bankId);
+
+    create();
+
+    expect(component.online.getRawValue().bankId).toBe('');
+  });
+
+  it('refuses an online return when merlin offers no account, and says to return offline', () => {
+    create(view, []);
+    component.chooseMode('online');
+    fillOnline({ bankId: '' });
+
+    component.submit();
+
+    expect(emitted).toEqual([]);
+    expect(component.errors).toContain(
+      'No bank account is available for this owner, so an online return cannot be started. Return offline instead.'
+    );
+    expect(text()).toContain('No bank account is available for this owner');
+  });
+
+  it('treats a failed bank read as no accounts rather than breaking the panel', () => {
+    create(view, 'fail');
+
+    expect(component.ownerBanksLoaded()).toBeTrue();
+    expect(component.ownerBanks()).toEqual([]);
+
+    // The offline tab is untouched by merlin being unreachable.
+    component.chooseMode('offline');
+    fillRow(0, { method: 'cash', amount: 5 });
+    component.submit();
+
+    expect(emitted.length).toBe(1);
+  });
+
+  it('sends the chosen account, not the first one', () => {
+    component.chooseMode('online');
+    fillOnline({ bankId: otherBankId });
+
+    component.submit();
+
+    expect(emitted[0].ownerBank).toEqual({
+      bankId: otherBankId,
+      bankName: 'Second Bank',
+      accountHolder: 'Pat Owner',
+      accountTypeId: 2,
+      accountNumber: 'enc-account-2==',
+      routingNumber: 'enc-routing-2==',
+      fundingSource: 'enc-funding-2=='
+    });
   });
 
   // ---- sending, and leaving (FR 11) --------------------------------------------------------------
