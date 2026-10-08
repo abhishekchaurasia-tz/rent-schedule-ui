@@ -4,6 +4,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v23 | 2026-10-06 | **A fee opened for editing is sent back without its split setting, so the drawer guesses `PerTenant` and a save that changed nothing voids the fee's invoice and raises two.** New **requirement 41**. *Reported from the running application 2026-10-05 — "maine additional deposit charge ko just edit kiya and save then duplicate data bana gaya" — and traced through `innago_billing` the next day.* **Measured.** A `$20.00` deposit fee on a two-renter lease, saved **Shared**, raised one `$20.00` invoice. A later save carrying no change the owner made moved `additional_charge.split_mode` to `PerTenant`; the service withdrew the shared invoice and raised `$10.00` + `$10.00`. Three deposit invoices for one fee, the first reading `voided`. **The chain.** `GET …/agreements/{id}` answers `splitMode: "Shared"` → `toChargeCreationRequest` **drops it** → the drawer reads `undefined` and takes `?? 'PerTenant'` → the payload always sends the guess → `AdditionalCharge.Update` honours a **stated** mode by design → the recompute sees the shape change and withdraws the invoice of the old shape. **Step 2 is the defect; step 3 is what makes it destructive** — carried correctly the guess never fires, and with no guess a dropped field sends nothing and the stored mode survives. **The mapper states this very rule three lines above the gap**, beside `tenantShares`: *"an omitted field on that route is a REMOVED field, not an unchanged one"*. The payer rows were carried for exactly this reason; the field that decides the invoice's **shape** was missed. **`?? 'PerTenant'` is wrong in the one way that matters** — of the two settings it could guess it picks the one that multiplies invoices and voids a number a payer may be holding. **The service is not at fault**: requirement 208 is explicit that a stated mode moves the fee, and its own remark records the premise the client broke — *"The lease editor has no renter control and never sends the field."* **No contract change and no new field** — `splitMode` is already on the request, the response and the read query. **The lease already in the wrong state is not repaired by this**; a withdrawn invoice is history. | [2026-10-06T1100-02-a-fee-keeps-its-split-mode](../../plans/rent-agreements/2026-10-06T1100-02-a-fee-keeps-its-split-mode.md) |
 | v22 | 2026-09-30 | **Editing a stored fee sends it back without its id, so the service reads the edit as a removal and an addition.** New **requirement 40**. *Reported from the running application 2026-09-30 — "edit terms se update kiya but uske duplicate invoice ban gaye" — and reproduced in the billing database the same day.* **What the owner did.** Opened a saved `$12` deposit fee on the lease editor, changed it from *Shared Lease* to *Split per Tenant*, and saved. **What the service received** was a terms body carrying a fee with **no `id`**. `AdditionalCharge.Reconcile` matches stored fees on `id` alone: an id-less fee is a **new** one, and the stored fee nobody claimed is **cancelled**. The database shows both, one second apart — one cancelled, one created. **Where the id goes.** `toChargeCreationRequest` carries `id: charge.id` correctly, and the drawer builds its payload from `form.value`, where the id is not a field and never was — `AdditionalChargePanelComponent` emits none anywhere. `upsertAdditionalCharge` then **replaces the stored entry wholesale** with what the drawer emitted, so the id the list was holding is discarded by the save path rather than by the drawer. **This is the cross-route gap.** A fee added through `POST …/additional-charges` keeps its id; the moment the lease editor **edits** it, that id is gone. Two routes that agree about a fee's identity until one of them touches it. **The billing service has its own half of this** — a removed fee's already-raised invoice is never withdrawn (spec `06` requirement 223) — and the two together are what put `$24` of invoices on a `$12` fee. **Neither fix removes the need for the other:** with 223 alone, an edit would still void a number the payer has seen and raise a new one; with this alone, any genuine removal still strands its invoice. **No contract change and no new field** — `id` is already on `AdditionalChargeCreationRequest` and already sent for every fee the drawer has not been opened on. | [2026-09-30T2345-02-an-edited-fee-keeps-its-identity](../../plans/rent-agreements/2026-09-30T2345-02-an-edited-fee-keeps-its-identity.md) |
 | v21 | 2026-09-30 | **A fee dated outside the lease is saved without a word, and the owner never finds out which invoice it will raise.** New **requirement 39**. *Decided by the user 2026-09-30: "invoice banegi, bas user ko warning show hoga out of lease jane pe."* **What the screen does today.** The Due Date picker carries no `min` and no `max`, and nothing on the panel compares the date to the lease it belongs to. A fee dated six months before the tenancy began is authored, saved and billed with the same silence as one dated inside the term — and its invoice arrives **overdue**, which is the point of back-dating but is nowhere said. **The warning is a warning, not a refusal.** Save stays enabled and no control is disabled: the owner is recording something real and the page's job is to make sure they meant it. **Month-to-month is the case that would otherwise be wrong** — `leaseEndDate` arrives `null` there, the panel already reads that as the term type, and the upper arm must be gated on an end existing at all rather than compared against nothing. **Scope is the one-off Due Date alone**; a recurring fee's window is bounded by the service's generation window, a different rule for a different reason *(confirmed by the user 2026-09-30)*. **No contract change, no new field, and nothing sent differently** — `leaseStartDate` and `leaseEndDate` are already `@Input`s on the panel and **all four screens that open it already pass both**, so the warning reaches every one of them without a call site changing. **One dependency is recorded rather than assumed (A-2)**: the billing service opened the *lower* bound on 2026-09-30 (spec `06` requirement 221) and still refuses the upper one, so requirement 39's upper arm is specified against a service change that has not landed. | [2026-09-30T1900-02-a-fee-outside-the-lease-says-so](../../plans/rent-agreements/2026-09-30T1900-02-a-fee-outside-the-lease-says-so.md) |
 | v20 | 2026-09-30 | **A paid fee shows a setting the owner can click and a set of renters that look editable, and neither does anything.** New **requirement 38**; **requirement 33 is corrected — its renter half was never built**. *Decided by the user 2026-09-30, answering the question `additional-charge-every-case.html` left open: "once frozen, should the setting appear as plain text rather than a greyed-out control — we think yes, because a disabled radio invites clicking and explains nothing."* **What v17 built** was two disabled radios and a notice. **What it did not build** is the other half of its own first sentence: requirement 33 reads *"its mode and its renters shall be read-only"*, and the renter checkboxes were left **enabled**. `toggleTenant` early-returns on a settled fee, so those boxes tick nothing, change nothing and explain nothing — the defect the decision objects to, one level down and without even the greying. **v20 replaces the radios with plain text** naming the setting in force, and **disables the checkboxes**. The existing notice is unchanged and is what carries the reason. **This panel already argued the case itself**: the fee that rides the rent invoice has its setting replaced by a sentence rather than greyed out, for the reason given in that branch's own comment. The two states now agree. **No contract change, no new field, and nothing sent differently** — the service refuses a mode or payer change on a paid fee however this screen renders (spec `06` requirement 218, BR-31). | [2026-09-30T1000-02-a-paid-fee-states-its-setting](../../plans/rent-agreements/2026-09-30T1000-02-a-paid-fee-states-its-setting.md) |
@@ -780,6 +781,84 @@ charge with its real id.
     **No contract change and no new field.** `id` is already on `AdditionalChargeCreationRequest`,
     already carried by `toChargeCreationRequest`, and already sent for every fee the drawer has not
     been opened on. What changes is that an edit stops discarding it.
+41. **v23** — A fee opened for **editing** shall be sent back carrying **the split setting it was
+    loaded with**, and the drawer shall **never invent one** for a fee that arrived without it.
+
+    **Reported from the running application 2026-10-05** — *"maine additional deposit charge ko just
+    edit kiya and save then duplicate data bana gaya"* — and traced through the billing database the
+    next day. The owner opened a saved deposit fee, **changed nothing**, and saved. Its invoice was
+    voided and replaced by two.
+
+    **Measured, from `innago_billing`.** A `$20.00` deposit fee on a two-renter lease, saved
+    **Shared**, raised one `$20.00` invoice (`INV-102026-001158`). A later save — carrying no change
+    the owner made — moved `additional_charge.split_mode` from `Shared` to `PerTenant`, and the
+    service did what that instructs: it withdrew the shared invoice and raised **`$10.00` + `$10.00`**
+    (`…1159`, `…1160`). Three deposit invoices for one fee, the first reading `voided`.
+
+    **The chain, and every step of it was read rather than inferred.**
+
+    | # | Where | What happens |
+    |---|---|---|
+    | 1 | `GET …/agreements/{id}` | answers `splitMode: "Shared"` — the read query, the read model and the response all carry it |
+    | 2 | `toChargeCreationRequest` | **drops it.** Thirteen fields are carried across; `splitMode` is not one of them |
+    | 3 | `AdditionalChargePanelComponent` | `mode: this.initialCharge.splitMode ?? 'PerTenant'` — reads `undefined` and **guesses** |
+    | 4 | the drawer's payload | `...(ridesRentalInvoice ? {} : { splitMode: this.splitState().mode })` — always sends the guess |
+    | 5 | `AdditionalCharge.Update` | `SplitMode = request.SplitMode ?? SplitMode` — a **stated** mode moves the fee, by design |
+    | 6 | the recompute | the shape changed, so the invoice of the old shape is withdrawn and the new one raised |
+
+    **Step 2 is the defect and step 3 is what makes it destructive.** Either alone is survivable:
+    carried correctly, the guess never fires; and with no guess, a dropped field sends nothing and
+    `AdditionalCharge.Update` keeps the stored mode. Together they turn a no-op save into a shape
+    change.
+
+    **The mapper already knows this rule and states it, three lines above the gap.** Beside
+    `tenantShares` it reads: *"`PUT …/terms` resubmits the complete charge, so an omitted field on
+    that route is a **REMOVED** field, not an unchanged one."* The payer rows were carried across for
+    exactly this reason. The field that now decides the invoice's **shape** was missed.
+
+    **`?? 'PerTenant'` is the wrong default in the one way that matters.** Of the two settings it
+    could guess, it picks the one that **multiplies invoices**. A fee it guesses wrong as `Shared`
+    merges two invoices into one the owner can still correct; guessed wrong as `PerTenant` it voids a
+    number a payer may already be holding. A guess that must be wrong half the time should fail toward
+    the reversible half — but the correct answer here is **not to guess at all**.
+
+    **The service is not at fault, and this was checked before the requirement was written.**
+    Requirement 208 on the billing side is explicit — *"an edit that says nothing about the mode
+    changes nothing about it. A caller that **does** state a mode still moves it"* — and its own
+    remark records the assumption it was written on: *"The lease editor has no renter control and
+    **never sends the field**."* The lease editor does send it, on every save, for every fee that does
+    not ride the rent invoice. The rule is sound; the client broke the premise.
+
+    **So this screen stops guessing, in both halves:**
+
+    - `toChargeCreationRequest` carries `splitMode` across, like every other field the terms route
+      would otherwise read as removed. **This alone closes the defect**: the seed then reads the real
+      setting and sends it back unchanged.
+    - The drawer keeps **sending the field on every submission** — requirement 26 and unchanged — but
+      its fallback becomes `Shared` rather than `PerTenant`.
+
+    **Omitting the field was considered and is wrong.** Requirement 26 exists because the service
+    reads an absent `splitMode` on **create** through `ChargeSplitMode.Resolve`, which takes it from
+    the payer-row count: a *Shared Lease* fee whose owner typed figures would be stored `PerTenant`
+    again. The update route keeps the stored mode on an absent field (requirement 208), so omitting
+    would be safe there and unsafe on the other — one field, two routes, and only sending it is right
+    on both.
+
+    **The fallback should be unreachable once the field is carried, which is exactly why it changes.**
+    A seed is built only for a fee that has payer rows, and after this every such fee arrives with its
+    mode. `Shared` is what an unreachable branch should fall to: wrong, it merges two invoices into
+    one the owner can still correct; `PerTenant` wrong voids a number a payer may already hold. This
+    bug was paid for by a default that failed toward the destructive side.
+
+    **No contract change and no new field.** `splitMode` is already on
+    `AdditionalChargeCreationRequest`, already on `RentAgreementAdditionalChargeResponse`, and already
+    projected by the service's read query. What changes is that the round trip stops losing it.
+
+    **The lease already in the wrong state is not repaired by this.** The reported fee now holds
+    `split_mode = PerTenant` in the database, and the `$20.00` invoice stays `voided` — a withdrawn
+    invoice is history and is not un-withdrawn. The fix stops the next save from doing it again; it
+    does not undo the one that happened.
+
 
 ## 4. API Endpoints & Server Operations
 

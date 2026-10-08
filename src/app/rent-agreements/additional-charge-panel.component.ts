@@ -415,7 +415,16 @@ export class AdditionalChargePanelComponent implements OnInit, OnChanges {
       // applyInitialCharge never restored. Built here, once, so the editor applies it once.
       this.splitSeed = this.initialCharge.tenantShares?.length
         ? {
-            mode: this.initialCharge.splitMode ?? 'PerTenant',
+            // Requirement 41. This read 'PerTenant' and the fallback was reachable: the lease
+            // editor's mapper dropped splitMode, so every reopened fee arrived without one and was
+            // guessed into naming its payers. On 2026-10-05 that voided a live deposit invoice of
+            // 20.00 and raised two of 10.00, on a save the owner changed nothing in.
+            //
+            // The mapper carries the field now, so this should never fire. It falls to 'Shared'
+            // anyway, because the last default was also assumed unreachable: guessed wrong, Shared
+            // merges invoices the owner can still correct, where PerTenant withdraws a number a
+            // payer may already hold.
+            mode: this.initialCharge.splitMode ?? 'Shared',
             shares: this.initialCharge.tenantShares.map((share) => ({ ...share }))
           }
         : null;
