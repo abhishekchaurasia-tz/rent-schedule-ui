@@ -1,9 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable, catchError, of } from 'rxjs';
+import { Observable, catchError, map, of } from 'rxjs';
 
 import { environment } from '../../environments/environment';
-import { OwnerBankDetail } from './owner-bank.models';
+import {
+  OwnerBankDetail,
+  OwnerBankDetailWire,
+  OwnerBankListResponse
+} from './owner-bank.models';
 
 /**
  * The owner's bank accounts, read from merlin.
@@ -31,6 +35,36 @@ export class OwnerBankService {
    * tab that needs the list instead of breaking the whole screen.
    */
   list(): Observable<OwnerBankDetail[]> {
-    return this.http.get<OwnerBankDetail[]>(this.url).pipe(catchError(() => of([])));
+    return this.http.get<OwnerBankListResponse>(this.url).pipe(
+      map((response) => (response?.Data ?? []).map(OwnerBankService.fromWire)),
+      catchError(() => of([]))
+    );
+  }
+
+  /**
+   * Turns one of merlin's PascalCase accounts into the camelCase shape the panel reads.
+   *
+   * **Both halves of this were wrong before and both failed silently.** The response was typed as a
+   * bare array when merlin wraps it in `{ Data: [...] }`, and the fields were read in camelCase when
+   * merlin sends PascalCase -- so the list came back empty, and would have come back as a row of
+   * `undefined`s had the first been fixed alone. Neither threw, so the panel simply said no account
+   * was available.
+   *
+   * The three encrypted fields are copied across untouched; see `OwnerBankDetail`.
+   */
+  private static fromWire(wire: OwnerBankDetailWire): OwnerBankDetail {
+    return {
+      bankId: wire.BankId,
+      bankAccountNumber: wire.BankAccountNumber,
+      bankAccountName: wire.BankAccountName,
+      routingNumber: wire.RoutingNumber,
+      fundingSourceId: wire.FundingSourceId,
+      accountHolder: wire.AccountHolder,
+      accountTypeId: wire.AccountTypeId,
+      paymentServiceTypeId: wire.PaymentServiceTypeId,
+      displayBankAccountNumber: wire.DisplayBankAccountNumber,
+      companyName: wire.CompanyName,
+      verifier: wire.Verifier
+    };
   }
 }

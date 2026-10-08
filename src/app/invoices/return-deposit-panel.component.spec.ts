@@ -70,6 +70,32 @@ describe('ReturnDepositPanelComponent', () => {
     fundsReturned: []
   };
 
+  /**
+   * The same accounts in merlin's own shape: PascalCase, wrapped in `Data`.
+   *
+   * The fixture above stays camelCase because that is what the panel reads and what these tests
+   * assert on; this turns it back into what the gateway actually answers, so the flush exercises
+   * `OwnerBankService`'s mapping instead of bypassing it. Flushing the camelCase array directly is
+   * what let this suite pass while the real panel showed no accounts.
+   */
+  const envelopeFor = (banks: OwnerBankDetail[]) => ({
+    Message: { Message: 'Request succeeded successfully.', MessageType: 1 },
+    Data: banks.map((bank) => ({
+      BankId: bank.bankId,
+      BankAccountNumber: bank.bankAccountNumber,
+      BankAccountName: bank.bankAccountName,
+      RoutingNumber: bank.routingNumber,
+      FundingSourceId: bank.fundingSourceId,
+      AccountHolder: bank.accountHolder,
+      AccountTypeId: bank.accountTypeId,
+      PaymentServiceTypeId: bank.paymentServiceTypeId,
+      DisplayBankAccountNumber: bank.displayBankAccountNumber,
+      CompanyName: bank.companyName,
+      Verifier: bank.verifier
+    })),
+    IsFeedbackSet: true
+  });
+
   function create(source: DepositRefundResponse = view, banks: OwnerBankDetail[] | 'fail' = ownerBanks): void {
     fixture = TestBed.createComponent(ReturnDepositPanelComponent);
     component = fixture.componentInstance;
@@ -82,7 +108,7 @@ describe('ReturnDepositPanelComponent', () => {
     if (banks === 'fail') {
       request.flush('nope', { status: 500, statusText: 'Server Error' });
     } else {
-      request.flush(banks);
+      request.flush(envelopeFor(banks));
     }
     fixture.detectChanges();
   }
