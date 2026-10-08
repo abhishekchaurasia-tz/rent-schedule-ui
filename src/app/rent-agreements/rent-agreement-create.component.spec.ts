@@ -836,7 +836,7 @@ describe('RentAgreementCreateComponent', () => {
  * words — *"Edit Terms knows the renters, so it gets state B."*
  */
 describe('RentAgreementCreateComponent — the fee drawer reads the lease, not the screen', () => {
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
   const agreementId = '44444444-4444-4444-4444-444444444444';
 
   const loadedAgreement = {
@@ -896,11 +896,11 @@ describe('RentAgreementCreateComponent — the fee drawer reads the lease, not t
     drainOptions(httpMock);
 
     httpMock
-      .expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}`)
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`)
       .flush(loadedAgreement);
 
     // Step 2 was saved and the lease bills its renters on one shared invoice.
-    httpMock.expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}/tenants`).flush({
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`).flush({
       isGroupInvoice: true,
       partialPaymentAllowed: false,
       tenants: [

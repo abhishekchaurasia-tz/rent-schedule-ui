@@ -1,17 +1,24 @@
+import { HttpHeaders } from '@angular/common/http';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 
 import { environment } from '../../environments/environment';
 import { LineItemResponse } from '../rent-agreements/line-item.models';
 import { ProposedInvoiceDetailResponse } from '../rent-agreements/rent-agreement.models';
-import { InvoiceDetailResponse } from './invoice.models';
+import { FileDownloadService } from '../shared/file-download.service';
+import { InvoiceHistoryCard } from './invoice-history.models';
+import { InvoiceHistoryService } from './invoice-history.service';
+import { InvoiceDetailResponse, PagedResult } from './invoice.models';
 import { UpdateProposedInvoiceComponent } from './update-proposed-invoice.component';
 
 describe('UpdateProposedInvoiceComponent', () => {
   let fixture: ComponentFixture<UpdateProposedInvoiceComponent>;
   let component: UpdateProposedInvoiceComponent;
   let httpMock: HttpTestingController;
+  let fileDownload: jasmine.SpyObj<FileDownloadService>;
+  let history: jasmine.SpyObj<InvoiceHistoryService>;
 
   const invoiceId = '8f14e45f-ceea-467e-bd9f-000000000001';
   const agreementId = '11111111-1111-1111-1111-111111111111';
@@ -137,10 +144,36 @@ describe('UpdateProposedInvoiceComponent', () => {
     ]
   };
 
+  /** An invoice nobody has touched: a raise renders no card, so this is the ordinary answer. */
+  const emptyHistory: PagedResult<InvoiceHistoryCard> = {
+    items: [],
+    totalCount: 0,
+    pageNumber: 1,
+    pageSize: 50,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPreviousPage: false
+  };
+
   beforeEach(async () => {
+    // Replaced wholesale: the real one clicks a download anchor, which would make the browser save a
+    // PDF on every run of this suite.
+    fileDownload = jasmine.createSpyObj<FileDownloadService>('FileDownloadService', ['save']);
+
+    // Replaced for the same reason, one step removed: the timeline child fetches as soon as the page
+    // renders an invoice, and an unanswered request of its own would fail this file's `verify()` on
+    // every test that loads one. What the page owes the timeline is an id and a nudge after a save —
+    // both assertable on this spy. How the timeline reads and renders is its own spec's subject.
+    history = jasmine.createSpyObj<InvoiceHistoryService>('InvoiceHistoryService', ['getHistory']);
+    history.getHistory.and.returnValue(of(emptyHistory));
+
     await TestBed.configureTestingModule({
       imports: [UpdateProposedInvoiceComponent, HttpClientTestingModule],
-      providers: [provideRouter([])]
+      providers: [
+        provideRouter([]),
+        { provide: FileDownloadService, useValue: fileDownload },
+        { provide: InvoiceHistoryService, useValue: history }
+      ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(UpdateProposedInvoiceComponent);
@@ -784,6 +817,197 @@ describe('UpdateProposedInvoiceComponent', () => {
     httpMock.expectOne(`${invoicesUrl}/cccccccc-cccc-cccc-cccc-cccccccccccc`).flush(invoice);
     httpMock.expectOne((request) => request.url === lineItemsUrl).flush(lineItems);
   });
+
+  // ---- Download Invoice (spec 07-invoice-download-ui.md) ----------------------------------------
+
+  describe('the activity timeline', () => {
+    it('hands the timeline the loaded invoice id', () => {
+      loadInvoice();
+
+      expect(history.getHistory).toHaveBeenCalledWith(invoiceId);
+    });
+
+    // A correction appends an event, and the timeline is derived from the events -- so the card for
+    // the edit just made exists the moment the server answers. A re-read, never a card composed here.
+    it('re-reads the timeline after a correction saves', () => {
+      loadInvoice();
+      history.getHistory.calls.reset();
+
+      component.form.get('dueDate')!.setValue(localDate('2026-09-05'));
+      component.submit();
+      httpMock.expectOne(patchUrl).flush(correctedProposal);
+      fixture.detectChanges();
+
+      expect(history.getHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read a timeline before an invoice is loaded', () => {
+      expect(history.getHistory).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('downloading the invoice document', () => {
+    const documentUrl = `${invoicesUrl}/${invoiceId}/document`;
+
+    const pdf = () => new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+
+    /** Polls until `predicate` holds or the attempts run out — the blob error body is read async. */
+    async function settle(predicate: () => boolean): Promise<void> {
+      for (let attempt = 0; attempt < 50 && !predicate(); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+      }
+    }
+
+    // Requirements 2, 4 and 6.
+    it('saves the file under the name the server sent', () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+
+      const request = httpMock.expectOne(documentUrl);
+      expect(request.request.method).toBe('GET');
+      expect(request.request.responseType).toBe('blob');
+
+      request.flush(pdf(), {
+        headers: new HttpHeaders({
+          'Content-Disposition': 'attachment; filename="invoice-INV-092026-000042.pdf"'
+        })
+      });
+
+      expect(fileDownload.save).toHaveBeenCalledTimes(1);
+      expect(fileDownload.save.calls.mostRecent().args[1]).toBe('invoice-INV-092026-000042.pdf');
+      expect(component.downloading()).toBeFalse();
+      expect(component.downloadError()).toBeNull();
+    });
+
+    // Requirement 5 — the fallback repeats the server's own naming rule (BR-25), built here because
+    // this is where the invoice number is.
+    it('falls back to invoice-{invoiceNumber}.pdf when the header is absent', () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      httpMock.expectOne(documentUrl).flush(pdf());
+
+      expect(fileDownload.save.calls.mostRecent().args[1]).toBe('invoice-INV-092026-000042.pdf');
+    });
+
+    // Requirement 7 — BR-16: a deleted, voided or proposal-less invoice still renders, so the button
+    // is not gated on `isCorrectable`.
+    it('downloads an invoice that cannot be corrected', () => {
+      loadInvoice({ ...invoice, proposedInvoiceId: null, status: 'Deleted', deletedAt: '2026-09-20' });
+
+      expect(component.isCorrectable).toBeFalse();
+
+      component.downloadInvoice();
+      httpMock.expectOne(documentUrl).flush(pdf());
+
+      expect(fileDownload.save).toHaveBeenCalled();
+    });
+
+    // Requirement 9 — BR-21. The monolith answers 200 with "" for every failure; a zero-byte .pdf
+    // would look like success and open as nothing.
+    it('reports an empty document and saves nothing', () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      httpMock.expectOne(documentUrl).flush(new Blob([], { type: 'application/pdf' }));
+
+      expect(fileDownload.save).not.toHaveBeenCalled();
+      expect(component.downloadError()).toContain('empty document');
+    });
+
+    // Requirement 10 — the error body is a blob too, so `err.error?.detail` finds nothing and the
+    // detail has to be read out of it.
+    it('reads the problem detail out of the blob error body', async () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      httpMock.expectOne(documentUrl).flush(
+        new Blob([JSON.stringify({ detail: 'The invoice document could not be rendered.' })], {
+          type: 'application/problem+json'
+        }),
+        { status: 502, statusText: 'Bad Gateway' }
+      );
+
+      await settle(() => component.downloadError() !== null);
+
+      expect(component.downloadError()).toBe('The invoice document could not be rendered.');
+      expect(component.downloading()).toBeFalse();
+      expect(fileDownload.save).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the status line when the error body is not problem details', async () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      httpMock
+        .expectOne(documentUrl)
+        .flush(new Blob(['<html>gateway</html>'], { type: 'text/html' }), {
+          status: 502,
+          statusText: 'Bad Gateway'
+        });
+
+      await settle(() => component.downloadError() !== null);
+
+      expect(component.downloadError()).toBe('Request failed: 502 Bad Gateway');
+    });
+
+    // Requirement 11 — a download is a read: its failure invalidates neither the invoice on screen nor
+    // a correction half-typed into the form.
+    it('leaves the loaded invoice and a typed correction untouched when it fails', async () => {
+      loadInvoice();
+      component.lines.at(0).get('rate')!.setValue(1100);
+
+      component.downloadInvoice();
+      httpMock
+        .expectOne(documentUrl)
+        .flush(new Blob(['{}']), { status: 404, statusText: 'Not Found' });
+
+      await settle(() => component.downloadError() !== null);
+
+      expect(component.invoice()?.invoiceNumber).toBe('INV-092026-000042');
+      expect(component.lines.at(0).get('rate')!.value).toBe(1100);
+      expect(component.submitError()).toBeNull();
+      expect(component.loadError()).toBeNull();
+    });
+
+    // Requirement 8. Each call re-renders server-side (BR-20), so a second request would be a second
+    // render of the same document.
+    it('issues one request while a download is in flight', () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      expect(component.downloading()).toBeTrue();
+
+      component.downloadInvoice();
+
+      httpMock.expectOne(documentUrl).flush(pdf());
+      expect(fileDownload.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('issues no request when nothing is loaded', () => {
+      component.downloadInvoice();
+
+      httpMock.expectNone(documentUrl);
+      expect(component.downloading()).toBeFalse();
+    });
+
+    // Requirement 12 — a stale message must not outlive what it was about.
+    it('clears a previous failure when another invoice is loaded', async () => {
+      loadInvoice();
+
+      component.downloadInvoice();
+      httpMock
+        .expectOne(documentUrl)
+        .flush(new Blob(['{}']), { status: 404, statusText: 'Not Found' });
+
+      await settle(() => component.downloadError() !== null);
+
+      loadInvoice();
+
+      expect(component.downloadError()).toBeNull();
+    });
+  });
 });
 
 describe('UpdateProposedInvoiceComponent reached from the invoice list', () => {
@@ -850,4 +1074,5 @@ describe('UpdateProposedInvoiceComponent reached from the invoice list', () => {
     expect(fixture.componentInstance.idError()).toBeNull();
     httpMock.verify();
   });
+
 });

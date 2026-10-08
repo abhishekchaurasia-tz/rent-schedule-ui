@@ -31,13 +31,38 @@ export function sendsScopeIds(environmentName: string, token: string): boolean {
 }
 
 /**
+ * Whether a request is bound for the Billing API, and so may carry the caller headers.
+ *
+ * **Why this is not the bare `startsWith` it used to be.** The local build is served through the
+ * dev-server proxy and so sets `apiBaseUrl` to the empty string (`environments/environment.ts`) —
+ * and *every* string starts with `''`. That turned the guard into a no-op: the one line that keeps
+ * the bearer and the three ids away from third parties stopped rejecting anything, and a `local`
+ * build sent them to every host it called.
+ *
+ * An empty base does not mean "match everything", it means "same-origin, path-relative" — so that
+ * is what is matched. The `//host` form is excluded on purpose: it is protocol-relative, a third
+ * party wearing a relative URL's clothes, and `startsWith('/')` alone would wave it through.
+ *
+ * Takes the base as an argument rather than reading `environment` itself, for the same reason
+ * `sendsScopeIds` does: the rule is per-environment, and a spec that can only observe the build it
+ * runs under could not cover the other three.
+ */
+export function targetsApi(apiBaseUrl: string, url: string): boolean {
+  if (apiBaseUrl.length > 0) {
+    return url.startsWith(apiBaseUrl);
+  }
+
+  return url.startsWith('/') && !url.startsWith('//');
+}
+
+/**
  * Attaches whichever set of caller headers this build and this token call for — the bearer
  * (requirement 15) or the three scope ids the Billing API reads directly (backend spec
  * `01-rent-agreement.md` v89 FR-127, v90 FR-128), never both.
  *
- * **Scoped to the API on purpose.** Only requests whose URL starts with `environment.apiBaseUrl` are
- * touched; anything else passes through untouched, so neither a credential nor the ids leak to a
- * third party this application happens to call later.
+ * **Scoped to the API on purpose.** Only requests `targetsApi` accepts are touched; anything else
+ * passes through untouched, so neither a credential nor the ids leak to a third party this
+ * application happens to call later.
  *
  * **The known cost, accepted rather than hidden (requirement 12e).** Because this is central rather
  * than bolted onto the one save that needs it, the headers ride *every* Billing API call — the invoice
@@ -45,7 +70,7 @@ export function sendsScopeIds(environmentName: string, token: string): boolean {
  * lands this interceptor is deleted rather than rewritten.
  */
 export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
-  if (!request.url.startsWith(environment.apiBaseUrl)) {
+  if (!targetsApi(environment.apiBaseUrl, request.url)) {
     return next(request);
   }
 

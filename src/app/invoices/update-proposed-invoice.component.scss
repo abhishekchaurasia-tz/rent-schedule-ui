@@ -143,6 +143,35 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* The outline counterpart of `.primary-btn`: it sits in the grey summary bar beside the status pills,
+   where a solid blue block would read as the page's main action — which is the correction below. */
+.download-btn {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #1a56db;
+  border-radius: 3px;
+  background: #fff;
+  color: #1a56db;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #e8eefc;
+  }
+
+  &:disabled {
+    border-color: #9aabd4;
+    color: #9aabd4;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #0b2f7a;
+    outline-offset: 2px;
+  }
+}
+
 .pill {
   background: #1a56db;
   color: #fff;

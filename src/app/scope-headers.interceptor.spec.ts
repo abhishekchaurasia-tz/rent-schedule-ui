@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from '../environments/environment';
 
 import { RequestScopeService } from './request-scope.service';
-import { scopeHeadersInterceptor, sendsScopeIds } from './scope-headers.interceptor';
+import { scopeHeadersInterceptor, sendsScopeIds, targetsApi } from './scope-headers.interceptor';
 
 /**
  * Covers requirement 12d and 12e of `01-rent-agreement-edit-ui.md` v21 — the interceptor that sends the
@@ -196,6 +196,32 @@ describe('scopeHeadersInterceptor', () => {
     // 15f is unchanged by v26 and still has to hold on its own: wherever a token goes, the ids do not.
     expect(sendsScopeIds('local', 'a-token')).toBeFalse();
     expect(sendsScopeIds('qa', 'a-token')).toBeFalse();
+  });
+
+  // Same reason as the block above: the interceptor reads `environment` itself, so a test of it can
+  // only ever observe the build it runs under -- and the local build is the one where this broke.
+  // `targetsApi` takes the base so all four can be asked about from the one suite.
+
+  it('Req12d_LocalBuildsEmptyBase_MatchesRelativePathsOnlyNotEveryUrl', () => {
+    // The regression this pins: `''.startsWith` is true of every string, so the proxy change turned
+    // the scoping guard off and the ids and the bearer went to whatever host was called.
+    expect(targetsApi('', '/api/v1/rent/agreements/x')).toBeTrue();
+    expect(targetsApi('', 'https://example.test/something')).toBeFalse();
+  });
+
+  it('Req12d_EmptyBase_RejectsTheProtocolRelativeForm', () => {
+    // `//example.test/x` is a third party wearing a relative URL's clothes -- a leading-slash test on
+    // its own waves it through.
+    expect(targetsApi('', '//example.test/something')).toBeFalse();
+  });
+
+  it('Req12d_DevQaAndProductionBases_MatchTheirOwnPrefixAndNothingElse', () => {
+    expect(targetsApi('/billing', '/billing/api/v1/rent/agreements/x')).toBeTrue();
+    expect(targetsApi('/billing', '/api/v1/rent/agreements/x')).toBeFalse();
+    expect(targetsApi('/billing', 'https://example.test/something')).toBeFalse();
+
+    expect(targetsApi('/api', '/api/v1/invoices')).toBeTrue();
+    expect(targetsApi('/api', 'https://example.test/something')).toBeFalse();
   });
 
   it('Req12e_EveryApiRequest_CarriesTheHeadersNotJustTheCreate', () => {

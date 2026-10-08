@@ -1,0 +1,73 @@
+<section class="timeline">
+  <h2>Invoice activity</h2>
+
+  @if (loading()) {
+    <p class="timeline-note">Reading this invoice's history…</p>
+  }
+
+  @if (error(); as message) {
+    <!-- A 404 means no stream carries that id (BR-27) — a different answer from the empty timeline
+         below, which is why it gets its own banner rather than the same "nothing yet" line. -->
+    <div class="banner error">
+      <strong>Could not load this invoice's history.</strong>
+      <p>{{ message }}</p>
+    </div>
+  }
+
+  @if (loaded() && cards().length === 0) {
+    <p class="timeline-note">
+      Nothing has happened to this invoice yet. Raising an invoice is not itself an activity — the
+      history starts at the first change.
+    </p>
+  }
+
+  @if (cards().length > 0) {
+    <!--
+      Taken in the order the server sent them: newest first by stream version, not by time (BR-15).
+      Two events appended in one transaction share an instant and differ only by version, so sorting
+      this list by `occurredAt` would shuffle exactly the pairs that ordering exists to separate.
+
+      Tracked by `groupId`, the Marten event id — the only stable identity a derived card has.
+    -->
+    <ol class="timeline-list">
+      @for (card of cards(); track card.groupId) {
+        <li class="timeline-card">
+          <div class="timeline-head">
+            <span class="timeline-badge" [class]="badgeClass(card.activityType)">{{ card.subject }}</span>
+            <!--
+              `occurredAtDisplay`, never `occurredAt` through a DatePipe: this string is already in the
+              PROPERTY's time zone (BR-17), and a pipe would render the viewer's — usually a manager at
+              a desk in a different state from the unit, and wrong without ever looking wrong.
+
+              The actor is deliberately not shown here. Every sentence that has one already ends
+              "… by {name}.", so a header name would print it twice on every card; where the server
+              could not resolve a name it drops that clause and there would be nothing to show anyway.
+            -->
+            <span class="timeline-time">{{ card.occurredAtDisplay }}</span>
+          </div>
+
+          <!--
+            Interpolated, never [innerHTML]. The server composes these sentences as plain text and
+            interpolates owner-typed values verbatim with no escaping (BR-09), so a line item somebody
+            named `<b>Rent</b>` arrives with those characters in it. As text it reads back exactly as
+            typed; as markup it is stored XSS with an owner-controlled payload.
+
+            Entries are taken in the order they arrived — the server fixes it as
+            name → description → quantity → rate (BR-11).
+          -->
+          <ul class="timeline-entries">
+            @for (entry of card.entries; track entry.sequence) {
+              <li>{{ entry.text }}</li>
+            }
+          </ul>
+        </li>
+      }
+    </ol>
+
+    @if (hasMore()) {
+      <p class="timeline-note">
+        Showing the {{ cards().length }} most recent of {{ totalCount() }} activities.
+      </p>
+    }
+  }
+</section>

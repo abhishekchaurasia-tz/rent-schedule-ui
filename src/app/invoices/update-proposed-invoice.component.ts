@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, viewChild } from '@angular/core';
 import { FormArray, FormBuilder, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { provideNativeDateAdapter } from '@angular/material/core';
@@ -19,6 +19,9 @@ import {
   UpdateProposedInvoiceRequest,
   UpdateProposedLineRequest
 } from '../rent-agreements/rent-agreement.models';
+import { FileDownloadService } from '../shared/file-download.service';
+import { InvoiceActivityTimelineComponent } from './invoice-activity-timeline.component';
+import { InvoiceDocumentService } from './invoice-document.service';
 import { InvoiceDetailResponse, InvoiceLineResponse } from './invoice.models';
 import { InvoicesService } from './invoices.service';
 
@@ -57,7 +60,8 @@ const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
     MatDatepickerModule,
     MatFormFieldModule,
     MatInputModule,
-    NewItemTypeFormComponent
+    NewItemTypeFormComponent,
+    InvoiceActivityTimelineComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './update-proposed-invoice.component.html',
@@ -106,7 +110,26 @@ export class UpdateProposedInvoiceComponent implements OnInit {
   /** Whether the open picker is showing its "add a new item type" form instead of the catalog list. */
   readonly addingNewItemType = signal(false);
 
+  /** True while the document request is in flight — the button says so and refuses a second click. */
+  readonly downloading = signal(false);
 
+  /**
+   * Why the last download failed, kept apart from {@link loadError} and {@link submitError}.
+   *
+   * A download is a **read**: it changes nothing, and nothing about its failure invalidates the
+   * invoice on screen or a correction half-typed into the form. Reporting it in the correction's own
+   * error slot would say otherwise (spec `07` requirement 11).
+   */
+  readonly downloadError = signal<string | null>(null);
+
+  /**
+   * The activity timeline, so a saved correction can re-read it.
+   *
+   * Queried rather than driven by an input because the timeline owns its own fetching: it reads when
+   * the invoice id changes, and the one thing this page knows that it cannot is that an event was just
+   * appended on its behalf.
+   */
+  private readonly timeline = viewChild(InvoiceActivityTimelineComponent);
 
   readonly form: FormGroup;
 
@@ -123,6 +146,8 @@ export class UpdateProposedInvoiceComponent implements OnInit {
   constructor(
     private readonly fb: FormBuilder,
     private readonly invoices: InvoicesService,
+    private readonly documents: InvoiceDocumentService,
+    private readonly files: FileDownloadService,
     private readonly agreements: RentAgreementsService,
     private readonly lineItemsService: LineItemsService,
     private readonly route: ActivatedRoute
@@ -248,6 +273,55 @@ export class UpdateProposedInvoiceComponent implements OnInit {
         next: (items) => this.lineItems.set(items),
         error: () => this.lineItems.set([])
       });
+  }
+
+  /**
+   * Fetches this invoice's PDF and hands it to the browser (spec `07-invoice-download-ui.md`).
+   *
+   * **Offered for every loaded invoice**, including one that cannot be corrected and one that is
+   * deleted or voided: all of them still render (backend `13-invoice-download.md` **BR-16**), and
+   * refusing to download what the server will happily print would be this screen inventing a rule.
+   * That is why it is not gated on {@link isCorrectable}.
+   *
+   * **Addressed by the loaded invoice's own id**, not by the text in the lookup box — which the user
+   * is free to have retyped since, and which a trailing space would make a different string.
+   *
+   * Each click re-renders server-side (**BR-20**), so there is nothing to cache; the guard below only
+   * stops one slow render being asked for twice.
+   */
+  downloadInvoice(): void {
+    const invoice = this.invoice();
+    if (!invoice || this.downloading()) {
+      return;
+    }
+
+    this.downloadError.set(null);
+    this.downloading.set(true);
+
+    this.documents.download(invoice.invoiceId).subscribe({
+      next: (file) => {
+        this.downloading.set(false);
+
+        // **BR-21** — the endpoint never answers 200 with an empty body, and the monolith's
+        // `PrintInvoiceView` does exactly that through `catch { return ""; }`. Saving a zero-byte
+        // `.pdf` would look like success and open as nothing, so it is reported instead.
+        if (file.blob.size === 0) {
+          this.downloadError.set('The server returned an empty document, so nothing was saved.');
+          return;
+        }
+
+        // The server names the file `invoice-{invoiceNumber}.pdf` (**BR-25**). The fallback repeats
+        // that rule rather than inventing one, and is built here because this is where the invoice
+        // number is — the service has only an id.
+        this.files.save(file.blob, file.fileName ?? `invoice-${invoice.invoiceNumber}.pdf`);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.downloading.set(false);
+        void UpdateProposedInvoiceComponent.describeBlobError(err).then((message) =>
+          this.downloadError.set(message)
+        );
+      }
+    });
   }
 
   /**
@@ -525,6 +599,12 @@ export class UpdateProposedInvoiceComponent implements OnInit {
           // the new truth, carrying the new line ids. A second correction has to be measured against it,
           // or it would resend this correction's changes as though they were fresh.
           this.seedForm(proposal.dueDate, proposal.lines);
+
+          // A correction appends an event, and the timeline is derived from the events -- so the card
+          // for the edit just made exists the moment this response arrives. Re-READ, never an
+          // optimistic insert: a card this page composed would be a second record of the change, which
+          // is the one thing a derived history exists to prevent (backend BR-01).
+          this.timeline()?.reload();
         },
         error: (err: HttpErrorResponse) => {
           this.submitting.set(false);
@@ -634,12 +714,43 @@ export class UpdateProposedInvoiceComponent implements OnInit {
     this.invoice.set(null);
     this.updatedProposal.set(null);
     this.submitError.set(null);
+    this.downloadError.set(null);
     this.submitNotice.set(null);
     this.lines.clear();
     this.form.get('dueDate')!.setValue(null);
     this.baseline = null;
     this.lineItems.set([]);
     this.closeItemPicker();
+  }
+
+  /**
+   * The same reading as {@link describeError}, for a response that was asked for as a **blob**.
+   *
+   * `responseType: 'blob'` applies to the error body too, so a `404 invoice.not_found` or a
+   * `502 invoice_document.render_failed` arrives as a `Blob` and `err.error?.detail` is `undefined` on
+   * every one of them. Without this, every download failure would read as a bare status line — which
+   * is precisely the indistinguishability **BR-21** exists to end.
+   */
+  private static async describeBlobError(err: HttpErrorResponse): Promise<string> {
+    if (!(err.error instanceof Blob)) {
+      return UpdateProposedInvoiceComponent.describeError(err);
+    }
+
+    const text = await err.error.text().catch(() => '');
+    const problem = UpdateProposedInvoiceComponent.tryParseJson(text) as { detail?: unknown } | null;
+
+    return typeof problem?.detail === 'string' && problem.detail
+      ? problem.detail
+      : `Request failed: ${err.status} ${err.statusText}`;
+  }
+
+  /** Parses `text` as JSON, answering `null` when it is not JSON — a non-Problem-Details body. */
+  private static tryParseJson(text: string): unknown {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
   }
 
   /** Mirrors the other screens' error rendering — the RFC 9457 `detail` when the body carries one. */
