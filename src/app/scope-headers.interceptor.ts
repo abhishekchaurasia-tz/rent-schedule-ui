@@ -35,9 +35,11 @@ export function sendsScopeIds(environmentName: string, token: string): boolean {
  * (requirement 15) or the three scope ids the Billing API reads directly (backend spec
  * `01-rent-agreement.md` v89 FR-127, v90 FR-128), never both.
  *
- * **Scoped to the API on purpose.** Only requests whose URL starts with `environment.apiBaseUrl` are
- * touched; anything else passes through untouched, so neither a credential nor the ids leak to a
- * third party this application happens to call later.
+ * **Scoped to the two services on purpose.** Only requests whose URL starts with
+ * `environment.apiBaseUrl` (Billing) or `environment.monolithBaseUrl` (merlin, behind the same
+ * gateway) are touched; anything else passes through untouched, so neither a credential nor the ids
+ * leak to a third party this application happens to call later. merlin gets the bearer only — see
+ * below for why it never gets the scope ids.
  *
  * **The known cost, accepted rather than hidden (requirement 12e).** Because this is central rather
  * than bolted onto the one save that needs it, the headers ride *every* Billing API call — the invoice
@@ -45,13 +47,25 @@ export function sendsScopeIds(environmentName: string, token: string): boolean {
  * lands this interceptor is deleted rather than rewritten.
  */
 export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
-  if (!request.url.startsWith(environment.apiBaseUrl)) {
+  const toBilling = request.url.startsWith(environment.apiBaseUrl);
+  const toMonolith = request.url.startsWith(environment.monolithBaseUrl);
+
+  if (!toBilling && !toMonolith) {
     return next(request);
   }
 
   const scope = inject(RequestScopeService);
 
   const token = scope.accessToken();
+
+  // merlin is reached through the same gateway, on the same bearer, so it gets the token and nothing
+  // else. The three scope ids are Billing's own stand-in for sign-in and mean nothing to merlin --
+  // merlin reads the caller from the bearer's session -- so they are never sent there. Without a
+  // token the request goes out bare and merlin answers 401, which is the honest outcome: the owner's
+  // bank list is the one thing on this screen that cannot be faked from the Test scope box.
+  if (toMonolith && !toBilling) {
+    return next(token ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : request);
+  }
 
   // ONE SET OR THE OTHER, never both -- and on the dev, qa and production builds, never the ids at
   // all. See `sendsScopeIds` for why each half of that is here.

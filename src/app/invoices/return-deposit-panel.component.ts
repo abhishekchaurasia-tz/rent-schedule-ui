@@ -12,9 +12,8 @@ import {
   OfflineReturnMethod
 } from './deposit-refund.models';
 import { isMoney, roundMoney, tenantDisplayName } from './deposit-refund.util';
-
-/** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — the same check the other id screens use. */
-const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { OwnerBankDetail } from './owner-bank.models';
+import { OwnerBankService } from './owner-bank.service';
 
 /** The backend's limit on a check or money-order number (BR-17). */
 const MAX_CHECK_NUMBER_LENGTH = 25;
@@ -88,7 +87,19 @@ export class ReturnDepositPanelComponent implements OnInit {
 
   private readonly destroyRef = inject(DestroyRef);
 
-  constructor(private readonly fb: FormBuilder) {
+  /**
+   * The owner's bank accounts, from merlin. Empty until the read answers, and empty for good when it
+   * fails -- `ownerBanksUnavailable` tells the two apart for the message, never for the rules.
+   */
+  readonly ownerBanks = signal<OwnerBankDetail[]>([]);
+
+  /** Whether merlin's bank list has answered yet. */
+  readonly ownerBanksLoaded = signal(false);
+
+  constructor(
+    private readonly fb: FormBuilder,
+    private readonly ownerBankService: OwnerBankService
+  ) {
     this.offlineForm = this.fb.group({ rows: this.fb.array<FormGroup>([]) });
 
     // Flat rather than nested: every field is one input with one message, and a flat group keeps the
@@ -98,12 +109,6 @@ export class ReturnDepositPanelComponent implements OnInit {
       amount: [null as number | null],
       interest: [null as number | null],
       bankId: [''],
-      bankName: [''],
-      accountHolder: [''],
-      accountTypeId: [null as number | null],
-      accountNumber: [''],
-      routingNumber: [''],
-      fundingSource: [''],
       includeBackupAddress: [false],
       line1: [''],
       line2: [''],
@@ -141,6 +146,40 @@ export class ReturnDepositPanelComponent implements OnInit {
     if (this.view.tenants.length === 1) {
       this.online.patchValue({ tenantId: this.view.tenants[0].tenantId });
     }
+
+    // merlin owns the owner's bank accounts; this screen only ever picks one of them. Read once when
+    // the panel opens, not when Return Online is first clicked, so the dropdown is already populated
+    // by the time anybody looks at it.
+    this.ownerBankService
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((banks) => {
+        this.ownerBanks.set(banks);
+        this.ownerBanksLoaded.set(true);
+
+        // One account is not a choice.
+        if (banks.length === 1) {
+          this.online.patchValue({ bankId: banks[0].bankId });
+        }
+      });
+  }
+
+  /**
+   * The account the owner picked, or `undefined`.
+   *
+   * Looked up by id rather than held as the selected object, so the single source of truth stays the
+   * form control the template binds and the validation reads.
+   */
+  get selectedBank(): OwnerBankDetail | undefined {
+    const bankId = String(this.online.value.bankId ?? '');
+    return this.ownerBanks().find((bank) => bank.bankId === bankId);
+  }
+
+  /** How one account reads in the dropdown: the bank, then the masked number that tells two apart. */
+  bankLabel(bank: OwnerBankDetail): string {
+    const masked = bank.displayBankAccountNumber?.trim();
+    const name = bank.bankAccountName?.trim() || bank.accountHolder?.trim() || 'Bank account';
+    return masked ? `${name} — ${masked}` : name;
   }
 
   get offlineRows(): FormArray<FormGroup> {
@@ -374,31 +413,17 @@ export class ReturnDepositPanelComponent implements OnInit {
       refuse('amount', EXCEEDS_REMAINING);
     }
 
+    // The account is chosen from merlin's list, never typed, so the only thing to check is that one
+    // was chosen and that it is still one of the accounts on offer.
     const bankId = text(value.bankId);
-    if (!bankId) {
-      refuse('bankId', 'Enter the bank ID.');
-    } else if (!GUID_PATTERN.test(bankId) || /^[0-]+$/.test(bankId)) {
-      refuse('bankId', 'The bank ID must be a GUID, like 8f14e45f-ceea-467e-bd9f-000000000001.');
-    }
-
-    if (!text(value.bankName)) {
-      refuse('bankName', 'Enter the bank name.');
-    }
-
-    // An `int` on the wire: anything else is refused by the API's JSON reader before any rule runs.
-    const accountTypeId = value.accountTypeId;
-    if (accountTypeId === null || accountTypeId === '' || !Number.isInteger(Number(accountTypeId)) || Number(accountTypeId) < 0) {
-      refuse('accountTypeId', 'Enter the account type ID as a whole number.');
-    }
-
-    if (!text(value.accountNumber)) {
-      refuse('accountNumber', 'Enter the encrypted account number.');
-    }
-    if (!text(value.routingNumber)) {
-      refuse('routingNumber', 'Enter the encrypted routing number.');
-    }
-    if (!text(value.fundingSource)) {
-      refuse('fundingSource', 'Enter the encrypted funding source.');
+    if (!this.ownerBanksLoaded()) {
+      refuse('bankId', 'Still reading the owner\'s bank accounts.');
+    } else if (this.ownerBanks().length === 0) {
+      refuse('bankId', 'No bank account is available for this owner, so an online return cannot be started. Return offline instead.');
+    } else if (!bankId) {
+      refuse('bankId', 'Choose the bank account to return from.');
+    } else if (!this.ownerBanks().some((bank) => bank.bankId === bankId)) {
+      refuse('bankId', 'Choose the bank account to return from.');
     }
 
     if (value.includeBackupAddress) {
@@ -445,6 +470,13 @@ export class ReturnDepositPanelComponent implements OnInit {
   private buildOnlineRequest(): CreateDepositRefundRequest {
     const value = this.online.getRawValue();
 
+    // Only ever reached once validation has passed, which already refused a bank that is not on
+    // merlin's list -- so this cannot be undefined, and a bang would say so less clearly than a throw.
+    const bank = this.selectedBank;
+    if (!bank) {
+      throw new Error('No owner bank account is selected.');
+    }
+
     const request: CreateDepositRefundRequest = {
       mode: 'online',
       returns: [
@@ -454,14 +486,15 @@ export class ReturnDepositPanelComponent implements OnInit {
           interest: roundMoney(toNumber(value.interest))
         }
       ],
+      // Straight from merlin's answer: the three encrypted values go out exactly as they came in.
       ownerBank: {
-        bankId: text(value.bankId),
-        bankName: text(value.bankName),
-        accountHolder: text(value.accountHolder),
-        accountTypeId: Number(value.accountTypeId),
-        accountNumber: text(value.accountNumber),
-        routingNumber: text(value.routingNumber),
-        fundingSource: text(value.fundingSource)
+        bankId: bank.bankId,
+        bankName: text(bank.bankAccountName),
+        accountHolder: text(bank.accountHolder),
+        accountTypeId: Number(bank.accountTypeId),
+        accountNumber: bank.bankAccountNumber,
+        routingNumber: bank.routingNumber,
+        fundingSource: bank.fundingSourceId
       }
     };
 

@@ -113,47 +113,28 @@
 
         <h3 class="wide">Owner bank account</h3>
         <!--
-          FR 10. The owner app picks an account from merlin's GetPropertyOwnerBankDetails, which this
-          application cannot reach — so each value is copied across by hand. The last three are handed
-          out ENCRYPTED by that list and Billing passes them to Finance unread (BR-22): paste, never type.
+          FR 10. The accounts come from merlin's GetPropertyOwnerBankDetails, read through the same
+          gateway and bearer as every Billing call. Only the account is chosen here: its three
+          encrypted values travel from that answer to Billing untouched (BR-22), never shown or typed.
         -->
-        <p class="hint wide">
-          Copy these from the owner's bank list (merlin's <code>GetPropertyOwnerBankDetails</code>) — this
-          app cannot read it. The three encrypted values are pasted exactly as that list gives them.
-        </p>
-        <label class="field">
-          <span>Bank ID (GUID)</span>
-          <input type="text" formControlName="bankId" spellcheck="false" autocomplete="off"
-                 [class.invalid]="isInvalid('online.bankId')" />
-        </label>
-        <label class="field">
-          <span>Bank name</span>
-          <input type="text" formControlName="bankName" [class.invalid]="isInvalid('online.bankName')" />
-        </label>
-        <label class="field">
-          <span>Account holder</span>
-          <input type="text" formControlName="accountHolder" />
-        </label>
-        <label class="field">
-          <span>Account type ID</span>
-          <input type="number" formControlName="accountTypeId" min="0" step="1"
-                 [class.invalid]="isInvalid('online.accountTypeId')" />
-        </label>
-        <label class="field wide">
-          <span>Account number (encrypted)</span>
-          <input type="text" formControlName="accountNumber" spellcheck="false" autocomplete="off"
-                 [class.invalid]="isInvalid('online.accountNumber')" />
-        </label>
-        <label class="field wide">
-          <span>Routing number (encrypted)</span>
-          <input type="text" formControlName="routingNumber" spellcheck="false" autocomplete="off"
-                 [class.invalid]="isInvalid('online.routingNumber')" />
-        </label>
-        <label class="field wide">
-          <span>Funding source (encrypted)</span>
-          <input type="text" formControlName="fundingSource" spellcheck="false" autocomplete="off"
-                 [class.invalid]="isInvalid('online.fundingSource')" />
-        </label>
+        @if (!ownerBanksLoaded()) {
+          <p class="hint wide">Reading the owner's bank accounts…</p>
+        } @else if (ownerBanks().length === 0) {
+          <p class="hint wide">
+            No bank account is available for this owner, so an online return cannot be started.
+            Return offline instead.
+          </p>
+        } @else {
+          <label class="field wide">
+            <span>Bank account</span>
+            <select formControlName="bankId" [class.invalid]="isInvalid('online.bankId')">
+              <option value="">Choose an account…</option>
+              @for (bank of ownerBanks(); track bank.bankId) {
+                <option [value]="bank.bankId">{{ bankLabel(bank) }}</option>
+              }
+            </select>
+          </label>
+        }
 
         <label class="check wide">
           <input type="checkbox" formControlName="includeBackupAddress" />
