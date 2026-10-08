@@ -264,6 +264,21 @@
               </a>
 
               <!--
+                Spec v10, FR 27. On deposit rows only, and a link rather than an action: whether the deposit
+                can be refunded is the refund view's answer (backend 15-deposit-refund.md BR-02, BR-03).
+              -->
+              @if (isDepositInvoice(invoice)) {
+                <a
+                  class="row-menu-item"
+                  [routerLink]="['/invoices/deposit-refund']"
+                  [queryParams]="{ invoiceId: invoice.invoiceId }"
+                  (click)="closeRowMenu()"
+                >
+                  Deposit Refund
+                </a>
+              }
+
+              <!--
                 Delete and void are offered only while the row is not already terminal (FR 21) — once
                 one of those wire statuses is reached, the menu offers Correct alone.
               -->

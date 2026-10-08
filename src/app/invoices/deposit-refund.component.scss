@@ -1,0 +1,280 @@
+// `.banner` (with `.floating`), `.panel-overlay` and `.close-btn` are global (src/styles.scss).
+
+.refund-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    sans-serif;
+}
+
+h1 {
+  margin-bottom: 0.25rem;
+}
+
+h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0 0 1.5rem;
+  max-width: 75ch;
+}
+
+.lookup-box {
+  max-width: 640px;
+  border: 1px solid #dcdcdc;
+  border-radius: 4px;
+  padding: 1.25rem;
+
+  label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+}
+
+.lookup-row {
+  display: flex;
+  gap: 0.5rem;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #c4c4c4;
+    border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+}
+
+.inline-error {
+  margin: 0.65rem 0 0;
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.primary-btn {
+  padding: 0.55rem 1.4rem;
+  border: none;
+  border-radius: 3px;
+  background: #1a56db;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #1544ab;
+  }
+
+  &:disabled {
+    background: #9aabd4;
+    cursor: not-allowed;
+  }
+}
+
+.code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+
+.summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.5rem 0 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f2f4f6;
+  border-radius: 4px;
+}
+
+.invoice-number,
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.invoice-number {
+  font-weight: 700;
+}
+
+.facts,
+.totals {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.3rem 1.5rem;
+  margin: 0;
+  font-size: 0.85rem;
+
+  dt {
+    color: #666;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+.facts {
+  grid-template-columns: repeat(4, auto auto);
+  justify-content: start;
+}
+
+.totals {
+  width: max-content;
+  margin: 1rem 0 0 auto;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+
+  dd {
+    text-align: right;
+  }
+
+  .strong {
+    color: #222;
+    font-weight: 700;
+  }
+}
+
+.empty {
+  color: #777;
+  font-size: 0.88rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+}
+
+.funds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+
+  th,
+  td {
+    padding: 0.65rem 0.8rem;
+    text-align: left;
+    border-bottom: 1px solid #ededed;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f6f7f9;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .num {
+    text-align: right;
+  }
+}
+
+.status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #fff;
+  background: #8a94a6;
+
+  &.refunded {
+    background: #17a673;
+  }
+
+  &.processing {
+    background: #e0a12c;
+  }
+
+  &.issued {
+    background: #1a56db;
+  }
+}
+
+.row-menu-btn {
+  border: none;
+  background: none;
+  font-size: 1.1rem;
+  padding: 0 0.5rem;
+  cursor: pointer;
+}
+
+.row-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+.row-menu {
+  position: fixed;
+  z-index: 11;
+  min-width: 240px;
+  background: #fff;
+  border: 1px solid #d5dde5;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.row-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.9rem;
+  border: none;
+  background: none;
+  text-align: left;
+  font-weight: 600;
+  color: #c0392b;
+  cursor: pointer;
+
+  &:hover {
+    background: #fde8e8;
+  }
+}
+
+.row-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 0.8rem;
+}
+
+.row-confirm-actions {
+  display: flex;
+  gap: 0.4rem;
+
+  button {
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .danger {
+    border: 0;
+    background: #991b1b;
+    color: #fff;
+  }
+
+  .secondary {
+    border: 1px solid #d1d5db;
+    background: #fff;
+  }
+}

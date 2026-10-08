@@ -568,6 +568,18 @@ export class InvoiceListComponent implements OnInit {
     return invoice.balance > 0;
   }
 
+  /**
+   * Whether the row menu offers **Deposit Refund** (spec v10, FR 27).
+   *
+   * The type alone, matching backend `15-deposit-refund.md` BR-01 (`InvoiceType == Deposit`). Not the
+   * status: whether the deposit is fully paid, and whether anything is left to return, is the refund
+   * view's answer to give, and a deposit already partly returned is worth opening at any status.
+   * `pet_deposit` is excluded because the refund view would only answer that it is not a deposit invoice.
+   */
+  isDepositInvoice(invoice: InvoiceSummaryResponse): boolean {
+    return invoice.invoiceType === 'deposit';
+  }
+
   // ---- row-level delete / void (FR 21–25) -----------------------------------------------------
 
   /**
