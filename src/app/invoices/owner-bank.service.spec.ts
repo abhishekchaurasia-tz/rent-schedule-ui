@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 
 import { environment } from '../../environments/environment';
-import { OwnerBankDetail, OwnerBankDetailWire } from './owner-bank.models';
+import { OwnerBankDetail, OwnerBankDetailWire, OwnerBankListResult } from './owner-bank.models';
 import { OwnerBankService } from './owner-bank.service';
 
 /** Covers FR 10 of `09-deposit-refund-ui.md` v2 — the owner's bank list, read from merlin. */
@@ -59,9 +59,9 @@ describe('OwnerBankService', () => {
   afterEach(() => http.verify());
 
   it('reads merlin\'s own route, with no parameters — the organization comes from the session', () => {
-    let answered: OwnerBankDetail[] | undefined;
+    let answered: OwnerBankListResult | undefined;
 
-    service.list().subscribe((banks) => (answered = banks));
+    service.list().subscribe((result) => (answered = result));
 
     const request = http.expectOne(url);
     expect(request.request.method).toBe('GET');
@@ -69,13 +69,13 @@ describe('OwnerBankService', () => {
 
     request.flush(envelope([wire]));
 
-    expect(answered).toEqual([bank]);
+    expect(answered).toEqual({ banks: [bank], unavailable: false });
   });
 
   it('unwraps merlin\'s envelope and maps its PascalCase onto the panel\'s shape', () => {
     let answered: OwnerBankDetail[] | undefined;
 
-    service.list().subscribe((banks) => (answered = banks));
+    service.list().subscribe((result) => (answered = result.banks));
 
     http.expectOne(url).flush(envelope([wire]));
 
@@ -89,36 +89,61 @@ describe('OwnerBankService', () => {
   });
 
   it('answers an empty list when the envelope carries no Data at all', () => {
-    const answers: OwnerBankDetail[][] = [];
+    const answers: OwnerBankListResult[] = [];
 
-    service.list().subscribe((banks) => answers.push(banks));
+    service.list().subscribe((result) => answers.push(result));
 
     // An error-shaped answer omits `Data`. Mapping over `undefined` would throw, and the panel would
     // break rather than say no account is available.
     http.expectOne(url).flush({ Message: { Message: 'No.', MessageType: 3 }, IsFeedbackSet: true });
 
-    expect(answers).toEqual([[]]);
+    // No `Data` array at all is not "this owner has none" -- it is an answer that is not merlin's.
+    expect(answers).toEqual([{ banks: [], unavailable: true }]);
   });
 
-  it('answers an empty list when merlin cannot be read, rather than an error', () => {
-    const answers: OwnerBankDetail[][] = [];
+  it('answers an empty list when Data is present and empty', () => {
+    const answers: OwnerBankListResult[] = [];
+
+    service.list().subscribe((result) => answers.push(result));
+
+    http.expectOne(url).flush(envelope([]));
+
+    expect(answers).toEqual([{ banks: [], unavailable: false }]);
+  });
+
+  it('counts the dev server\'s index.html as unavailable, not as no accounts', () => {
+    const answers: OwnerBankListResult[] = [];
+
+    service.list().subscribe((result) => answers.push(result));
+
+    // What a dev server started before `/api` reached its proxy config actually returns for this
+    // path: the SPA shell, 200, text/html. It used to read as "the owner has no bank account".
+    http.expectOne(url).flush('<!doctype html><html lang="en"><head></head><body></body></html>');
+
+    expect(answers).toEqual([{ banks: [], unavailable: true }]);
+  });
+
+  it('reports a failed read as unavailable, rather than as an error or as no accounts', () => {
+    const answers: OwnerBankListResult[] = [];
     let errored = false;
 
-    service.list().subscribe({ next: (banks) => answers.push(banks), error: () => (errored = true) });
+    service.list().subscribe({ next: (result) => answers.push(result), error: () => (errored = true) });
 
     http.expectOne(url).flush('no', { status: 500, statusText: 'Server Error' });
 
     expect(errored).toBeFalse();
-    expect(answers).toEqual([[]]);
+    expect(answers).toEqual([{ banks: [], unavailable: true }]);
   });
 
-  it('answers an empty list when the caller has no token and merlin refuses', () => {
-    const answers: OwnerBankDetail[][] = [];
+  it('reports a 401 from a missing bearer as unavailable, not as no accounts', () => {
+    const answers: OwnerBankListResult[] = [];
 
-    service.list().subscribe((banks) => answers.push(banks));
+    service.list().subscribe((result) => answers.push(result));
 
     http.expectOne(url).flush('', { status: 401, statusText: 'Unauthorized' });
 
-    expect(answers).toEqual([[]]);
+    // This is the shape of the qa failure: merlin answers only with a bearer, and without one the
+    // panel used to say the owner had no bank account.
+    expect(answers).toEqual([{ banks: [], unavailable: true }]);
   });
 });

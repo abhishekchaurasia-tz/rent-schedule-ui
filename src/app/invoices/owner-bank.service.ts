@@ -6,7 +6,8 @@ import { environment } from '../../environments/environment';
 import {
   OwnerBankDetail,
   OwnerBankDetailWire,
-  OwnerBankListResponse
+  OwnerBankListResponse,
+  OwnerBankListResult
 } from './owner-bank.models';
 
 /**
@@ -29,15 +30,20 @@ export class OwnerBankService {
   /**
    * Lists the owner's bank accounts.
    *
-   * **A failure answers an empty list rather than an error.** The panel treats "no accounts" and
-   * "could not read the accounts" the same way — it says an online return cannot be started and keeps
-   * the offline tab working — so a 401 from a missing token, or merlin being down, degrades the one
-   * tab that needs the list instead of breaking the whole screen.
+   * **A failure answers rather than throwing, but it says it failed.** The panel blocks an online
+   * return either way and keeps the offline tab working, so merlin being unreachable degrades the one
+   * tab that needs the list instead of breaking the whole screen — but `unavailable` lets it tell the
+   * owner that the list could not be read, instead of claiming they have no bank account. A 404 from
+   * a proxy pointed at the wrong service and a 401 from a missing bearer both land here.
    */
-  list(): Observable<OwnerBankDetail[]> {
+  list(): Observable<OwnerBankListResult> {
     return this.http.get<OwnerBankListResponse>(this.url).pipe(
-      map((response) => (response?.Data ?? []).map(OwnerBankService.fromWire)),
-      catchError(() => of([]))
+      map((response) =>
+        Array.isArray(response?.Data)
+          ? { banks: response.Data.map(OwnerBankService.fromWire), unavailable: false }
+          : { banks: [], unavailable: true }
+      ),
+      catchError(() => of({ banks: [], unavailable: true }))
     );
   }
 

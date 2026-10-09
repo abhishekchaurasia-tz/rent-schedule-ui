@@ -56,3 +56,18 @@ export interface OwnerBankDetailWire {
 export interface OwnerBankListResponse {
   Data?: OwnerBankDetailWire[] | null;
 }
+
+/**
+ * The outcome of one read of the owner's bank list.
+ *
+ * **"No accounts" and "could not read the accounts" are not the same thing, and the panel has to be
+ * able to say which.** Both leave `banks` empty and both block an online return, so the rules do not
+ * change -- but one is a fact about this owner and the other is a fault to go and fix. Flattening the
+ * failure into an empty list, as this did before, made a 404 from the wrong proxy target and a 401
+ * from a missing bearer read as "this owner has no bank account".
+ */
+export interface OwnerBankListResult {
+  banks: OwnerBankDetail[];
+  /** True when the read failed outright, rather than answering an empty list. */
+  unavailable: boolean;
+}

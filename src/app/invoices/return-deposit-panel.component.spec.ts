@@ -447,6 +447,37 @@ describe('ReturnDepositPanelComponent', () => {
     expect(component.online.getRawValue().tenantId).toBe(tenantA);
   });
 
+  it('offers the two modes as described cards, with the online settlement named', () => {
+    create();
+
+    const cards = (fixture.nativeElement as HTMLElement).querySelectorAll('.mode-card');
+    expect(cards.length).toBe(2);
+    expect(cards[0].textContent).toContain('Return Online');
+    expect(cards[0].textContent).toContain('Settles in 3 days');
+    expect(cards[1].textContent).toContain('Return Offline');
+
+    // The chosen one is announced, not only coloured -- the cards are a radiogroup.
+    component.chooseMode('online');
+    fixture.detectChanges();
+    expect(cards[0].getAttribute('aria-checked')).toBe('true');
+    expect(cards[1].getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('shows the chosen payer\'s held amount in the row, and nothing before one is chosen', () => {
+    create();
+    component.chooseMode('online');
+    fixture.detectChanges();
+
+    // Blank rather than $0.00, which would read as "this payer holds nothing".
+    expect(component.selectedHeld).toBeNull();
+
+    fillOnline({ tenantId: tenantB });
+
+    expect(component.selectedHeld).toBe(10);
+    const row = (fixture.nativeElement as HTMLElement).querySelector('.online-row');
+    expect(row?.textContent).toContain('$10.00');
+  });
+
   it('lists the owner\'s accounts from merlin, masked, and never shows an encrypted value', () => {
     component.chooseMode('online');
     fixture.detectChanges();
@@ -482,7 +513,7 @@ describe('ReturnDepositPanelComponent', () => {
     expect(text()).toContain('No bank account is available for this owner');
   });
 
-  it('treats a failed bank read as no accounts rather than breaking the panel', () => {
+  it('blocks online on a failed bank read without breaking the panel', () => {
     create(view, 'fail');
 
     expect(component.ownerBanksLoaded()).toBeTrue();
@@ -494,6 +525,28 @@ describe('ReturnDepositPanelComponent', () => {
     component.submit();
 
     expect(emitted.length).toBe(1);
+  });
+
+  it('says the accounts could not be read, rather than that the owner has none', () => {
+    create(view, 'fail');
+    component.chooseMode('online');
+    fixture.detectChanges();
+
+    expect(component.ownerBanksUnavailable()).toBeTrue();
+
+    // The distinction the panel owes the owner: one is a fact about them, the other is a fault.
+    expect(text()).toContain('could not be read');
+    expect(text()).not.toContain('No bank account is available for this owner');
+  });
+
+  it('says the owner has none when merlin answers an empty list', () => {
+    create(view, []);
+    component.chooseMode('online');
+    fixture.detectChanges();
+
+    expect(component.ownerBanksUnavailable()).toBeFalse();
+    expect(text()).toContain('No bank account is available for this owner');
+    expect(text()).not.toContain('could not be read');
   });
 
   it('sends the chosen account, not the first one', () => {

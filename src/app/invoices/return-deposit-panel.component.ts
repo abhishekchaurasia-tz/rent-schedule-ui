@@ -96,6 +96,13 @@ export class ReturnDepositPanelComponent implements OnInit {
   /** Whether merlin's bank list has answered yet. */
   readonly ownerBanksLoaded = signal(false);
 
+  /**
+   * Whether that answer was a failure rather than an empty list.
+   *
+   * Only the message depends on this, never the rules: an online return is blocked either way (FR 10).
+   */
+  readonly ownerBanksUnavailable = signal(false);
+
   constructor(
     private readonly fb: FormBuilder,
     private readonly ownerBankService: OwnerBankService
@@ -150,11 +157,30 @@ export class ReturnDepositPanelComponent implements OnInit {
     // merlin owns the owner's bank accounts; this screen only ever picks one of them. Read once when
     // the panel opens, not when Return Online is first clicked, so the dropdown is already populated
     // by the time anybody looks at it.
+    this.readOwnerBanks();
+  }
+
+  /**
+   * Reads the owner's bank list, and can be asked again.
+   *
+   * **Retryable because the first read can fail for a reason that is then fixed without reloading.**
+   * A bearer pasted after the panel opened is the ordinary case: the read had already gone out
+   * unauthenticated, and before this the list stayed broken until the panel was closed and reopened,
+   * which gave no hint that it was the fix.
+   */
+  retryOwnerBanks(): void {
+    this.ownerBanksLoaded.set(false);
+    this.ownerBanksUnavailable.set(false);
+    this.readOwnerBanks();
+  }
+
+  private readOwnerBanks(): void {
     this.ownerBankService
       .list()
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((banks) => {
+      .subscribe(({ banks, unavailable }) => {
         this.ownerBanks.set(banks);
+        this.ownerBanksUnavailable.set(unavailable);
         this.ownerBanksLoaded.set(true);
 
         // One account is not a choice.
@@ -170,6 +196,26 @@ export class ReturnDepositPanelComponent implements OnInit {
    * Looked up by id rather than held as the selected object, so the single source of truth stays the
    * form control the template binds and the validation reads.
    */
+  /**
+   * Working days an online return takes to settle, as the panel tells the owner twice — on the
+   * *Return Online* card and in the banner above the backup address.
+   *
+   * A constant rather than a value from the API, because nothing in `DepositRefundResponse` carries
+   * it. It is the one number on this screen the server does not supply, so it lives in one place and
+   * is named, instead of being typed into the template twice.
+   */
+  readonly onlineSettlementDays = 3;
+
+  /**
+   * What the chosen payer still holds, for the row's *Deposit Held* cell.
+   *
+   * Null until a payer is chosen, which the `currency` pipe renders as blank — the same as the
+   * offline rows do, and honester than a `$0.00` that would read as "this payer holds nothing".
+   */
+  get selectedHeld(): number | null {
+    return this.heldFor(String(this.online.value.tenantId ?? ''));
+  }
+
   get selectedBank(): OwnerBankDetail | undefined {
     const bankId = String(this.online.value.bankId ?? '');
     return this.ownerBanks().find((bank) => bank.bankId === bankId);

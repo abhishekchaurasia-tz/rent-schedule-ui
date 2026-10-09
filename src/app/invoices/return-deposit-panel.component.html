@@ -9,12 +9,53 @@
 
   <div class="panel-body">
     <!-- FR 5. Two forms behind one choice; switching keeps what was typed into each. -->
-    <div class="mode-toggle" role="group" aria-label="How the deposit goes back">
-      <button type="button" [class.selected]="mode() === 'offline'" (click)="chooseMode('offline')">
-        Return Offline
+    <h3 class="section-q">How would you like to return the deposit?</h3>
+    <div class="mode-cards" role="radiogroup" aria-label="How the deposit goes back">
+      <button
+        type="button"
+        class="mode-card"
+        role="radio"
+        [attr.aria-checked]="mode() === 'online'"
+        [class.selected]="mode() === 'online'"
+        (click)="chooseMode('online')"
+      >
+        <span class="mode-card-top">
+          <span class="mode-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6">
+              <rect x="1.8" y="4" width="16.4" height="12" rx="2" />
+              <path d="M1.8 8.4h16.4" />
+            </svg>
+          </span>
+          <span class="mode-title">Return Online</span>
+          <span class="mode-radio" aria-hidden="true"></span>
+        </span>
+        <span class="mode-desc">
+          Send the deposit amount back to your tenant(s) electronically through Innago.
+        </span>
+        <span class="mode-badge">Settles in {{ onlineSettlementDays }} days</span>
       </button>
-      <button type="button" [class.selected]="mode() === 'online'" (click)="chooseMode('online')">
-        Return Online
+
+      <button
+        type="button"
+        class="mode-card"
+        role="radio"
+        [attr.aria-checked]="mode() === 'offline'"
+        [class.selected]="mode() === 'offline'"
+        (click)="chooseMode('offline')"
+      >
+        <span class="mode-card-top">
+          <span class="mode-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M3.2 3h13.6v14l-3.4-2.2-3.4 2.2-3.4-2.2L3.2 17z" />
+              <path d="M6.6 7.2h6.8M6.6 10.4h4.2" />
+            </svg>
+          </span>
+          <span class="mode-title">Return Offline</span>
+          <span class="mode-radio" aria-hidden="true"></span>
+        </span>
+        <span class="mode-desc">
+          Record a deposit return for accounting and record keeping purposes.
+        </span>
       </button>
     </div>
 
@@ -89,56 +130,127 @@
 
     @if (mode() === 'online') {
       <form [formGroup]="online" class="online-form">
-        <label class="field wide">
-          <span>Tenant</span>
-          <select formControlName="tenantId" [class.invalid]="isInvalid('online.tenantId')">
-            <option value="">Choose a tenant</option>
-            @for (tenant of view.tenants; track tenant.tenantId) {
-              <option [value]="tenant.tenantId">
-                {{ tenantName(tenant.tenantId) }} — holds {{ tenant.held | currency }}
-              </option>
-            }
-          </select>
-        </label>
-        <label class="field">
-          <span>Amount to Return</span>
-          <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0.00"
-                 [class.invalid]="isInvalid('online.amount')" />
-        </label>
-        <label class="field">
-          <span>Deposit Interest</span>
-          <input type="number" formControlName="interest" min="0" step="0.01" placeholder="0.00"
-                 [class.invalid]="isInvalid('online.interest')" />
-        </label>
+        <h3 class="section-h wide">Return</h3>
+        <p class="hint wide">
+          You can return less than, equal to, or more than the amount collected. Any amount exceeding
+          the original collected will be listed as Return Interest on the invoice. Funds will be debited
+          from your chosen account below and issued to the tenant's chosen receiving account.
+        </p>
 
-        <h3 class="wide">Owner bank account</h3>
         <!--
+          One row, because an online return pays exactly one payer (`CreateDepositRefundRequest.returns`
+          — "Online: exactly one"). The payer cell is the chooser rather than a separate field above, so
+          the row reads as the design's table while the request keeps its single-return shape.
+
           FR 10. The accounts come from merlin's GetPropertyOwnerBankDetails, read through the same
           gateway and bearer as every Billing call. Only the account is chosen here: its three
           encrypted values travel from that answer to Billing untouched (BR-22), never shown or typed.
         -->
-        @if (!ownerBanksLoaded()) {
-          <p class="hint wide">Reading the owner's bank accounts…</p>
-        } @else if (ownerBanks().length === 0) {
+        <div class="online-table wide">
+          <div class="online-head">
+            <span>Payer</span>
+            <span class="num">Deposit Held</span>
+            <span>Bank Account</span>
+            <span>Amount to Return</span>
+            <span>Deposit Interest</span>
+          </div>
+
+          <div class="online-row">
+            <span class="payer-cell">
+              <span class="avatar" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" />
+                </svg>
+              </span>
+              <select formControlName="tenantId" aria-label="Payer"
+                      [class.invalid]="isInvalid('online.tenantId')">
+                <option value="">Choose a tenant</option>
+                @for (tenant of view.tenants; track tenant.tenantId) {
+                  <option [value]="tenant.tenantId">{{ tenantName(tenant.tenantId) }}</option>
+                }
+              </select>
+            </span>
+
+            <span class="num held">{{ selectedHeld | currency }}</span>
+
+            @if (!ownerBanksLoaded()) {
+              <span class="cell-note">Reading accounts…</span>
+            } @else if (ownerBanksUnavailable()) {
+              <span class="cell-note bad">Couldn't read accounts</span>
+            } @else if (ownerBanks().length === 0) {
+              <span class="cell-note">No account available</span>
+            } @else {
+              <select formControlName="bankId" aria-label="Bank Account"
+                      [class.invalid]="isInvalid('online.bankId')">
+                <option value="">Choose an account…</option>
+                @for (bank of ownerBanks(); track bank.bankId) {
+                  <option [value]="bank.bankId">{{ bankLabel(bank) }}</option>
+                }
+              </select>
+            }
+
+            <span class="money-input">
+              <span class="money-prefix" aria-hidden="true">$</span>
+              <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0"
+                     aria-label="Amount to Return" [class.invalid]="isInvalid('online.amount')" />
+            </span>
+
+            <span class="money-input">
+              <span class="money-prefix" aria-hidden="true">$</span>
+              <input type="number" formControlName="interest" min="0" step="0.01" placeholder="0"
+                     aria-label="Deposit Interest" [class.invalid]="isInvalid('online.interest')" />
+            </span>
+          </div>
+        </div>
+
+        <!--
+          The two are told apart on purpose: one is a fact about this owner, the other is a fault to go
+          and fix, and before `ownerBanksUnavailable` existed both read as the first.
+        -->
+        @if (ownerBanksLoaded() && ownerBanksUnavailable()) {
+          <div class="banner warn wide">
+            <div>
+              The owner's bank accounts could not be read, so an online return cannot be started —
+              this is not the same as the owner having none. The most common cause is no access token:
+              paste the bearer into <strong>Test scope</strong> at the top of the page, then retry.
+              Return offline in the meantime.
+            </div>
+            <button type="button" class="ghost-btn retry-btn" (click)="retryOwnerBanks()">
+              Try again
+            </button>
+          </div>
+        } @else if (ownerBanksLoaded() && ownerBanks().length === 0) {
           <p class="hint wide">
             No bank account is available for this owner, so an online return cannot be started.
             Return offline instead.
           </p>
-        } @else {
-          <label class="field wide">
-            <span>Bank account</span>
-            <select formControlName="bankId" [class.invalid]="isInvalid('online.bankId')">
-              <option value="">Choose an account…</option>
-              @for (bank of ownerBanks(); track bank.bankId) {
-                <option [value]="bank.bankId">{{ bankLabel(bank) }}</option>
-              }
-            </select>
-          </label>
         }
 
+        <div class="banner info wide">
+          <span class="info-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6">
+              <circle cx="10" cy="10" r="8" />
+              <path d="M10 9v5M10 6.2v.6" />
+            </svg>
+          </span>
+          <span>
+            This return settles in <strong>{{ onlineSettlementDays }} days</strong>. Debiting from an
+            <strong>Innago Account</strong> returns it in <strong>1 day</strong> — next business day.
+          </span>
+        </div>
+
+        <h4 class="section-sub wide">
+          Add Backup Address<span class="optional">(Optional)</span>
+        </h4>
+        <!--
+          Kept as a checkbox over the four structured fields: `BackupAddressRequest` is line1, city,
+          state and zip, so the design's single "Enter Location" box would have nothing to send them
+          from. The heading matches the design; what it reveals matches the contract.
+        -->
         <label class="check wide">
           <input type="checkbox" formControlName="includeBackupAddress" />
-          Add a backup mailing address — used to mail a check if the tenant never confirms a bank account
+          Mail a check here if the tenant never confirms a bank account
         </label>
 
         @if (includesBackupAddress) {
@@ -171,7 +283,7 @@
       <!-- FR 7. The owner's entries measured against what the server says remains. -->
       <dl class="totals">
         <dt>Total Held</dt>
-        <dd>{{ totalHeld | currency }}</dd>
+        <dd class="strong-pos">{{ totalHeld | currency }}</dd>
         <dt>Deposit Interest</dt>
         <dd>{{ enteredInterest | currency }}</dd>
         <dt>Amount to Return</dt>
@@ -201,7 +313,7 @@
       (click)="submit()"
       [disabled]="submitting || mode() === null || view.tenants.length === 0"
     >
-      {{ submitting ? 'Recording…' : 'Return Deposit' }}
+      {{ submitting ? 'Recording…' : 'Return' }}
     </button>
   </div>
 </aside>

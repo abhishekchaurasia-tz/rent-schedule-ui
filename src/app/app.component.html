@@ -38,7 +38,7 @@
             spellcheck="false"
             autocomplete="off"
             [value]="scope.organizationId()"
-            (change)="onOrganizationIdInput($any($event.target).value)"
+            (input)="onOrganizationIdInput($any($event.target).value)"
           />
         </label>
 
@@ -50,7 +50,7 @@
             spellcheck="false"
             autocomplete="off"
             [value]="scope.propertyOwnerId()"
-            (change)="onPropertyOwnerIdInput($any($event.target).value)"
+            (input)="onPropertyOwnerIdInput($any($event.target).value)"
           />
         </label>
 
@@ -62,7 +62,7 @@
             spellcheck="false"
             autocomplete="off"
             [value]="scope.identityId()"
-            (change)="onIdentityIdInput($any($event.target).value)"
+            (input)="onIdentityIdInput($any($event.target).value)"
           />
         </label>
       }
@@ -75,6 +75,10 @@
         A textarea rather than an input because a JWT runs to hundreds of characters, and a
         single-line box makes it impossible to see whether the paste is complete -- a truncated token
         fails as a 401 that looks exactly like an expiry.
+
+        `input`, not `change`. `change` fires on blur, so pasting a token and going straight to the
+        screen that needs it stored nothing at all -- the paste was never committed, and every call
+        went out unauthenticated while the box sat there showing the token.
       -->
       @if (showAccessToken) {
         <label class="scope-field" for="scope-access-token">
@@ -86,7 +90,7 @@
             autocomplete="off"
             placeholder="Paste the bearer token, without the word Bearer"
             [value]="scope.accessToken()"
-            (change)="onAccessTokenInput($any($event.target).value)"
+            (input)="onAccessTokenInput($any($event.target).value)"
           ></textarea>
         </label>
       }
