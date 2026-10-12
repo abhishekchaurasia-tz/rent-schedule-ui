@@ -1,3 +1,5 @@
+import { InvoiceLateFeeResponse } from './late-fee.models';
+
 /**
  * The wire shapes of `GET /api/v1/invoices/{id}` — the projected invoice with its lines, payments,
  * applied credits and tenant shares embedded (backend spec `02-invoicing.md` FR 29).
@@ -129,6 +131,13 @@ export interface InvoiceDetailResponse {
    * the field is simply absent and every invoice reads as not correctable.
    */
   proposedInvoiceId?: string | null;
+
+  /**
+   * The invoice's late fee: its amount, the paid part, what a removal would take off, and the two marks
+   * (backend `16-late-fee-consumer.md` D31; spec `07-late-fee-ui.md` FR 17). Optional, so an API older
+   * than the late fee work answers as before.
+   */
+  lateFee?: InvoiceLateFeeResponse;
 }
 
 /**
@@ -185,6 +194,12 @@ export interface InvoiceSummaryResponse {
    * have several payers. Empty when the invoice records no shares.
    */
   tenantIds?: string[];
+
+  /**
+   * The sum of the invoice's live late fee lines, `0` when there are none (backend D31; spec
+   * `07-late-fee-ui.md` FR 1, FR 17). Optional, so an API older than the late fee work answers as before.
+   */
+  lateFeeAmount?: number;
 }
 
 /**
