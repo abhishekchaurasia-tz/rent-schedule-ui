@@ -784,6 +784,93 @@ describe('UpdateProposedInvoiceComponent', () => {
     httpMock.expectOne(`${invoicesUrl}/cccccccc-cccc-cccc-cccc-cccccccccccc`).flush(invoice);
     httpMock.expectOne((request) => request.url === lineItemsUrl).flush(lineItems);
   });
+  describe('a late fee line (spec 07-late-fee-ui.md, FR 14 to FR 16)', () => {
+    /** The system "Late Fee" row (backend D32): the catalog never returns it to an owner (BR-40). */
+    const systemLateFeeRowId = '6b3f48c0-b50d-49cd-96f4-04306b3008d9';
+    const lateFeeLineId = '55555555-5555-5555-5555-555555555555';
+
+    function withLateFeeLine(lineItemId: string | null): InvoiceDetailResponse {
+      return {
+        ...invoice,
+        lines: [
+          ...invoice.lines,
+          {
+            lineId: lateFeeLineId,
+            itemType: 'LateFeeCharge',
+            name: 'Late Fee',
+            description: 'Late fee — 5 days',
+            quantity: 5,
+            rate: 10,
+            amount: 50,
+            lineItemId,
+            additionalChargeId: null
+          }
+        ]
+      };
+    }
+
+    function notice(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.late-fee-notice');
+    }
+
+    it('labels it Late Fee though the catalog does not hold its system row (FR 14)', () => {
+      loadInvoice(withLateFeeLine(systemLateFeeRowId));
+
+      expect(component.itemDisplayLabel(2)).toBe('Late Fee');
+    });
+
+    it('labels it Late Fee with no catalog id, and before any catalog name its id would find (FR 14)', () => {
+      loadInvoice(withLateFeeLine(null));
+      expect(component.itemDisplayLabel(2)).toBe('Late Fee');
+
+      component.lines.at(2).get('lineItemId')!.setValue(rentCatalogItem.id);
+      expect(component.itemDisplayLabel(2)).toBe('Late Fee');
+    });
+
+    it('shows the late fee rules when the invoice carries a late fee line (FR 15)', () => {
+      loadInvoice(withLateFeeLine(systemLateFeeRowId));
+
+      const text = notice()!.textContent!.replace(/\s+/g, ' ');
+      expect(text).toContain("quantity, rate or amount, or removing it, stops further late fees");
+      expect(text).toContain('to today or later removes the unpaid late fee');
+      expect(text).toContain('earlier stops further late fees');
+    });
+
+    it('shows no late fee notice on an invoice without a late fee line (FR 15)', () => {
+      loadInvoice();
+
+      expect(notice()).toBeNull();
+    });
+
+    it('keeps the notice after the late fee line is removed from the form, since saving would stop it (FR 15)', () => {
+      loadInvoice(withLateFeeLine(systemLateFeeRowId));
+
+      component.removeLine(2);
+      fixture.detectChanges();
+
+      expect(notice()).not.toBeNull();
+    });
+
+    it('sends the late fee line with its lineId, lineItemId and item type unchanged when another line is edited (FR 16)', () => {
+      loadInvoice(withLateFeeLine(systemLateFeeRowId));
+      component.lines.at(1).get('description')!.setValue('Covered bay');
+
+      component.submit();
+
+      const request = httpMock.expectOne(patchUrl);
+      expect(request.request.body.lines[2]).toEqual(
+        jasmine.objectContaining({
+          lineId: lateFeeLineId,
+          lineItemId: systemLateFeeRowId,
+          itemType: 'LateFeeCharge',
+          quantity: 5,
+          rate: 10
+        })
+      );
+
+      request.flush(correctedProposal);
+    });
+  });
 });
 
 describe('UpdateProposedInvoiceComponent reached from the invoice list', () => {

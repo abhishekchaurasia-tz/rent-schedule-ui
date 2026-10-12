@@ -64,6 +64,9 @@ const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
   styleUrl: './update-proposed-invoice.component.scss'
 })
 export class UpdateProposedInvoiceComponent implements OnInit {
+  /** The item type of a late fee line (backend `InvoiceItemType.LateFeeCharge`). */
+  private static readonly LateFeeItemType = 'LateFeeCharge';
+
   /** The pasted invoice id. Shape-checked here; whether it exists is the load's answer. */
   readonly invoiceIdInput = new FormControl('', { nonNullable: true });
 
@@ -272,6 +275,15 @@ export class UpdateProposedInvoiceComponent implements OnInit {
     return !!this.invoice() && !this.isDepositInvoice;
   }
 
+  /**
+   * Whether the loaded invoice carries a late fee line, which shows the late fee rules (spec
+   * `07-late-fee-ui.md`, FR 15). Read from the invoice as loaded, not from the form: a late fee line removed
+   * here still stops further late fees once saved (backend BR-19).
+   */
+  get hasLateFeeLine(): boolean {
+    return (this.invoice()?.lines ?? []).some((line) => line.itemType === UpdateProposedInvoiceComponent.LateFeeItemType);
+  }
+
   /** Looks up a fetched catalog entry by id. */
   private findLineItem(lineItemId: string): LineItemResponse | undefined {
     return this.lineItems().find((item) => item.id === lineItemId);
@@ -284,11 +296,18 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * fallback is the ordinary case for a **rent** line, which the backend raises with no `lineItemId` at
    * all — showing "Select Type" there would suggest nothing had been chosen when in fact the line is
    * perfectly well typed.
+   *
+   * A late fee line reads **Late Fee** before any lookup (spec `07-late-fee-ui.md`, FR 14): its catalog id
+   * names the system row, which the catalog never returns to an owner (backend D32, BR-40).
    */
   itemDisplayLabel(index: number): string {
     const group = this.lines.at(index);
     const lineItemId = group.get('lineItemId')!.value;
     const itemType = String(group.get('itemType')!.value ?? '');
+
+    if (itemType === UpdateProposedInvoiceComponent.LateFeeItemType) {
+      return 'Late Fee';
+    }
 
     if (lineItemId) {
       return this.findLineItem(lineItemId)?.name ?? itemType ?? 'Select Type';
