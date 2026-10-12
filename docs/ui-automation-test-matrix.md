@@ -250,7 +250,8 @@ These exist only in domain models or legacy/superseded spec docs; no working end
 - Agreement activation flow (`AgreementActivation`, `RentalStatus` Active/InProcess/Terminate transitions) — no API endpoint.
 - Payment application / removal (`Invoice.ApplyPayment` / `RemovePayment`, status recalculation, Void freeze behavior) — domain-only.
 - ~~Group-invoice rounding ("last tenant absorbs rounding")~~ — **no longer out of scope, and the rule is the opposite one (2026-09-18).** Rounding across renters ships in the split editor, and it spreads leftover cents **one each to the renters at the top of the list**, explicitly never stacking them on a single row: `$100` across six is four rows of `16.67` and two of `16.66`. Leaving this listed as unimplemented, next to a rule the code inverts, is how a correct implementation gets "fixed" back to the wrong one. See §3.5 scenario 110.
-- Late-fee double-charge guard, credit/reversal line items, legacy invoice statuses (`sent_and_recd`, etc.) — described only in a superseded legacy doc; current domain model has no equivalent statuses/fields.
+- ~~Late-fee double-charge guard~~ — **no longer out of scope (2026-10-12).** Billing spec `16-late-fee-consumer.md` v13 ships late fees: each line is keyed, and a list calculated earlier than the one applied is skipped (`older_calculation`), so a repeated event charges nothing twice. See §7.
+- Credit/reversal line items, legacy invoice statuses (`sent_and_recd`, etc.) — described only in a superseded legacy doc; current domain model has no equivalent statuses/fields.
 - Direct `POST /line-items` catalog creation and `(propertyOwnerId, name)` uniqueness enforcement — no create endpoint exists; only indirectly created via the additional-charge item-provisioning path.
 
 ---
@@ -260,3 +261,53 @@ These exist only in domain models or legacy/superseded spec docs; no working end
 - Introduce a Page Object layer (`e2e/pages/RentAgreementCreatePage.ts`, `RentSchedulePreviewPage.ts`) — current tests use inline locators, which will not scale to ~100 scenarios above.
 - Introduce fixtures for common valid payloads (base monthly-fixed-term request, base recurring-charge request) that individual tests mutate one field at a time — mirrors how the BE's own test suite is structured (one-rule-per-test naming convention `Scenario_Condition_ExpectedOutcome`), which this matrix has followed for easy 1:1 traceability.
 - Track BE test names next to each UI scenario (already embedded above via file:line/test-name citations) so future BE rule changes can be grepped against this matrix.
+
+---
+
+## 7. Late fee — the invoice list's late fee panel and Update Invoice — ✅ UI exists (`late-fee-panel.component.ts`, `update-proposed-invoice.component.ts`)
+
+Added 2026-10-12, covering spec `07-late-fee-ui.md` v1 (on Billing spec `16-late-fee-consumer.md` v13). The
+routes are `GET`, `PUT` and `DELETE /api/v1/invoices/{id}/late-fee`, the `lateFeeAmount` on each
+`GET /api/v1/invoices` item, and the `lateFee` block on `GET /api/v1/invoices/{id}`.
+
+**Coverage note.** As in §3.5, every ✅ below already has a component test, named in the last column; none
+has a **Playwright** scenario yet. Scenario 144 needs a running Billing API with an invoice that carries a
+late fee, so it cannot stub the routes the way `additional-charge-panel.spec.ts` does.
+
+### 7.1 See a late fee (spec Flow 1)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 130 | The list shows each row's late fee in a **Late fee** column, and `—` when there is none | ✅ | `invoice-list.component.spec.ts` (FR 1) |
+| 131 | A row from an API older than the late fee work (no `lateFeeAmount`, no `lateFee`) renders as before, with no late fee | ✅ | `invoice-list.component.spec.ts` (FR 17) |
+| 132 | **Late fee…** is in every row's menu, a voided and a deleted row included, and opens the panel for that row | ✅ | `invoice-list.component.spec.ts` (FR 2, FR 3) |
+| 133 | The panel shows the type, the due date, every figure, each line, and the two marks only once set; an invoice with no late fee reads as zeros and no lines, not as an error | ✅ | `late-fee-panel.component.spec.ts` (FR 3, FR 4) |
+
+### 7.2 Remove a late fee (spec Flow 2)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 134 | **Remove late fee** and **Apply a late fee list** are offered on an open invoice and absent on a voided or a deleted one | ✅ | `late-fee-panel.component.spec.ts` (FR 5) |
+| 135 | The confirmation names the unpaid part it removes and the paid part it keeps; **Keep** sends nothing | ✅ | `late-fee-panel.component.spec.ts` (FR 6) |
+| 136 | On `204` the list refreshes and the panel re-reads, a second apart, until only the paid part is left; with nothing unpaid it reads once and does not wait | ✅ | `late-fee-panel.component.spec.ts` (FR 7, FR 12) |
+| 137 | Ten re-reads that never catch up stop and offer **Refresh**; closing the panel stops the re-reads | ✅ | `late-fee-panel.component.spec.ts` (FR 12) |
+| 138 | A refusal (`404` on reading; `409` and two `422`s on removal) shows as `{status} — {detail}`, verbatim, and leaves the figures as they were | ✅ | `late-fee-panel.component.spec.ts` (FR 13) |
+
+### 7.3 Apply a late fee list (spec Flow 3)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 139 | The calculation time starts as now, in ISO 8601 UTC, and can be edited; a text that is not a date and time is refused | ✅ | `late-fee-panel.component.spec.ts` (FR 9) |
+| 140 | Each amount is quantity × rate, shown and sent, with no field to type it | ✅ | `late-fee-panel.component.spec.ts` (FR 8) |
+| 141 | Every rule the backend refuses is refused before anything is sent: a blank or 101-character key, a blank or 201-character description, a quantity that is not a whole number from 1 to 9,999,999,999, a rate of 0, with 3 decimals or over 999,999,999,999.99, an amount over that, and one key twice (spaces ignored) | ✅ | `late-fee-panel.component.spec.ts` (FR 10) |
+| 142 | The answer reads **Applied: lines changed** (the list refreshes and the panel re-reads until the list's total), **Applied: no line changed** (no wait), or **Skipped:** with each of the nine reasons in words; an empty list is sent as `lines: []` | ✅ | `late-fee-panel.component.spec.ts` (FR 11, FR 12) |
+| 143 | A `400` refusal shows its `detail` verbatim | ✅ | `late-fee-panel.component.spec.ts` (FR 13) |
+| 144 | **End to end, against a running Billing API:** apply a list, see it reach the panel; on a part-paid invoice remove it and see the paid part stay | ✅ needs a seeded invoice | none — the manual check of plan `2026-10-12T1500-07-late-fee-ui` |
+
+### 7.4 A late fee line on Update Invoice (spec Flow 4)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 145 | A `LateFeeCharge` line reads **Late Fee**, whatever catalog id it carries: the system row the catalog never returns, none, or one the catalog names otherwise | ✅ | `update-proposed-invoice.component.spec.ts` (FR 14) |
+| 146 | The late fee notice shows on an invoice that carries a late fee line, stays after that line is removed in the form, and is absent otherwise | ✅ | `update-proposed-invoice.component.spec.ts` (FR 15) |
+| 147 | A save after editing another line sends the late fee line with its `lineId`, `lineItemId` and item type unchanged | ✅ | `update-proposed-invoice.component.spec.ts` (FR 16) |
