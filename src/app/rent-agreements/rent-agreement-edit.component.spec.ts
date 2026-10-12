@@ -2,6 +2,8 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
+import { environment } from '../../environments/environment';
+
 import { RentAgreementCreateComponent } from './rent-agreement-create.component';
 import { RentAgreementDetailResponse } from './rent-agreement.models';
 
@@ -15,10 +17,10 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
   let router: jasmine.SpyObj<Router>;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000001';
-  const detailUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}`;
+  const detailUrl = `/api/v1/rent/agreements/${agreementId}`;
   const termsUrl = `${detailUrl}/terms`;
-  const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
+  const previewUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/preview`;
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
 
   const detail = (): RentAgreementDetailResponse => ({
     agreementId,

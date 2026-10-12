@@ -1,0 +1,126 @@
+<div class="panel-overlay" (click)="close()"></div>
+
+<aside class="side-panel" role="dialog" aria-label="Apply Deposit">
+  <div class="panel-head">
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">&times;</button>
+    <h2>Apply Deposit</h2>
+  </div>
+
+  <div class="panel-body" [formGroup]="form">
+    <!-- FR 4. The owner app shows the bank account here; Billing's context does not carry one. -->
+    <section class="summary-card">
+      <div class="summary-invoice">
+        <span class="summary-label">Invoice</span>
+        <span class="summary-number">{{ context.invoiceNumber }}</span>
+      </div>
+      <div class="summary-available">
+        <span class="summary-label">Available to Apply</span>
+        <span class="summary-value">{{ context.available | currency }}</span>
+      </div>
+      <span class="paid-stamp" aria-label="Paid">PAID</span>
+    </section>
+
+    <div>
+      <h3 class="section-h">Apply</h3>
+      <p class="hint">{{ intro }}</p>
+    </div>
+
+    <!-- FR 5. -->
+    <div class="apply-table" formArrayName="maintenance">
+      <div class="apply-head maintenance-grid">
+        <span>Maintenance</span>
+        <span>Description</span>
+        <span>Amount</span>
+        <span class="center">Action</span>
+      </div>
+
+      @for (row of maintenanceRows.controls; track row; let i = $index) {
+        <div class="apply-row maintenance-grid maintenance-row" [formGroupName]="i">
+          <span class="row-label">Maintenance</span>
+          <input
+            type="text"
+            formControlName="description"
+            placeholder="Description"
+            [attr.maxlength]="maxDescription"
+            [class.invalid]="isInvalid('maintenance.' + i + '.description')"
+            aria-label="Maintenance description"
+          />
+          <span class="money-input" [class.invalid]="isInvalid('maintenance.' + i + '.amount')">
+            <span class="money-prefix">$</span>
+            <input type="number" min="0" step="0.01" formControlName="amount" placeholder="0" aria-label="Maintenance amount" />
+          </span>
+          <button type="button" class="icon-btn center" (click)="removeMaintenanceItem(i)" aria-label="Remove maintenance item">
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M3.5 5.5h13M8 5.5V3.8h4v1.7M5.5 5.5l.8 10.7h7.4l.8-10.7M8.5 8.5v5M11.5 8.5v5" />
+            </svg>
+          </button>
+        </div>
+      }
+    </div>
+
+    <button type="button" class="add-link" (click)="addMaintenanceItem()">
+      <span class="add-icon" aria-hidden="true">+</span>
+      Add Another Maintenance Item
+    </button>
+
+    <!-- FR 6. -->
+    <div class="apply-table" formArrayName="invoices">
+      <div class="apply-head invoice-grid">
+        <span>Invoice ID</span>
+        <span>Type</span>
+        <span>Due Date</span>
+        <span class="num">Balance Due</span>
+        <span>Amount to Apply</span>
+      </div>
+
+      @for (invoice of context.openInvoices; track invoice.invoiceId; let i = $index) {
+        <div class="apply-row invoice-grid invoice-row" [formGroupName]="i">
+          <span class="mono" [title]="invoice.invoiceId">{{ invoice.invoiceNumber }}</span>
+          <span>{{ invoice.invoiceType }}</span>
+          <span>{{ invoice.dueDate | date: 'MMM d, y' }}</span>
+          <span class="num">{{ invoice.balanceDue | currency }}</span>
+          <span class="money-input" [class.invalid]="isInvalid('invoice.' + i)">
+            <span class="money-prefix">$</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              formControlName="amount"
+              placeholder="0"
+              [attr.aria-label]="'Amount to apply to ' + invoice.invoiceNumber"
+            />
+          </span>
+        </div>
+      } @empty {
+        <p class="empty">No unpaid invoices on this lease.</p>
+      }
+    </div>
+
+    <!-- FR 7. -->
+    <dl class="totals">
+      <dt>Total to Apply</dt>
+      <dd>{{ totalToApply | currency }}</dd>
+      <dt>Remaining After Apply</dt>
+      <dd [class.over]="remainingAfterApply < 0">{{ remainingAfterApply | currency }}</dd>
+    </dl>
+
+    <!-- FR 8. -->
+    @if (problems.messages.length > 0) {
+      <div class="banner error">
+        <strong>Please correct the following:</strong>
+        <ul class="error-list">
+          @for (message of problems.messages; track message) {
+            <li>{{ message }}</li>
+          }
+        </ul>
+      </div>
+    }
+  </div>
+
+  <div class="panel-foot">
+    <button type="button" class="ghost-btn" (click)="close()">Cancel</button>
+    <button type="button" class="primary-btn" (click)="submit()" [disabled]="submitting">
+      {{ submitting ? 'Applying…' : 'Apply Funds' }}
+    </button>
+  </div>
+</aside>

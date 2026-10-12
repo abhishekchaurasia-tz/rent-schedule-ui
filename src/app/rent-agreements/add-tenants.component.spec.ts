@@ -2,6 +2,8 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
+import { environment } from '../../environments/environment';
+
 import { AddTenantsComponent } from './add-tenants.component';
 import {
   AgreementTenantsResponse,
@@ -16,7 +18,7 @@ describe('AddTenantsComponent', () => {
   let router: jasmine.SpyObj<Router>;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000001';
-  const detailUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}`;
+  const detailUrl = `/api/v1/rent/agreements/${agreementId}`;
   const tenantsUrl = `${detailUrl}/tenants`;
 
   const detail = (overrides: Partial<RentAgreementDetailResponse> = {}): RentAgreementDetailResponse => ({

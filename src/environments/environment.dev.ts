@@ -4,5 +4,7 @@ export const environment = {
   // Served through the dev-server proxy (proxy.conf.dev.json ->
   // https://api-dev-my.innago.com) so the browser stays same-origin and CORS
   // never comes into play.
-  apiBaseUrl: '/billing'
+  apiBaseUrl: '/billing',
+  // merlin on the same gateway host (proxy.conf.dev.json -> https://api-dev-my.innago.com/api).
+  monolithBaseUrl: '/api'
 };

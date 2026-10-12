@@ -1,6 +1,8 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { environment } from '../../environments/environment';
+
 import { ActivateLeaseComponent } from './activate-lease.component';
 import { ActivateRentAgreementResponse } from './rent-agreement.models';
 
@@ -10,7 +12,7 @@ describe('ActivateLeaseComponent', () => {
   let httpMock: HttpTestingController;
 
   const agreementId = '8f14e45f-ceea-467e-bd9f-000000000001';
-  const activateUrl = `http://localhost:5169/api/v1/rent/agreements/${agreementId}/activate`;
+  const activateUrl = `/api/v1/rent/agreements/${agreementId}/activate`;
 
   const response = (
     overrides: Partial<ActivateRentAgreementResponse> = {}

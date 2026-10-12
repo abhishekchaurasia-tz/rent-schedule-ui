@@ -2,6 +2,8 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
+import { environment } from '../../environments/environment';
+
 import { RentAgreementCreateComponent } from './rent-agreement-create.component';
 import { AdditionalChargeCreationRequest, CreateRentAgreementResponse } from './rent-agreement.models';
 import { CandidateDateResponse, PreviewRentScheduleResponse } from '../rent-schedule/rent-schedule.models';
@@ -12,9 +14,9 @@ describe('RentAgreementCreateComponent', () => {
   let httpMock: HttpTestingController;
   let router: jasmine.SpyObj<Router>;
 
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
-  const previewUrl = 'http://localhost:5169/api/v1/rent/schedule/preview';
-  const createUrl = 'http://localhost:5169/api/v1/rent/agreements';
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
+  const previewUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/preview`;
+  const createUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements`;
 
   const fillValidForm = () => {
     component.form.patchValue({
@@ -834,7 +836,7 @@ describe('RentAgreementCreateComponent', () => {
  * words — *"Edit Terms knows the renters, so it gets state B."*
  */
 describe('RentAgreementCreateComponent — the fee drawer reads the lease, not the screen', () => {
-  const optionsUrl = 'http://localhost:5169/api/v1/rent/schedule/first-rental-due-date-options';
+  const optionsUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/first-rental-due-date-options`;
   const agreementId = '44444444-4444-4444-4444-444444444444';
 
   const loadedAgreement = {
@@ -894,11 +896,11 @@ describe('RentAgreementCreateComponent — the fee drawer reads the lease, not t
     drainOptions(httpMock);
 
     httpMock
-      .expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}`)
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`)
       .flush(loadedAgreement);
 
     // Step 2 was saved and the lease bills its renters on one shared invoice.
-    httpMock.expectOne(`http://localhost:5169/api/v1/rent/agreements/${agreementId}/tenants`).flush({
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`).flush({
       isGroupInvoice: true,
       partialPaymentAllowed: false,
       tenants: [

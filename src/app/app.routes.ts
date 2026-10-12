@@ -74,5 +74,13 @@ export const routes: Routes = [
       import('./invoices/update-proposed-invoice.component').then(
         (m) => m.UpdateProposedInvoiceComponent
       )
+  },
+  // One deposit invoice's refund view: return the deposit, and cancel or remove a return
+  // (docs/specs/rent-agreements/09-deposit-refund-ui.md). Opened from a deposit row's menu on the
+  // Invoices list with `?invoiceId=`.
+  {
+    path: 'invoices/deposit-refund',
+    loadComponent: () =>
+      import('./invoices/deposit-refund.component').then((m) => m.DepositRefundComponent)
   }
 ];

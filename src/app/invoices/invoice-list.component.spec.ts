@@ -370,6 +370,34 @@ describe('InvoiceListComponent', () => {
     expect(link.getAttribute('href')).toBe(`/invoices/update?invoiceId=${paidRow.invoiceId}`);
   });
 
+  // Spec v10, FR 27 — gated on the type alone (backend 15-deposit-refund.md BR-01); whether the
+  // deposit can be refunded is the refund view's answer, not this list's.
+  it('links a deposit row to its Deposit Refund page from the ⋮ menu', () => {
+    const depositRow: InvoiceSummaryResponse = { ...paidRow, invoiceType: 'deposit' };
+    search(page([depositRow]));
+    openRowMenu(0);
+
+    const links: HTMLAnchorElement[] = Array.from(fixture.nativeElement.querySelectorAll('.row-menu a'));
+    const refundLink = links.find((link) => link.textContent?.includes('Deposit Refund'));
+
+    expect(component.isDepositInvoice(depositRow)).toBeTrue();
+    expect(refundLink?.getAttribute('href')).toBe(`/invoices/deposit-refund?invoiceId=${depositRow.invoiceId}`);
+  });
+
+  it('offers no Deposit Refund on a row that is not a deposit invoice', () => {
+    const petDepositRow: InvoiceSummaryResponse = { ...overdueRow, invoiceType: 'pet_deposit' };
+    search(page([paidRow, petDepositRow]));
+
+    expect(component.isDepositInvoice(paidRow)).toBeFalse();
+    expect(component.isDepositInvoice(petDepositRow)).toBeFalse();
+
+    openRowMenu(0);
+    expect(fixture.nativeElement.querySelector('.row-menu').textContent).not.toContain('Deposit Refund');
+
+    openRowMenu(1);
+    expect(fixture.nativeElement.querySelector('.row-menu').textContent).not.toContain('Deposit Refund');
+  });
+
   describe('the "Add Invoice" side panel', () => {
     const agreementId = '99999999-9999-9999-9999-999999999999';
     const agreementUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`;

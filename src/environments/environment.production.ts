@@ -1,5 +1,7 @@
 export const environment = {
   production: true,
   name: 'production',
-  apiBaseUrl: '/api'
+  apiBaseUrl: '/api',
+  // merlin shares the gateway prefix in production.
+  monolithBaseUrl: '/api'
 };

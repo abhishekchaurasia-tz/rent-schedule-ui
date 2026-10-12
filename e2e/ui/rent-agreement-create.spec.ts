@@ -53,7 +53,8 @@ test.describe('Add Lease — rent agreement create', () => {
     await page.getByLabel('Start Date').fill('08/01/2026');
     await page.keyboard.press('Escape');
 
-    await expect(page.getByLabel('End Date')).toHaveValue('8/1/2027');
+    // Six months, not a year: `RentAgreementCreateComponent.addSixMonths` sets the default term.
+    await expect(page.getByLabel('End Date')).toHaveValue('2/1/2027');
 
     await page
       .getByLabel('On which date should the first rental invoice be due?')

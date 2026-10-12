@@ -102,6 +102,16 @@ html {
     color: #1c5c33;
   }
 
+  /* Neutral standing information, not an outcome -- so it is told apart from success at a glance. */
+  &.info {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    background: #f1f5fd;
+    border-color: #cfdcf7;
+    color: #1f3864;
+  }
+
   /* Above a side panel (z-index 101) so a refusal stays readable without closing the form it belongs to. */
   &.floating {
     position: fixed;
