@@ -1,0 +1,153 @@
+<!--
+  The late fee panel (spec 07-late-fee-ui.md, FR 3 to FR 13). A fixed side panel over the shared
+  overlay, the way the invoice list's Add Invoice panel sits.
+-->
+<div class="panel-overlay" (click)="close()"></div>
+<aside class="late-fee-panel" aria-label="Late fee">
+  <header class="late-fee-panel-header">
+    <h2>Late fee</h2>
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">×</button>
+  </header>
+
+  <div class="late-fee-panel-body">
+    @if (error(); as message) {
+      <p class="banner error late-fee-error">{{ message }}</p>
+    }
+
+    @if (loading() && !summary()) {
+      <p class="late-fee-loading">Reading the late fee…</p>
+    }
+
+    <!-- FR 12: the re-reads ran out before the invoice caught up with the change. -->
+    @if (stale()) {
+      <p class="banner warn late-fee-stale">
+        The invoice has not caught up yet.
+        <button type="button" class="link-btn" (click)="load()">Refresh</button>
+      </p>
+    }
+
+    @if (summary(); as fee) {
+      <dl class="late-fee-figures">
+        <dt>Invoice type</dt>
+        <dd>{{ fee.invoiceType }}</dd>
+        <dt>Due on</dt>
+        <dd>{{ fee.dueDate }}</dd>
+        <dt>Invoice amount</dt>
+        <dd>{{ fee.invoiceAmount | currency }}</dd>
+        <dt>Paid</dt>
+        <dd>{{ fee.paidAmount | currency }}</dd>
+        <dt>Late fee</dt>
+        <dd>{{ fee.lateFeeAmount | currency }}</dd>
+        <dt>Late fee paid</dt>
+        <dd>{{ fee.paidLateFeeAmount | currency }}</dd>
+        <dt>Removal takes off</dt>
+        <dd>{{ fee.remainingLateFeeAmount | currency }}</dd>
+      </dl>
+
+      @if (fee.isLateFeeRemoved || fee.isLateFeeEdited) {
+        <p class="late-fee-marks">
+          @if (fee.isLateFeeRemoved) {
+            <span class="mark mark-removed">Late fee removed: no further late fee is applied</span>
+          }
+          @if (fee.isLateFeeEdited) {
+            <span class="mark mark-edited">Late fee edited by the owner</span>
+          }
+        </p>
+      }
+
+      <!-- FR 5: no change is offered on a voided or deleted invoice. -->
+      @if (canChange) {
+        <div class="late-fee-actions">
+          @if (confirmingRemoval()) {
+            <div class="late-fee-confirm">
+              <p>
+                Remove the unpaid {{ fee.remainingLateFeeAmount | currency }}? The paid
+                {{ fee.paidLateFeeAmount | currency }} stays, and no further late fee is applied to this invoice.
+              </p>
+              <button type="button" class="danger-btn" (click)="confirmRemoval()">Remove</button>
+              <button type="button" class="link-btn" (click)="keepLateFee()">Keep</button>
+            </div>
+          } @else {
+            <button type="button" class="danger-btn" (click)="askToRemove()" [disabled]="removing()">Remove late fee</button>
+            @if (!applying()) {
+              <button type="button" class="link-btn" (click)="openApply()">Apply a late fee list</button>
+            }
+          }
+        </div>
+
+        <!-- FR 8 to FR 11: a list sent exactly as the late fee event would send it (backend D28). -->
+        @if (applying()) {
+          <form class="late-fee-form" [formGroup]="applyForm" (ngSubmit)="send()">
+            <h3>Apply a late fee list</h3>
+            <p class="late-fee-form-hint">
+              The whole list the invoice should carry: a new key adds a line, a changed one updates it, and a key
+              left out removes its line. An empty list removes them all.
+            </p>
+
+            <label for="late-fee-calculated-at">Calculated at (ISO 8601, UTC)</label>
+            <input id="late-fee-calculated-at" type="text" formControlName="calculatedAtUtc" />
+
+            <div formArrayName="lines">
+              @for (line of lines.controls; track line; let index = $index) {
+                <fieldset class="late-fee-line" [formGroupName]="index">
+                  <legend>Line {{ index + 1 }}</legend>
+                  <label>Key <input type="text" formControlName="lineKey" /></label>
+                  <label>Description <input type="text" formControlName="description" /></label>
+                  <label>Quantity <input type="number" formControlName="quantity" step="1" min="1" /></label>
+                  <label>Rate <input type="number" formControlName="rate" step="0.01" min="0" /></label>
+                  <p class="late-fee-line-total">
+                    Amount <span class="late-fee-line-amount">{{ amount(index) | currency }}</span>
+                  </p>
+                  <button type="button" class="link-btn" (click)="removeLine(index)">Remove line</button>
+                </fieldset>
+              }
+            </div>
+            <button type="button" class="link-btn" (click)="addLine()">Add line</button>
+
+            @if (sendAttempted() && problems().length > 0) {
+              <ul class="banner error late-fee-form-problems">
+                @for (problem of problems(); track problem) {
+                  <li>{{ problem }}</li>
+                }
+              </ul>
+            }
+
+            <div class="late-fee-form-actions">
+              <button type="submit" class="primary-btn" [disabled]="sending()">Send</button>
+              <button type="button" class="link-btn" (click)="cancelApply()">Cancel</button>
+            </div>
+          </form>
+        }
+
+        @if (outcome(); as said) {
+          <p class="banner success late-fee-outcome">{{ said }}</p>
+        }
+      }
+
+      @if (fee.lines.length === 0) {
+        <p class="late-fee-empty">No late fee lines</p>
+      } @else {
+        <table class="late-fee-lines">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="numeric">Quantity</th>
+              <th class="numeric">Rate</th>
+              <th class="numeric">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of fee.lines; track line.lineId) {
+              <tr>
+                <td>{{ line.description }}</td>
+                <td class="numeric">{{ line.quantity }}</td>
+                <td class="numeric">{{ line.rate | currency }}</td>
+                <td class="numeric">{{ line.amount | currency }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    }
+  </div>
+</aside>

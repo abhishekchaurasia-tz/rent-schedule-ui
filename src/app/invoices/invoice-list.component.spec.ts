@@ -794,4 +794,86 @@ describe('InvoiceListComponent', () => {
       httpMock.expectNone((r) => r.url === invoicesUrl);
     });
   });
+
+  describe('the late fee (spec 07, FR 1, FR 2)', () => {
+    const lateFeeUrl = (invoiceId: string) => `${invoicesUrl}/${invoiceId}/late-fee`;
+
+    /** The text of row `rowIndex`'s Late fee cell, the column after Balance. */
+    function lateFeeCell(rowIndex: number): string {
+      const rows = fixture.nativeElement.querySelectorAll('tbody tr');
+      return (rows[rowIndex].querySelector('td.late-fee-cell') as HTMLElement).textContent!.trim();
+    }
+
+    it('shows each row\'s late fee in a column of its own, and a dash when there is none (FR 1)', () => {
+      search(page([{ ...paidRow, lateFeeAmount: 50.01 }, { ...overdueRow, lateFeeAmount: 0 }]));
+
+      const headers = Array.from(fixture.nativeElement.querySelectorAll('thead th')).map((th) => (th as HTMLElement).textContent!.trim());
+      expect(headers).toContain('Late fee');
+      expect(lateFeeCell(0)).toBe('$50.01');
+      expect(lateFeeCell(1)).toBe('—');
+    });
+
+    it('reads a row from an API older than the late fee work as having none (FR 17)', () => {
+      search(page([paidRow]));
+
+      expect(lateFeeCell(0)).toBe('—');
+    });
+
+    it('offers Late fee… in every row\'s menu, a voided and a deleted one included (FR 2)', () => {
+      search(page([{ ...paidRow, status: 'voided' }, { ...overdueRow, status: 'deleted' }]));
+
+      [0, 1].forEach((rowIndex) => {
+        openRowMenu(rowIndex);
+        const items = Array.from(fixture.nativeElement.querySelectorAll('.row-menu .row-menu-item')).map((item) =>
+          (item as HTMLElement).textContent!.trim()
+        );
+        expect(items).toContain('Late fee…');
+        component.closeRowMenu();
+        fixture.detectChanges();
+      });
+    });
+
+    it('opens the late fee panel for the row, which reads its late fee, and closes the menu (FR 2, FR 3)', () => {
+      search();
+      openRowMenu(1);
+
+      const item = Array.from(fixture.nativeElement.querySelectorAll('.row-menu .row-menu-item')).find(
+        (candidate) => (candidate as HTMLElement).textContent!.trim() === 'Late fee…'
+      ) as HTMLElement;
+      item.click();
+      fixture.detectChanges();
+
+      expect(component.openRowMenuInvoiceId()).toBeNull();
+      expect(component.lateFeeInvoice()).toEqual({ invoiceId: overdueRow.invoiceId, status: overdueRow.status });
+      expect(fixture.nativeElement.querySelector('app-late-fee-panel')).not.toBeNull();
+      httpMock.expectOne(lateFeeUrl(overdueRow.invoiceId)).flush({
+        invoiceId: overdueRow.invoiceId,
+        dueDate: overdueRow.dueDate,
+        invoiceType: 'Rent',
+        invoiceAmount: 400,
+        paidAmount: 0,
+        lateFeeAmount: 0,
+        paidLateFeeAmount: 0,
+        remainingLateFeeAmount: 0,
+        isLateFeeRemoved: false,
+        isLateFeeEdited: false,
+        lines: []
+      });
+    });
+
+    it('closing the panel removes it, and a change in it re-runs the search', () => {
+      search();
+      component.openLateFee(overdueRow);
+      fixture.detectChanges();
+      httpMock.expectOne(lateFeeUrl(overdueRow.invoiceId)).flush(null);
+
+      component.onLateFeeChanged();
+      httpMock.expectOne((r) => r.url === invoicesUrl).flush(page([overdueRow]));
+      component.closeLateFee();
+      fixture.detectChanges();
+
+      expect(component.lateFeeInvoice()).toBeNull();
+      expect(fixture.nativeElement.querySelector('app-late-fee-panel')).toBeNull();
+    });
+  });
 });
