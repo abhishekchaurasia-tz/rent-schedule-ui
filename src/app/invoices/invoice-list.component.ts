@@ -24,6 +24,7 @@ import {
 } from './invoice.models';
 import { reloadOnScopeChange } from '../scope-change';
 import { InvoicesService } from './invoices.service';
+import { LateFeePanelComponent } from './late-fee-panel.component';
 
 /** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — the same check the other id screens use. */
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -89,7 +90,8 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
     ReactiveFormsModule,
     RouterLink,
     MatDatepickerModule,
-    AdditionalChargePanelComponent
+    AdditionalChargePanelComponent,
+    LateFeePanelComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './invoice-list.component.html',
@@ -213,6 +215,9 @@ export class InvoiceListComponent implements OnInit {
 
   /** What the last successful delete/void did, for the confirmation banner above the list. */
   readonly actionSuccess = signal<string | null>(null);
+
+  /** The invoice whose late fee panel is open, with its status (spec 07 FR 3, FR 5); `null` when none is. */
+  readonly lateFeeInvoice = signal<{ invoiceId: string; status: string } | null>(null);
 
   /** The 1-based page to request next. Reset to 1 by any filter change. */
   private page = 1;
@@ -625,6 +630,22 @@ export class InvoiceListComponent implements OnInit {
     this.openRowMenuInvoiceId.set(invoice.invoiceId);
     this.pendingRowAction.set(null);
     this.actionError.set(null);
+  }
+
+  /** Opens the late fee panel for `invoice`, closing the row menu it was opened from (spec 07 FR 2). */
+  openLateFee(invoice: InvoiceSummaryResponse): void {
+    this.closeRowMenu();
+    this.lateFeeInvoice.set({ invoiceId: invoice.invoiceId, status: invoice.status });
+  }
+
+  /** Closes the late fee panel. */
+  closeLateFee(): void {
+    this.lateFeeInvoice.set(null);
+  }
+
+  /** The late fee changed in the panel, so the rows behind it are stale: the search runs again (spec 07 FR 7). */
+  onLateFeeChanged(): void {
+    this.runSearch();
   }
 
   /** Closes the ⋮ menu and abandons any confirmation it was showing. */

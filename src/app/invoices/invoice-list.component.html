@@ -158,6 +158,8 @@
               <th class="numeric">Amount</th>
               <th class="numeric">Paid</th>
               <th class="numeric">Balance</th>
+              <!-- Spec 07 FR 1: the sum of the invoice's live late fee lines (backend D31). -->
+              <th class="numeric">Late fee</th>
               <th></th>
             </tr>
           </thead>
@@ -183,6 +185,13 @@
                 <td class="numeric">{{ invoice.total | currency }}</td>
                 <td class="numeric">{{ invoice.amountPaid | currency }}</td>
                 <td class="numeric">{{ invoice.balance | currency }}</td>
+                <td class="numeric late-fee-cell">
+                  @if ((invoice.lateFeeAmount ?? 0) > 0) {
+                    {{ invoice.lateFeeAmount | currency }}
+                  } @else {
+                    —
+                  }
+                </td>
                 <td class="row-actions">
                   <button
                     type="button"
@@ -262,6 +271,9 @@
               >
                 Correct
               </a>
+
+              <!-- Spec 07 FR 2: offered on every row; the backend answers for a voided or deleted invoice too. -->
+              <button type="button" class="row-menu-item" (click)="openLateFee(invoice)">Late fee…</button>
 
               <!--
                 Spec v10, FR 27. On deposit rows only, and a link rather than an action: whether the deposit
@@ -418,6 +430,16 @@
       [leaseMonthToMonthInvoiceCount]="chargeMonthToMonthInvoiceCount"
       (created)="onChargeCreated($event)"
       (closed)="closeAddInvoice()"
+    />
+  }
+
+  <!-- Spec 07 FR 3: one invoice's late fee; a change in it re-runs the search behind it. -->
+  @if (lateFeeInvoice(); as target) {
+    <app-late-fee-panel
+      [invoiceId]="target.invoiceId"
+      [invoiceStatus]="target.status"
+      (changed)="onLateFeeChanged()"
+      (closed)="closeLateFee()"
     />
   }
 </div>

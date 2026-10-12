@@ -96,6 +96,18 @@
       </div>
     }
 
+    <!-- Spec 07-late-fee-ui.md, FR 15: what an edit does to the late fee (backend BR-19, BR-22, BR-23). -->
+    @if (hasLateFeeLine) {
+      <div class="banner warn late-fee-notice">
+        <strong>This invoice carries a late fee.</strong>
+        <p>
+          Changing a late fee line's quantity, rate or amount, or removing it, stops further late fees on
+          this invoice. Moving the due date to today or later removes the unpaid late fee; moving it
+          earlier stops further late fees.
+        </p>
+      </div>
+    }
+
     <form [formGroup]="form" class="correction-form">
       <div class="due-date-row">
         <!-- The same Material datepicker the lease form and the fee panel use, so a date is picked the
