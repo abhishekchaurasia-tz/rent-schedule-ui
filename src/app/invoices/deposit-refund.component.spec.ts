@@ -7,6 +7,11 @@ import { RequestScopeService } from '../request-scope.service';
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
 import { DepositRefundComponent } from './deposit-refund.component';
 import { CreateDepositRefundRequest, DepositRefundResponse, FundsReturnedRowResponse } from './deposit-refund.models';
+import {
+  ApplyDepositRequest,
+  DepositApplicationContextResponse,
+  FundsAppliedRowResponse
+} from './deposit-application.models';
 
 /**
  * Covers FR 1–4 and 11–19 of `09-deposit-refund-ui.md` v1 — the page: the view, the action and its
@@ -250,15 +255,280 @@ describe('DepositRefundComponent', () => {
       expect(component.panelOpen()).toBeFalse();
     });
 
-    it('opens the Return Deposit panel', () => {
+    it('opens the Return Deposit panel through Return It (spec 10 FR 2)', () => {
       loadView();
 
       refundButton()!.click();
       fixture.detectChanges();
+      (page().querySelector('.return-option') as HTMLButtonElement).click();
+      fixture.detectChanges();
       answerOwnerBanks();
 
       expect(component.panelOpen()).toBeTrue();
+      expect(component.refundMenuOpen()).toBeFalse();
       expect(page().querySelector('app-return-deposit-panel')).not.toBeNull();
+    });
+
+    it('opens a menu of Return It and Apply It, in the owner app\'s words (spec 10 FR 1)', () => {
+      loadView();
+
+      refundButton()!.click();
+      fixture.detectChanges();
+
+      const menu = page().querySelector('.refund-menu') as HTMLElement;
+      expect(menu.textContent).toContain('Return It');
+      expect(menu.textContent).toContain('Mark the invoice as returned and send the funds back to the tenant online or offline.');
+      expect(menu.textContent).toContain('Apply It');
+      expect(menu.textContent).toContain('Use the deposit funds to close unpaid or overdue invoices for this group of Tenants.');
+
+      (page().querySelector('.row-menu-overlay') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(page().querySelector('.refund-menu')).toBeNull();
+    });
+
+    it('opens no menu around a disabled action (spec 10 FR 1)', () => {
+      loadView({ ...view, isDepositFullyRefunded: true, canRefundDeposit: false });
+
+      component.toggleRefundMenu();
+
+      expect(component.refundMenuOpen()).toBeFalse();
+    });
+  });
+
+  // ---- applying (spec 10 FR 3, 10) ---------------------------------------------------------------
+
+  describe('applying the deposit', () => {
+    const contextUrl = `${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-application`;
+    const applyUrl = `${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-applications`;
+
+    const context: DepositApplicationContextResponse = {
+      invoiceId,
+      invoiceNumber: 'INV-102026-000501',
+      canApplyDeposit: true,
+      depositAmount: 21,
+      totalReturned: 12,
+      totalApplied: 0,
+      available: 9,
+      openInvoices: [
+        { invoiceId: tenantA, invoiceNumber: 'INV-102026-000502', invoiceType: 'Rent', dueDate: '2026-10-09', total: 200, balanceDue: 200 }
+      ],
+      fundsApplied: []
+    };
+
+    const request: ApplyDepositRequest = {
+      applicationId: '7a1e2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b',
+      allocations: [{ invoiceId: tenantA, amount: 9 }],
+      maintenanceItems: []
+    };
+
+    beforeEach(async () => {
+      await create();
+      loadView();
+    });
+
+    function openApply(body: DepositApplicationContextResponse = context): void {
+      component.openApplyPanel();
+      httpMock.expectOne(contextUrl).flush(body);
+      fixture.detectChanges();
+    }
+
+    it('Apply It reads the context and opens the Apply Deposit panel', () => {
+      refundButton()!.click();
+      fixture.detectChanges();
+      (page().querySelector('.apply-option') as HTMLButtonElement).click();
+      httpMock.expectOne(contextUrl).flush(context);
+      fixture.detectChanges();
+
+      expect(component.applyContext()).toEqual(context);
+      expect(page().querySelector('app-apply-deposit-panel')).not.toBeNull();
+      expect(page().textContent).toContain('INV-102026-000502');
+    });
+
+    it('opens no panel when the server says nothing can be applied, and says why', () => {
+      openApply({ ...context, canApplyDeposit: false });
+
+      expect(component.applyContext()).toBeNull();
+      expect(page().textContent).toContain('Deposit has already been refunded.');
+    });
+
+    it('shows a failed context read as a page banner, with no panel', () => {
+      component.openApplyPanel();
+      const failure = problem(502, 'Bad Gateway', 'deposit_application.payment_service_unavailable', 'Finance is down.');
+      httpMock.expectOne(contextUrl).flush(failure.body, failure.options);
+      fixture.detectChanges();
+
+      expect(component.applyContext()).toBeNull();
+      const banner = page().querySelector('.banner.error') as HTMLElement;
+      expect(banner.textContent).toContain('Could not open Apply Deposit.');
+      expect(banner.textContent).toContain('deposit_application.payment_service_unavailable');
+    });
+
+    it('posts the panel\'s request once, then closes, confirms and re-reads', () => {
+      openApply();
+
+      component.onApplySubmitted(request);
+      component.onApplySubmitted(request);
+
+      const post = httpMock.expectOne(applyUrl);
+      expect(post.request.method).toBe('POST');
+      expect(post.request.body).toEqual(request);
+      post.flush({ applicationId: request.applicationId, allocations: [], isReplay: false }, { status: 201, statusText: 'Created' });
+
+      httpMock.expectOne(viewUrl).flush({ ...view, totals: { ...view.totals, totalApplied: 9, remaining: 0 } });
+      httpMock.expectOne(contextUrl).flush({ ...context, fundsApplied: [] });
+      fixture.detectChanges();
+
+      expect(component.applyContext()).toBeNull();
+      expect(page().textContent).toContain('Deposit has been applied successfully.');
+    });
+
+    it('says the maintenance invoice follows when maintenance was applied', () => {
+      openApply();
+
+      component.onApplySubmitted({ ...request, maintenanceItems: [{ description: 'Paint', amount: 5 }] });
+      httpMock.expectOne(applyUrl).flush({ applicationId: request.applicationId, allocations: [], isReplay: false });
+      httpMock.expectOne(viewUrl).flush(view);
+      fixture.detectChanges();
+
+      expect(page().textContent).toContain('until then its row under Funds Applied reads Pending');
+    });
+
+    it('on 422 keeps the panel open and shows the detail and the code above it', () => {
+      openApply();
+
+      component.onApplySubmitted(request);
+      const failure = problem(
+        422,
+        'Business Rule Violation',
+        'deposit_application.exceeds_available_deposit',
+        'The amount to apply is more than the deposit still holds.'
+      );
+      httpMock.expectOne(applyUrl).flush(failure.body, failure.options);
+      fixture.detectChanges();
+
+      expect(component.applyContext()).not.toBeNull();
+      expect(component.applySubmitting()).toBeFalse();
+      const banner = page().querySelector('.banner.error.floating') as HTMLElement;
+      expect(banner.textContent).toContain('The amount to apply is more than the deposit still holds.');
+      expect(banner.textContent).toContain('deposit_application.exceeds_available_deposit');
+    });
+  });
+
+  // ---- Funds Applied (spec 10 FR 11) -------------------------------------------------------------
+
+  describe('Funds Applied to Other Invoices', () => {
+    const contextUrl = `${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-application`;
+    const rentAllocation = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const maintenanceAllocation = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+    const toRent: FundsAppliedRowResponse = {
+      allocationId: rentAllocation,
+      appliedToInvoiceId: tenantA,
+      appliedToInvoiceNumber: 'INV-102026-000502',
+      appliedOn: '2026-10-09',
+      amount: 6,
+      isMaintenance: false,
+      canRemove: true
+    };
+
+    const toMaintenance: FundsAppliedRowResponse = {
+      allocationId: maintenanceAllocation,
+      appliedToInvoiceId: null,
+      appliedToInvoiceNumber: null,
+      appliedOn: '2026-10-09',
+      amount: 3,
+      isMaintenance: true,
+      canRemove: false
+    };
+
+    const applied: DepositRefundResponse = { ...view, totals: { ...view.totals, totalApplied: 9, remaining: 0 } };
+
+    beforeEach(async () => create());
+
+    function loadApplied(rows: FundsAppliedRowResponse[] = [toRent, toMaintenance]): void {
+      loadView(applied);
+      httpMock.expectOne(contextUrl).flush({ invoiceId, fundsApplied: rows } as DepositApplicationContextResponse);
+      fixture.detectChanges();
+    }
+
+    it('is not read when nothing is applied', () => {
+      loadView();
+
+      httpMock.expectNone(contextUrl);
+      expect(page().textContent).not.toContain('Funds Applied to Other Invoices');
+    });
+
+    it('lists each applied amount; a maintenance one not raised yet reads Pending and cannot be removed', () => {
+      loadApplied();
+
+      const rows = Array.from(page().querySelectorAll('.applied-table tbody tr'));
+      expect(rows.length).toBe(2);
+      expect(rows[0].textContent).toContain('INV-102026-000502');
+      expect(rows[0].textContent).toContain('$6.00');
+      expect(rows[0].querySelector('.remove-applied')).not.toBeNull();
+      expect(rows[1].textContent).toContain('Pending');
+      expect(rows[1].textContent).toContain('Maintenance');
+      expect(rows[1].querySelector('.remove-applied')).toBeNull();
+    });
+
+    it('removes an applied amount after confirming, then re-reads', () => {
+      loadApplied();
+
+      component.beginRemoveApplied(toRent);
+      fixture.detectChanges();
+      expect(page().textContent).toContain('Remove this applied amount?');
+
+      component.confirmRemoveApplied(toRent);
+      const remove = httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-applications/${rentAllocation}`);
+      expect(remove.request.method).toBe('DELETE');
+      remove.flush(null, { status: 204, statusText: 'No Content' });
+
+      httpMock.expectOne(viewUrl).flush(view);
+      fixture.detectChanges();
+
+      expect(page().textContent).toContain('The applied amount was removed.');
+      expect(page().textContent).not.toContain('Funds Applied to Other Invoices');
+    });
+
+    it('calls nothing when the confirmation is abandoned', () => {
+      loadApplied();
+
+      component.beginRemoveApplied(toRent);
+      component.cancelRemoveApplied();
+      component.confirmRemoveApplied(toRent);
+
+      httpMock.expectNone(`${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-applications/${rentAllocation}`);
+    });
+
+    it('shows a refused removal as a page banner with its code', () => {
+      loadApplied();
+
+      component.beginRemoveApplied(toRent);
+      component.confirmRemoveApplied(toRent);
+      const failure = problem(
+        422,
+        'Business Rule Violation',
+        'deposit_application.maintenance_invoice_paid',
+        'The maintenance invoice has a payment on it, so the applied deposit cannot be removed.'
+      );
+      httpMock
+        .expectOne(`${environment.apiBaseUrl}/api/v1/invoices/${invoiceId}/deposit-applications/${rentAllocation}`)
+        .flush(failure.body, failure.options);
+      fixture.detectChanges();
+
+      const banner = page().querySelector('.banner.error') as HTMLElement;
+      expect(banner.textContent).toContain('The applied amount was not removed.');
+      expect(banner.textContent).toContain('deposit_application.maintenance_invoice_paid');
+      expect(component.workingAllocationId()).toBeNull();
+    });
+
+    it('says so when Funds Applied cannot be read', () => {
+      loadView(applied);
+      const failure = problem(502, 'Bad Gateway', 'deposit_application.payment_service_unavailable', 'Finance is down.');
+      httpMock.expectOne(contextUrl).flush(failure.body, failure.options);
+      fixture.detectChanges();
+
+      expect(page().textContent).toContain('Could not load Funds Applied.');
     });
   });
 

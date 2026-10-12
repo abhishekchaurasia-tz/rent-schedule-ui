@@ -72,11 +72,43 @@
             class="primary-btn"
             [disabled]="refundActionDisabled"
             [title]="refundActionDisabled ? fullyRefundedTooltip : ''"
-            (click)="openPanel()"
+            [attr.aria-expanded]="refundMenuOpen()"
+            (click)="toggleRefundMenu()"
           >
-            Refund Deposit
+            Refund Deposit <span class="caret" aria-hidden="true">▾</span>
           </button>
         </span>
+
+        <!-- Spec 10 FR 1. The owner app's two cards, under the button. -->
+        @if (refundMenuOpen()) {
+          <div class="row-menu-overlay" (click)="closeRefundMenu()"></div>
+          <div class="refund-menu" role="menu">
+            <button
+              type="button"
+              class="refund-option return-option"
+              role="menuitem"
+              [disabled]="!loaded.canRefundDeposit"
+              (click)="chooseReturn()"
+            >
+              <span class="refund-option-title">Return It</span>
+              <span class="refund-option-desc">
+                Mark the invoice as returned and send the funds back to the tenant online or offline.
+              </span>
+            </button>
+            <button
+              type="button"
+              class="refund-option apply-option"
+              role="menuitem"
+              [disabled]="!loaded.canRefundDeposit || applyLoading()"
+              (click)="openApplyPanel()"
+            >
+              <span class="refund-option-title">Apply It</span>
+              <span class="refund-option-desc">
+                Use the deposit funds to close unpaid or overdue invoices for this group of Tenants.
+              </span>
+            </button>
+          </div>
+        }
       }
     </section>
 
@@ -208,6 +240,63 @@
         }
       }
 
+      <!-- Spec 10 FR 11. Read only when something is applied. -->
+      @if (fundsAppliedError(); as problem) {
+        <div class="banner error">
+          <strong>Could not load Funds Applied.</strong>
+          <p>{{ problem.message }}</p>
+          @if (problem.code) {
+            <p class="code">{{ problem.code }}</p>
+          }
+        </div>
+      }
+
+      @if (fundsApplied().length > 0) {
+        <h2>Funds Applied to Other Invoices</h2>
+        <div class="table-scroll">
+          <table class="funds-table applied-table">
+            <thead>
+              <tr>
+                <th>Applied To</th>
+                <th>Applied On</th>
+                <th class="num">Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of fundsApplied(); track row.allocationId) {
+                <tr>
+                  <td class="mono" [title]="row.appliedToInvoiceId ?? ''">
+                    {{ appliedToLabel(row) }}
+                    @if (row.isMaintenance) {
+                      <span class="tag">Maintenance</span>
+                    }
+                  </td>
+                  <td>{{ row.appliedOn }}</td>
+                  <td class="num">{{ row.amount | currency }}</td>
+                  <td class="applied-actions">
+                    @if (pendingRemoveAllocationId() === row.allocationId) {
+                      <span>Remove this applied amount?</span>
+                      <button
+                        type="button"
+                        class="danger"
+                        [disabled]="workingAllocationId() === row.allocationId"
+                        (click)="confirmRemoveApplied(row)"
+                      >
+                        {{ workingAllocationId() === row.allocationId ? 'Working…' : 'Remove' }}
+                      </button>
+                      <button type="button" class="secondary" (click)="cancelRemoveApplied()">Keep it</button>
+                    } @else if (row.canRemove) {
+                      <button type="button" class="link-btn remove-applied" (click)="beginRemoveApplied(row)">Remove</button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
       <!-- FR 17. Exactly as served; the page recomputes none of them. -->
       <dl class="totals">
         <dt>Total Paid</dt>
@@ -244,6 +333,26 @@
       [submitting]="submitting()"
       (submitted)="onReturnSubmitted($event)"
       (closed)="closePanel()"
+    />
+  }
+
+  <!-- Spec 10 FR 4–10. A refusal floats above the panel, as for Return Deposit. -->
+  @if (applyContext(); as context) {
+    @if (applySubmitError(); as problem) {
+      <div class="banner error floating">
+        <strong>The deposit was not applied.</strong>
+        <p>{{ problem.message }}</p>
+        @if (problem.code) {
+          <p class="code">{{ problem.code }}</p>
+        }
+      </div>
+    }
+
+    <app-apply-deposit-panel
+      [context]="context"
+      [submitting]="applySubmitting()"
+      (submitted)="onApplySubmitted($event)"
+      (closed)="closeApplyPanel()"
     />
   }
 </div>
