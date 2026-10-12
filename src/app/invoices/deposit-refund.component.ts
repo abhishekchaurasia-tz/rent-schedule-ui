@@ -5,6 +5,13 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 
 import { reloadOnScopeChange } from '../scope-change';
+import { ApplyDepositPanelComponent } from './apply-deposit-panel.component';
+import {
+  ApplyDepositRequest,
+  DepositApplicationContextResponse,
+  FundsAppliedRowResponse
+} from './deposit-application.models';
+import { DepositApplicationService } from './deposit-application.service';
 import {
   CreateDepositRefundRequest,
   DepositRefundResponse,
@@ -54,7 +61,7 @@ export interface PendingRowAction {
 @Component({
   selector: 'app-deposit-refund',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ReturnDepositPanelComponent],
+  imports: [CommonModule, ReactiveFormsModule, ReturnDepositPanelComponent, ApplyDepositPanelComponent],
   templateUrl: './deposit-refund.component.html',
   styleUrl: './deposit-refund.component.scss'
 })
@@ -118,11 +125,37 @@ export class DepositRefundComponent implements OnInit {
   /** The return whose cancel or remove is in flight, guarding a double confirmation. */
   readonly workingRefundId = signal<string | null>(null);
 
+  /** Whether the *Refund Deposit* menu — Return It / Apply It — is open (spec 10 FR 1). */
+  readonly refundMenuOpen = signal(false);
+
+  /** The *Apply Deposit* panel's context while the panel is open, else `null` (spec 10 FR 3). */
+  readonly applyContext = signal<DepositApplicationContextResponse | null>(null);
+
+  /** True while *Apply It* reads the context, guarding a double press. */
+  readonly applyLoading = signal(false);
+
+  readonly applySubmitting = signal(false);
+
+  /** A refused apply, shown above the still-open panel so the entries can be corrected (spec 10 FR 10). */
+  readonly applySubmitError = signal<DepositRefundProblem | null>(null);
+
+  /** The live *Funds Applied to Other Invoices* rows (spec 10 FR 11). Empty when nothing is applied. */
+  readonly fundsApplied = signal<FundsAppliedRowResponse[]>([]);
+
+  readonly fundsAppliedError = signal<DepositRefundProblem | null>(null);
+
+  /** The applied amount whose *Remove* awaits its confirmation. */
+  readonly pendingRemoveAllocationId = signal<string | null>(null);
+
+  /** The applied amount whose removal is in flight, guarding a double confirmation. */
+  readonly workingAllocationId = signal<string | null>(null);
+
   /** The invoice last asked for — what a refresh re-reads, even after a failed first load. */
   private requestedInvoiceId: string | null = null;
 
   constructor(
     private readonly depositRefunds: DepositRefundService,
+    private readonly depositApplications: DepositApplicationService,
     private readonly route: ActivatedRoute
   ) {
     // Requirement 15g (spec 01) and FR 19. A view on screen was read as whoever the scope said at the
@@ -162,7 +195,10 @@ export class DepositRefundComponent implements OnInit {
     this.notice.set(null);
     this.actionError.set(null);
     this.closePanel();
+    this.closeApplyPanel();
+    this.closeRefundMenu();
     this.closeRowMenu();
+    this.fundsApplied.set([]);
 
     this.requestedInvoiceId = id;
     this.fetch(id);
@@ -185,6 +221,144 @@ export class DepositRefundComponent implements OnInit {
 
   get refundActionDisabled(): boolean {
     return !!this.view()?.isDepositFullyRefunded;
+  }
+
+  /** Opens or closes the *Return It* / *Apply It* menu. A disabled action opens nothing (spec 10 FR 1). */
+  toggleRefundMenu(): void {
+    if (this.refundActionDisabled) {
+      return;
+    }
+
+    this.refundMenuOpen.update((open) => !open);
+  }
+
+  closeRefundMenu(): void {
+    this.refundMenuOpen.set(false);
+  }
+
+  /** *Return It* — the existing *Return Deposit* panel (spec 10 FR 2). */
+  chooseReturn(): void {
+    this.closeRefundMenu();
+    this.openPanel();
+  }
+
+  /**
+   * *Apply It* — reads the context, then opens the *Apply Deposit* panel (spec 10 FR 3). The panel is
+   * built from a fresh read rather than from the refund view, because it needs the lease's open
+   * invoices and their balances, which only Billing's write model knows.
+   */
+  openApplyPanel(): void {
+    const view = this.view();
+    this.closeRefundMenu();
+    if (!view?.canRefundDeposit || this.applyLoading()) {
+      return;
+    }
+
+    this.notice.set(null);
+    this.actionError.set(null);
+    this.applySubmitError.set(null);
+    this.applyLoading.set(true);
+
+    this.depositApplications.get(view.invoiceId).subscribe({
+      next: (context) => {
+        this.applyLoading.set(false);
+
+        if (!context.canApplyDeposit) {
+          this.notice.set({ kind: 'warn', title: this.fullyRefundedTooltip, body: null });
+          return;
+        }
+
+        this.applyContext.set(context);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.applyLoading.set(false);
+        this.actionError.set({ title: 'Could not open Apply Deposit.', problem: describeProblem(err) });
+      }
+    });
+  }
+
+  closeApplyPanel(): void {
+    this.applyContext.set(null);
+    this.applySubmitError.set(null);
+  }
+
+  /**
+   * Sends the panel's request — once (spec 10 FR 10). The panel stays open on a refusal, keeping what
+   * was typed; its `applicationId` makes a later press the same submission, never a second apply.
+   */
+  onApplySubmitted(request: ApplyDepositRequest): void {
+    const view = this.view();
+    if (!view || this.applySubmitting()) {
+      return;
+    }
+
+    this.applySubmitError.set(null);
+    this.notice.set(null);
+    this.actionError.set(null);
+    this.applySubmitting.set(true);
+
+    this.depositApplications.apply(view.invoiceId, request).subscribe({
+      next: () => {
+        this.applySubmitting.set(false);
+        this.closeApplyPanel();
+        this.notice.set({
+          kind: 'success',
+          title: 'Deposit has been applied successfully.',
+          body:
+            request.maintenanceItems.length > 0
+              ? 'The maintenance invoice is raised in a moment; until then its row under Funds Applied reads Pending.'
+              : null
+        });
+        this.refresh();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.applySubmitting.set(false);
+        this.applySubmitError.set(describeProblem(err));
+      }
+    });
+  }
+
+  // ---- Funds Applied (spec 10 FR 11) -------------------------------------------------------------
+
+  /** Where an applied amount went: the invoice number, or *Pending* for a maintenance invoice not raised yet. */
+  appliedToLabel(row: FundsAppliedRowResponse): string {
+    return row.appliedToInvoiceNumber ?? 'Pending';
+  }
+
+  /** Swaps the row's *Remove* for its confirmation. Nothing is called yet. */
+  beginRemoveApplied(row: FundsAppliedRowResponse): void {
+    this.actionError.set(null);
+    this.pendingRemoveAllocationId.set(row.allocationId);
+  }
+
+  cancelRemoveApplied(): void {
+    this.pendingRemoveAllocationId.set(null);
+  }
+
+  /** Removes the confirmed applied amount, then re-reads the page. A refusal is a page banner. */
+  confirmRemoveApplied(row: FundsAppliedRowResponse): void {
+    const view = this.view();
+    if (!view || this.pendingRemoveAllocationId() !== row.allocationId || this.workingAllocationId()) {
+      return;
+    }
+
+    this.workingAllocationId.set(row.allocationId);
+    this.notice.set(null);
+    this.actionError.set(null);
+
+    this.depositApplications.remove(view.invoiceId, row.allocationId).subscribe({
+      next: () => {
+        this.workingAllocationId.set(null);
+        this.pendingRemoveAllocationId.set(null);
+        this.notice.set({ kind: 'success', title: 'The applied amount was removed.', body: null });
+        this.refresh();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.workingAllocationId.set(null);
+        this.pendingRemoveAllocationId.set(null);
+        this.actionError.set({ title: 'The applied amount was not removed.', problem: describeProblem(err) });
+      }
+    });
   }
 
   /** Opens *Return Deposit* — only when the server says the deposit can be refunded (BR-03). */
@@ -390,12 +564,36 @@ export class DepositRefundComponent implements OnInit {
       next: (view) => {
         this.view.set(view);
         this.loading.set(false);
+        this.fetchFundsApplied(view);
       },
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);
         this.view.set(null);
         this.panelOpen.set(false);
+        this.closeApplyPanel();
+        this.fundsApplied.set([]);
         this.loadError.set(describeProblem(err));
+      }
+    });
+  }
+
+  /**
+   * Reads *Funds Applied* — only when the view says something is applied (spec 10 FR 11), so a deposit
+   * with nothing applied makes exactly the one call it always made.
+   */
+  private fetchFundsApplied(view: DepositRefundResponse): void {
+    this.fundsAppliedError.set(null);
+
+    if (!view.isDepositInvoice || view.totals.totalApplied <= 0) {
+      this.fundsApplied.set([]);
+      return;
+    }
+
+    this.depositApplications.get(view.invoiceId).subscribe({
+      next: (context) => this.fundsApplied.set(context.fundsApplied),
+      error: (err: HttpErrorResponse) => {
+        this.fundsApplied.set([]);
+        this.fundsAppliedError.set(describeProblem(err));
       }
     });
   }
