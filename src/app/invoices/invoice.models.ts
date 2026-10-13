@@ -134,7 +134,7 @@ export interface InvoiceDetailResponse {
 
   /**
    * The invoice's late fee: its amount, the paid part, what a removal would take off, and the two marks
-   * (backend `16-late-fee-consumer.md` D31; spec `07-late-fee-ui.md` FR 17). Optional, so an API older
+   * (backend `17-late-fee-consumer.md` D31; spec `07-late-fee-ui.md` FR 17). Optional, so an API older
    * than the late fee work answers as before.
    */
   lateFee?: InvoiceLateFeeResponse;

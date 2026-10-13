@@ -20,7 +20,7 @@ import { LateFeeService } from './late-fee.service';
  * marks that stop further late fees, and the late fee lines.
  *
  * Specified in `docs/specs/rent-agreements/07-late-fee-ui.md` (FR 3 to FR 13), on Billing spec
- * `16-late-fee-consumer.md` v13.
+ * `17-late-fee-consumer.md` v13.
  *
  * **Every figure is the backend's.** The panel shows what `GET …/late-fee` answers and works nothing out:
  * which part of the late fee is paid, and what a removal would take off, are the backend's rule (BR-11).
