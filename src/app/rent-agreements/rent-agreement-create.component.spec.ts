@@ -202,6 +202,62 @@ describe('RentAgreementCreateComponent', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/rent-agreements', createResponse.agreementId, 'tenants']);
   }));
 
+  // ---------------------------------------------------------------------------------------------
+  // A rent-free unit (backend spec 01 FR-010/011). It has no schedule, and the preview endpoint
+  // refuses rent 0, so the screen never got a preview -- and the Save button only renders once a
+  // preview exists. Reported 2026-10-13: "the button does not enable with 0 rent".
+  // ---------------------------------------------------------------------------------------------
+
+  it('shows an empty schedule and the Save button for a rent-free unit, without calling the preview', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ rent: 0 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    httpMock.expectNone(previewUrl);
+    expect(component.previewResult()?.rows).withContext('rent 0 generates no schedule').toEqual([]);
+
+    fixture.detectChanges();
+    const saveButton = fixture.nativeElement.querySelector('button.submit-btn') as HTMLButtonElement | null;
+    expect(saveButton).withContext('the Save button renders once the (empty) schedule is set').not.toBeNull();
+    expect(saveButton!.disabled).toBeFalse();
+  }));
+
+  it('saves a rent-free unit with no schedule rows', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ rent: 0 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    component.save();
+
+    const req = httpMock.expectOne(createUrl);
+    expect(req.request.body.fullRent).toBe(0);
+    expect(req.request.body.scheduleRows).toEqual([]);
+
+    req.flush({
+      agreementId: '44444444-4444-4444-4444-444444444444',
+      status: 'draft',
+      depositCollected: false,
+      scheduleRows: [],
+      additionalCharges: []
+    } as CreateRentAgreementResponse);
+    tick();
+  }));
+
+  it('does not preview while the rent field is empty', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ rent: null });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+    httpMock.expectNone(previewUrl);
+    expect(component.previewResult()).withContext('an empty rent is not a rent of 0').toBeNull();
+  }));
+
   /** Drives the form to a previewed, two-row state so row-edit behaviour can be exercised. */
   const previewTwoRows = () => {
     fixture.detectChanges();
