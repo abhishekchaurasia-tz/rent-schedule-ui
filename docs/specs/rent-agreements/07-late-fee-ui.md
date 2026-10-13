@@ -2,12 +2,13 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
-| v1 | 2026-10-12 | **Initial spec: an invoice's late fee, read, applied and removed from the invoice list, and late fee lines on Update Invoice.** Built on Billing spec `16-late-fee-consumer.md` **v13** and its routes: `GET`, `PUT` and `DELETE /api/v1/invoices/{id}/late-fee`, the `lateFeeAmount` on each `GET /api/v1/invoices` item, and the `lateFee` block on `GET /api/v1/invoices/{id}` (D31). The invoice list gains a **Late fee** column and a **Late fee…** menu item, which opens a side panel with the figures, **Remove late fee**, and a form that applies a late fee list exactly as the late fee event does (D28). Update Invoice labels a late fee line "Late Fee" and says what editing it, or moving the due date, does to further late fees. **No backend change.** | [2026-10-12T1500-07-late-fee-ui](../../plans/rent-agreements/2026-10-12T1500-07-late-fee-ui.md) |
+| v2 | 2026-10-13 | **The Billing spec it builds on is renumbered from 16 to 17**, as `17-late-fee-consumer.md` (Billing spec v14), because Billing's deposit application spec also took 16. Every reference here now cites 17. No requirement changes. | — |
+| v1 | 2026-10-12 | **Initial spec: an invoice's late fee, read, applied and removed from the invoice list, and late fee lines on Update Invoice.** Built on Billing spec `17-late-fee-consumer.md` **v13** and its routes: `GET`, `PUT` and `DELETE /api/v1/invoices/{id}/late-fee`, the `lateFeeAmount` on each `GET /api/v1/invoices` item, and the `lateFee` block on `GET /api/v1/invoices/{id}` (D31). The invoice list gains a **Late fee** column and a **Late fee…** menu item, which opens a side panel with the figures, **Remove late fee**, and a form that applies a late fee list exactly as the late fee event does (D28). Update Invoice labels a late fee line "Late Fee" and says what editing it, or moving the due date, does to further late fees. **No backend change.** | [2026-10-12T1500-07-late-fee-ui](../../plans/rent-agreements/2026-10-12T1500-07-late-fee-ui.md) |
 
 ## Overview
 
 A tenant who pays late is charged a late fee. In Billing the late fee service works out the fee and
-Billing applies it to the invoice, as legacy Merlin does (backend spec `16-late-fee-consumer.md`). This
+Billing applies it to the invoice, as legacy Merlin does (backend spec `17-late-fee-consumer.md`). This
 screen set lets a property owner, or a tester, **see** an invoice's late fee, **remove** it, and **apply**
 a late fee list by hand, which is how the late fee path is exercised before the late fee service
 publishes its event. It also makes the existing **Update Invoice** page honest about late fee lines:
@@ -37,7 +38,7 @@ flowchart LR
 
 **Constraints**
 - **No backend change.** Every figure, rule and refusal is the backend's; the screen shows it.
-- **A test harness, not a product screen** (this repository's standing rule). Texts follow backend spec 16,
+- **A test harness, not a product screen** (this repository's standing rule). Texts follow backend spec 17,
   not product copy, and the apply form exists for testing (D28).
 - **The figures are eventually consistent.** The two marks are read from the proposal and change at once;
   the amounts and lines are the issued invoice's and change only after the reconcile runs. The panel says

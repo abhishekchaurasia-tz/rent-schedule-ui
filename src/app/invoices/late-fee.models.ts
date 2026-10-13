@@ -1,5 +1,5 @@
 /**
- * The late fee routes' wire shapes, as Billing spec `16-late-fee-consumer.md` v13 defines them.
+ * The late fee routes' wire shapes, as Billing spec `17-late-fee-consumer.md` v13 defines them.
  *
  * Specified in `docs/specs/rent-agreements/07-late-fee-ui.md` — API Endpoints & Server Operations.
  */

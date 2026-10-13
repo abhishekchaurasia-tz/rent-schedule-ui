@@ -8,7 +8,7 @@ import { ApplyLateFeesRequest, ApplyLateFeesResponse, LateFeeSummaryResponse } f
 /**
  * An invoice's late fee: read it, apply a list as the late fee event does, and remove it.
  *
- * Specified in `docs/specs/rent-agreements/07-late-fee-ui.md`, on Billing spec `16-late-fee-consumer.md`
+ * Specified in `docs/specs/rent-agreements/07-late-fee-ui.md`, on Billing spec `17-late-fee-consumer.md`
  * v13. **Which owner is not asked here**: the scope travels as headers, attached by
  * `scopeHeadersInterceptor`, so a call names only the invoice.
  */

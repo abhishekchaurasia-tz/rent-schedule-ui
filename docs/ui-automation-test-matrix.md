@@ -250,7 +250,7 @@ These exist only in domain models or legacy/superseded spec docs; no working end
 - Agreement activation flow (`AgreementActivation`, `RentalStatus` Active/InProcess/Terminate transitions) — no API endpoint.
 - Payment application / removal (`Invoice.ApplyPayment` / `RemovePayment`, status recalculation, Void freeze behavior) — domain-only.
 - ~~Group-invoice rounding ("last tenant absorbs rounding")~~ — **no longer out of scope, and the rule is the opposite one (2026-09-18).** Rounding across renters ships in the split editor, and it spreads leftover cents **one each to the renters at the top of the list**, explicitly never stacking them on a single row: `$100` across six is four rows of `16.67` and two of `16.66`. Leaving this listed as unimplemented, next to a rule the code inverts, is how a correct implementation gets "fixed" back to the wrong one. See §3.5 scenario 110.
-- ~~Late-fee double-charge guard~~ — **no longer out of scope (2026-10-12).** Billing spec `16-late-fee-consumer.md` v13 ships late fees: each line is keyed, and a list calculated earlier than the one applied is skipped (`older_calculation`), so a repeated event charges nothing twice. See §7.
+- ~~Late-fee double-charge guard~~ — **no longer out of scope (2026-10-12).** Billing spec `17-late-fee-consumer.md` v13 ships late fees: each line is keyed, and a list calculated earlier than the one applied is skipped (`older_calculation`), so a repeated event charges nothing twice. See §7.
 - Credit/reversal line items, legacy invoice statuses (`sent_and_recd`, etc.) — described only in a superseded legacy doc; current domain model has no equivalent statuses/fields.
 - Direct `POST /line-items` catalog creation and `(propertyOwnerId, name)` uniqueness enforcement — no create endpoint exists; only indirectly created via the additional-charge item-provisioning path.
 
@@ -266,7 +266,7 @@ These exist only in domain models or legacy/superseded spec docs; no working end
 
 ## 7. Late fee — the invoice list's late fee panel and Update Invoice — ✅ UI exists (`late-fee-panel.component.ts`, `update-proposed-invoice.component.ts`)
 
-Added 2026-10-12, covering spec `07-late-fee-ui.md` v1 (on Billing spec `16-late-fee-consumer.md` v13). The
+Added 2026-10-12, covering spec `07-late-fee-ui.md` v1 (on Billing spec `17-late-fee-consumer.md` v13). The
 routes are `GET`, `PUT` and `DELETE /api/v1/invoices/{id}/late-fee`, the `lateFeeAmount` on each
 `GET /api/v1/invoices` item, and the `lateFee` block on `GET /api/v1/invoices/{id}`.
 
