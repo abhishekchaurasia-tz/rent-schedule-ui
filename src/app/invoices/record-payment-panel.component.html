@@ -1,0 +1,228 @@
+<!--
+  The Record Payment side panel (spec 11-record-payment-ui.md), laid out as the owner app's RECORD PAYMENT
+  panel. A fixed side panel over the shared overlay, as the late fee and Apply Deposit panels sit.
+-->
+<div class="panel-overlay" (click)="close()"></div>
+
+<aside class="side-panel" role="dialog" aria-label="Record Payment">
+  <div class="panel-head">
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">&times;</button>
+    <h2>RECORD PAYMENT</h2>
+  </div>
+
+  <div class="panel-body">
+    @if (loading()) {
+      <p class="hint">Loading…</p>
+    }
+
+    <!-- FR 1: a refused context leaves no form. -->
+    @if (loadError(); as problem) {
+      <div class="banner error load-error">
+        <strong>Could not open Record Payment.</strong>
+        <p>{{ problem.message }}</p>
+        @if (problem.code) {
+          <p class="code">{{ problem.code }}</p>
+        }
+      </div>
+    }
+
+    @if (context(); as ctx) {
+      <!-- FR 2. -->
+      <section class="summary">
+        <h3>INVOICE SUMMARY</h3>
+        <table class="grid-table summary-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>SUBJECT</th>
+              <th class="num">DUE</th>
+              <th class="num">PAID</th>
+              <th class="num">BALANCE</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">{{ ctx.invoiceNumber }}</td>
+              <td class="subject">{{ subject() ?? '—' }}</td>
+              <td class="num">{{ ctx.total | currency }}</td>
+              <td class="num">{{ ctx.paid | currency }}</td>
+              <td class="num">{{ ctx.payable | currency }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- FR 3 – FR 8: one block per payment line. -->
+      @for (line of lines.controls; track line; let i = $index) {
+        <div class="payment-line" [formGroup]="line">
+          <div class="fields">
+            <label class="field">
+              <span class="label">Tenant</span>
+              <select formControlName="tenantId" aria-label="Tenant">
+                <option value="" disabled>Select Tenant</option>
+                @for (tenant of ctx.tenants; track tenant.tenantId) {
+                  <option [value]="tenant.tenantId">{{ tenantName(tenant.tenantId) }}</option>
+                }
+              </select>
+              @if (errorFor(i, 'tenantId'); as message) {
+                <span class="field-error">{{ message }}</span>
+              }
+            </label>
+
+            @if (line.controls.tenantId.value) {
+              <label class="field">
+                <span class="label">Payment Method</span>
+                <select formControlName="method" aria-label="Payment Method">
+                  <option value="" disabled>Select Payment Method</option>
+                  @for (method of ctx.methods; track method) {
+                    <option [value]="method">{{ methodLabel(method) }}</option>
+                  }
+                </select>
+                @if (errorFor(i, 'method'); as message) {
+                  <span class="field-error">{{ message }}</span>
+                }
+              </label>
+            }
+
+            @if (numberLabel(i); as numberLabel) {
+              <label class="field number-field">
+                <span class="label">{{ numberLabel }}</span>
+                <input
+                  type="text"
+                  formControlName="checkNumber"
+                  [attr.maxlength]="maxCheckNumber"
+                  [attr.aria-label]="numberLabel"
+                  autocomplete="off"
+                />
+                @if (errorFor(i, 'checkNumber'); as message) {
+                  <span class="field-error">{{ message }}</span>
+                }
+              </label>
+              <span class="spacer"></span>
+            }
+
+            @if (line.controls.tenantId.value && line.controls.method.value) {
+              <div class="field">
+                <span class="label">Submission Date<span class="req">*</span></span>
+                <mat-form-field appearance="outline" class="date-field" subscriptSizing="dynamic">
+                  <input
+                    matInput
+                    [matDatepicker]="paidOnPicker"
+                    [max]="today"
+                    formControlName="paidOn"
+                    aria-label="Submission Date"
+                    (click)="paidOnPicker.open()"
+                  />
+                  <mat-datepicker-toggle matIconSuffix [for]="paidOnPicker"></mat-datepicker-toggle>
+                  <mat-datepicker #paidOnPicker></mat-datepicker>
+                </mat-form-field>
+                @if (errorFor(i, 'paidOn'); as message) {
+                  <span class="field-error">{{ message }}</span>
+                }
+              </div>
+
+              <label class="field">
+                <span class="label">Amount Paid <span class="req">*</span></span>
+                <input type="number" min="0" step="0.01" formControlName="amount" aria-label="Amount Paid" />
+                @if (errorFor(i, 'amount'); as message) {
+                  <span class="field-error">{{ message }}</span>
+                }
+              </label>
+            }
+          </div>
+
+          @if (i > 0) {
+            <button type="button" class="remove-link" (click)="removePayment(i)">Remove</button>
+          }
+        </div>
+      }
+
+      <!-- FR 11: the server's sentence when the total is more than the tenant's invoices can take. -->
+      @if (exceeds) {
+        <p class="exceeds-message">{{ preview()?.message }}</p>
+      }
+
+      @if (previewError(); as problem) {
+        <p class="preview-error">
+          The preview failed: {{ problem.message }}
+          @if (problem.code) {
+            <span class="code">{{ problem.code }}</span>
+          }
+        </p>
+      }
+
+      <!-- FR 7. -->
+      <div class="add-row">
+        <button type="button" class="add-link" (click)="addPayment()" [disabled]="!canAddPayment">
+          <span class="add-icon" aria-hidden="true">+</span>
+          Add Additional Payment
+        </button>
+      </div>
+
+      <!-- FR 10: where the excess goes — the other invoices only, as the owner app shows it. -->
+      @if (showsExcess) {
+        <section class="excess-box">
+          <p>
+            You entered an amount greater than the balance due. The excess amount of
+            {{ preview()!.excess | currency }} will be applied on the following invoices.
+          </p>
+          <table class="grid-table excess-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>DUE ON</th>
+                <th class="num">AMOUNT</th>
+                <th class="num">PAID</th>
+                <th class="num">BALANCE</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of excessRows; track row.invoiceId) {
+                <tr class="excess-row">
+                  <td class="mono id-link">{{ row.invoiceNumber }}</td>
+                  <td>{{ row.dueDate | date: 'MMM d, y' }}</td>
+                  <td class="num">{{ row.payableBefore | currency }}</td>
+                  <td class="num">{{ row.applied | currency }}</td>
+                  <td class="num">{{ row.payableAfter | currency }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+
+      <!-- FR 16, FR 17. -->
+      @if (submitError(); as failure) {
+        <div class="banner submit-error" [class.warn]="failure.unconfirmed" [class.error]="!failure.unconfirmed">
+          <strong>
+            {{ failure.unconfirmed ? 'The payment may or may not have been recorded.' : 'The payment was not recorded.' }}
+          </strong>
+          <p>{{ failure.problem.message }}</p>
+          @if (failure.problem.code) {
+            <p class="code">{{ failure.problem.code }}</p>
+          }
+        </div>
+      }
+    }
+  </div>
+
+  <div class="panel-foot">
+    <button type="button" class="ghost-btn" (click)="close()">Cancel</button>
+    <button type="button" class="primary-btn" (click)="submit()" [disabled]="!canSubmit">
+      {{ submitting() ? 'Submitting…' : 'Submit' }}
+    </button>
+  </div>
+
+  <!-- FR 13: the owner app's review step. -->
+  @if (confirming()) {
+    <div class="confirm-backdrop">
+      <div class="confirm-box" role="alertdialog" aria-label="Confirm payment">
+        <p>{{ confirmation }}</p>
+        <div class="confirm-actions">
+          <button type="button" class="ghost-btn" (click)="cancelConfirm()">No</button>
+          <button type="button" class="primary-btn" (click)="confirm()">Yes</button>
+        </div>
+      </div>
+    </div>
+  }
+</aside>

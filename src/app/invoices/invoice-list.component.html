@@ -275,6 +275,13 @@
               <!-- Spec 07 FR 2: offered on every row; the backend answers for a voided or deleted invoice too. -->
               <button type="button" class="row-menu-item" (click)="openLateFee(invoice)">Late fee…</button>
 
+              <!-- Spec v11, FR 28: on rows that still owe money, as the owner app gates its button. -->
+              @if (canRecordPayment(invoice)) {
+                <button type="button" class="row-menu-item" (click)="openRecordPayment(invoice)">
+                  Record Payment…
+                </button>
+              }
+
               <!--
                 Spec v10, FR 27. On deposit rows only, and a link rather than an action: whether the deposit
                 can be refunded is the refund view's answer (backend 15-deposit-refund.md BR-02, BR-03).
@@ -440,6 +447,15 @@
       [invoiceStatus]="target.status"
       (changed)="onLateFeeChanged()"
       (closed)="closeLateFee()"
+    />
+  }
+
+  <!-- Spec v11, FR 28: one invoice's Record Payment panel; an accepted payment re-runs the search. -->
+  @if (recordPaymentInvoice(); as target) {
+    <app-record-payment-panel
+      [invoiceId]="target.invoiceId"
+      (recorded)="onPaymentRecorded($event)"
+      (closed)="closeRecordPayment()"
     />
   }
 </div>

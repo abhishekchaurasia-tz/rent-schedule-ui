@@ -311,3 +311,56 @@ late fee, so it cannot stub the routes the way `additional-charge-panel.spec.ts`
 | 145 | A `LateFeeCharge` line reads **Late Fee**, whatever catalog id it carries: the system row the catalog never returns, none, or one the catalog names otherwise | ✅ | `update-proposed-invoice.component.spec.ts` (FR 14) |
 | 146 | The late fee notice shows on an invoice that carries a late fee line, stays after that line is removed in the form, and is absent otherwise | ✅ | `update-proposed-invoice.component.spec.ts` (FR 15) |
 | 147 | A save after editing another line sends the late fee line with its `lineId`, `lineItemId` and item type unchanged | ✅ | `update-proposed-invoice.component.spec.ts` (FR 16) |
+
+---
+
+## 8. Record Payment — the invoice list's Record Payment panel — ✅ UI exists (`record-payment-panel.component.ts`)
+
+Added 2026-10-13, covering spec `11-record-payment-ui.md` v1 and spec `04-invoice-list-ui.md` v11 FR 28 (on
+Billing spec `18-record-payment.md` v2). The routes are `GET /api/v1/invoices/{id}/offline-payment`,
+`POST /api/v1/invoices/{id}/offline-payments/preview` and `POST /api/v1/invoices/{id}/offline-payments`.
+
+**Coverage note.** Every ✅ below has a component test, named in the last column. Scenarios marked
+**PW** also have a Playwright scenario in `e2e/ui/record-payment.spec.ts`, which **stubs Billing** with
+`page.route` (as `additional-charge-panel.spec.ts` stubs the catalog), so it runs against `ng serve` alone.
+Scenario 167 needs a running Billing API and Finance with a seeded `INV-` invoice.
+
+### 8.1 Open the panel (spec Flow 1)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 148 | **Record Payment…** is in the row menu only on rows with a balance above zero that are neither voided nor deleted | ✅ | `invoice-list.component.spec.ts` (FR 28) |
+| 149 | The panel reads its context and the invoice, and shows **INVOICE SUMMARY** — ID, SUBJECT (first line's description), DUE, PAID, BALANCE | ✅ PW | `record-payment-panel.component.spec.ts` (FR 1, FR 2) |
+| 150 | A failed invoice read leaves the subject as `—` and nothing else changes | ✅ | `record-payment-panel.component.spec.ts` (FR 2) |
+| 151 | A refused context (`404`, `422 not_payable` / `nothing_to_pay`, `502`) shows its sentence and code, and no form | ✅ | `record-payment-panel.component.spec.ts` (FR 1, FR 16) |
+
+### 8.2 Enter payment lines (spec Flow 2)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 152 | Tenant first; Payment Method once a tenant is chosen; Submission Date and Amount Paid once a method is | ✅ PW | `record-payment-panel.component.spec.ts` (FR 3 – FR 6) |
+| 153 | A tenant fills its own suggested amount; the date defaults to today; an invoice with one tenant starts with that tenant | ✅ | `record-payment-panel.component.spec.ts` (FR 3, FR 6) |
+| 154 | Check shows **Check Number**, Money Order **Money Order Number**, Cash neither; switching to Cash clears the number; the number takes at most 24 characters | ✅ PW | `record-payment-panel.component.spec.ts` (FR 5) |
+| 155 | **+ Add Additional Payment** is enabled only once the last line has a method and an amount | ✅ | `record-payment-panel.component.spec.ts` (FR 7) |
+| 156 | A new line's Tenant is line 1's and disabled, its date is line 1's, its method and amount are empty; **Remove** is on every line but the first | ✅ PW | `record-payment-panel.component.spec.ts` (FR 7, FR 8) |
+| 157 | Changing line 1's tenant goes back to one line, with the new tenant's amount | ✅ | `record-payment-panel.component.spec.ts` (FR 3) |
+| 158 | From the first Submit: *Required*, *Should be greater than $0.00*, *Only number allowed with 2 decimal places.*, a future date and a 25-character number are refused, and nothing is sent | ✅ | `record-payment-panel.component.spec.ts` (FR 9) |
+
+### 8.3 The preview (spec Flow 2)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 159 | The preview is posted 350 ms after the last change, once for a burst, with the last values; a stale answer is dropped | ✅ | `record-payment-panel.component.spec.ts` (FR 10) |
+| 160 | An excess shows the blue box with the excess amount and the **other** invoices it goes to — ID, DUE ON, AMOUNT, PAID, BALANCE | ✅ PW | `record-payment-panel.component.spec.ts` (FR 10) |
+| 161 | `exceedsPayable` shows the server's *"There are no other unpaid or future invoices…"* and disables Submit and Add Additional Payment until a lower total | ✅ PW | `record-payment-panel.component.spec.ts` (FR 11) |
+| 162 | Submit waits for a pending preview; an incomplete line clears the preview with nothing sent; a failed preview is shown without blocking Submit | ✅ | `record-payment-panel.component.spec.ts` (FR 10, FR 12) |
+
+### 8.4 Submit (spec Flow 3)
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 163 | Submit shows the owner app's review question; **No** sends nothing | ✅ | `record-payment-panel.component.spec.ts` (FR 13) |
+| 164 | **Yes** posts every line in order with the panel's `submissionId`; `202` closes the panel, the list says *"Payment submitted on …"* and re-reads | ✅ PW | `record-payment-panel.component.spec.ts` (FR 14, FR 15), `invoice-list.component.spec.ts` (FR 28) |
+| 165 | `502 submission_unconfirmed` is a warning that the payment may have been queued; a retry carries the **same** `submissionId` | ✅ PW | `record-payment-panel.component.spec.ts` (FR 17) |
+| 166 | Every other refusal shows a readable sentence (or the server's `detail` for `validation_failed`, `exceeds_payable`, `rejected_by_payment_service`) with its code, and keeps what was typed | ✅ | `record-payment.service.spec.ts`, `record-payment-panel.component.spec.ts` (FR 16) |
+| 167 | **End to end, against a running Billing and Finance:** record $400 cash on a two-tenant `INV-` invoice with later invoices, see the excess preview, submit, and see the payments reach the invoices | ✅ needs a seeded invoice | none — the manual check of plan `2026-10-13T1800-11-record-payment-ui` |
