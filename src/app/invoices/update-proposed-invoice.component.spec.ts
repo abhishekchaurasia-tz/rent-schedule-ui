@@ -70,7 +70,7 @@ describe('UpdateProposedInvoiceComponent', () => {
     isUndeletable: false,
     isManuallyUpdated: false,
     propertyTimeZone: 'America/New_York',
-    overdueMarkedOn: null,
+    isOverdue: false,
     voidedAt: null,
     deletedAt: null,
     version: 1,

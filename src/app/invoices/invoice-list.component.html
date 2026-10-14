@@ -88,6 +88,16 @@
       Include deleted
     </label>
 
+    <!-- Spec 04 v12, FR 29: overdue is a filter beside the statuses, not one of them (backend v45). -->
+    <label class="filter">
+      <span>Overdue</span>
+      <select formControlName="overdue" (change)="onFilterChanged()">
+        <option value="any">Any</option>
+        <option value="yes">Overdue</option>
+        <option value="no">Not overdue</option>
+      </select>
+    </label>
+
     <button type="button" class="primary-btn" (click)="search()" [disabled]="loading()">
       {{ loading() ? 'Searching…' : 'Search' }}
     </button>
@@ -181,6 +191,10 @@
                   <span class="status-badge" [class]="statusPresentation(invoice.status).className">
                     {{ statusPresentation(invoice.status).label }}
                   </span>
+                  <!-- Spec 04 v12, FR 30: the backend's flag, never recomputed here. -->
+                  @if (invoice.isOverdue) {
+                    <span class="status-badge overdue">Overdue</span>
+                  }
                 </td>
                 <td class="numeric">{{ invoice.total | currency }}</td>
                 <td class="numeric">{{ invoice.amountPaid | currency }}</td>

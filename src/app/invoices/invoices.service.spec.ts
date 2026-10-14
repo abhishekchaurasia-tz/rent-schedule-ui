@@ -67,7 +67,7 @@ describe('InvoicesService', () => {
   it('search() repeats `status` once per value rather than overwriting it', () => {
     service
       .search({
-        status: ['overdue', 'partial_paid'],
+        status: ['not_received', 'partial_paid'],
         page: 2,
         pageSize: 25,
         invoiceNumber: '  INV-082026-000002  ',
@@ -77,7 +77,7 @@ describe('InvoicesService', () => {
       .subscribe();
 
     const request = httpMock.expectOne((r) => r.url === baseUrl);
-    expect(request.request.params.getAll('status')).toEqual(['overdue', 'partial_paid']);
+    expect(request.request.params.getAll('status')).toEqual(['not_received', 'partial_paid']);
     expect(request.request.params.get('page')).toBe('2');
     expect(request.request.params.get('pageSize')).toBe('25');
     expect(request.request.params.get('invoiceNumber')).toBe('INV-082026-000002');
@@ -85,6 +85,28 @@ describe('InvoicesService', () => {
     expect(request.request.params.get('includeDeleted')).toBe('true');
 
     request.flush({ items: [], totalCount: 0, pageNumber: 2, pageSize: 25, totalPages: 0, hasNextPage: false, hasPreviousPage: true });
+  });
+
+  // Spec 04 v12, FR 29 (backend 02-invoicing.md v45, FR 53): `false` is a filter of its own, so both
+  // values go on the wire and only an absent one is left off.
+  [true, false].forEach((isOverdue) => {
+    it(`search() sends isOverdue=${isOverdue}`, () => {
+      service.search({ isOverdue }).subscribe();
+
+      const request = httpMock.expectOne((r) => r.url === baseUrl);
+      expect(request.request.params.get('isOverdue')).toBe(String(isOverdue));
+
+      request.flush({ items: [], totalCount: 0, pageNumber: 1, pageSize: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
+    });
+  });
+
+  it('search() sends no isOverdue when the filter is not set', () => {
+    service.search({}).subscribe();
+
+    const request = httpMock.expectOne((r) => r.url === baseUrl);
+    expect(request.request.params.has('isOverdue')).toBeFalse();
+
+    request.flush({ items: [], totalCount: 0, pageNumber: 1, pageSize: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
   });
 
   it('getById() propagates a 404 to the caller rather than swallowing it', () => {

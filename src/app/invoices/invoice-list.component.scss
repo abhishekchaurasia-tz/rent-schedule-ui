@@ -60,7 +60,8 @@ h1 {
 
   // Direct child only: a .filter may instead wrap the .date-input box, whose own <input> draws no
   // border of its own — the box around it does.
-  > input {
+  > input,
+  > select {
     border: 1px solid #c4c4c4;
     border-radius: 3px;
     min-width: 150px;
