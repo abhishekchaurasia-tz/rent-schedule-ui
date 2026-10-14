@@ -364,3 +364,15 @@ Scenario 167 needs a running Billing API and Finance with a seeded `INV-` invoic
 | 165 | `502 submission_unconfirmed` is a warning that the payment may have been queued; a retry carries the **same** `submissionId` | ✅ PW | `record-payment-panel.component.spec.ts` (FR 17) |
 | 166 | Every other refusal shows a readable sentence (or the server's `detail` for `validation_failed`, `exceeds_payable`, `rejected_by_payment_service`) with its code, and keeps what was typed | ✅ | `record-payment.service.spec.ts`, `record-payment-panel.component.spec.ts` (FR 16) |
 | 167 | **End to end, against a running Billing and Finance:** record $400 cash on a two-tenant `INV-` invoice with later invoices, see the excess preview, submit, and see the payments reach the invoices | ✅ needs a seeded invoice | none — the manual check of plan `2026-10-13T1800-11-record-payment-ui` |
+
+## 9. Overdue — the invoice list's Overdue filter and badge — ✅ UI exists (`invoice-list.component.ts`)
+
+Added 2026-10-14, covering spec `04-invoice-list-ui.md` v12 FR 7, FR 29 and FR 30 (on Billing spec
+`02-invoicing.md` v45, FR 52–53). Overdue is a flag the backend works out at read time, not a status.
+
+| # | Scenario | Automatable now? | Component test |
+|---|---|---|---|
+| 168 | The status chips do not include *Overdue* | ✅ | `invoice-list.component.spec.ts` (v12, FR 7) |
+| 169 | The Overdue filter sends nothing for *Any*, `isOverdue=true` for *Overdue*, `isOverdue=false` for *Not overdue*, and restarts at page 1 | ✅ | `invoice-list.component.spec.ts`, `invoices.service.spec.ts` (v12, FR 29) |
+| 170 | A row with `isOverdue: true` shows the *Overdue* badge beside its status; any other row shows none | ✅ | `invoice-list.component.spec.ts` (v12, FR 30) |
+| 171 | **End to end, against a running Billing:** an unpaid invoice due before today at its property reads *Overdue*; `?status=overdue` answers `400` | ✅ needs a seeded invoice | none — Billing's `InvoiceReadEndpointTests` and Postman `Invoices / Negative / 10a` cover the API |

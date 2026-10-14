@@ -2,6 +2,7 @@
 
 | Version | Date | Summary | Plan |
 |---------|------|---------|------|
+| v12 | 2026-10-14 | **Overdue is a flag, not a status.** Backend [`02-invoicing.md`](https://github.com/innago-property-management/innago-billing/blob/main/docs/specs/invoicing/02-invoicing.md) **v45** (FR 52–53) removed the hourly job that marked invoices overdue: `status` never reads `overdue` any more, every row and the detail carry **`isOverdue`**, worked out when the invoice is read (due before today at the property, money owed, nothing in flight), and `status=overdue` answers **`400`**. Since that change this screen's *Overdue* chip produced a failed search. **FR 3 and FR 7 are corrected; new FR 29 and FR 30.** The *Overdue* chip and the `overdue` status token go; a separate **Overdue** filter (*Any* / *Overdue* / *Not overdue*) sends `isOverdue=true` or `false`, and nothing when *Any*; a row whose `isOverdue` is `true` shows an **Overdue** badge beside its status. The detail model loses `overdueMarkedOn` and gains `isOverdue`. | [2026-10-14T1500-04-overdue-is-a-flag](../../plans/rent-agreements/2026-10-14T1500-04-overdue-is-a-flag.md) |
 | v11 | 2026-10-13 | **A row that still owes money offers Record Payment.** New requirement **FR 28**. The row menu gains **Record Payment…** on every row whose `balance` is above zero and whose status is neither `voided` nor `deleted`; it opens the *Record Payment* side panel specified in [`11-record-payment-ui.md`](11-record-payment-ui.md) v1 (Billing spec `18-record-payment.md` v2) over the list, the way **Late fee…** opens its panel. On `202` the panel closes, the list says the payment was submitted and re-runs the search. **Gated on the balance, as the owner app gates its button** (`BalanceAmount > 0`); whether the invoice can actually take a payment is the panel's context to answer (backend BR-28, BR-32). | [2026-10-13T1800-11-record-payment-ui](../../plans/rent-agreements/2026-10-13T1800-11-record-payment-ui.md) |
 | v10 | 2026-10-07 | **A deposit invoice's row menu offers Deposit Refund.** New requirement **FR 27**. The menu gains one link, shown only on rows whose `invoiceType` is `deposit`, to `/invoices/deposit-refund?invoiceId=<id>` — the page specified in [`09-deposit-refund-ui.md`](09-deposit-refund-ui.md) v1, where the refund view is read and the deposit returned. **Gated on the type, not on the status:** backend `15-deposit-refund.md` BR-01 defines a deposit invoice by its `InvoiceType` alone, and whether it is fully paid is the refund view's answer to give (BR-02), not this list's to guess from `received` — a deposit with returns already listed under *Funds Returned* is still worth opening at any status. `pet_deposit` is not offered: BR-01 reads `InvoiceType == Deposit`, Billing stamps that on every deposit-category invoice it raises (pet deposits included), and a `pet_deposit`-typed row would only open a page saying it is not a deposit invoice. **No backend change, no contract change** — the list's own response already carries `invoiceType`. | [2026-10-07T1800-09-deposit-refund-ui](../../plans/rent-agreements/2026-10-07T1800-09-deposit-refund-ui.md) |
 | v9 | 2026-09-18 | **A fee added from this screen can be split between renters, like the one added from the Add Additional Fee page.** **FR 18 and FR 19 are corrected.** *Raised by the user 2026-09-18, asking why the two screens do not match.* **v2 made the difference deliberate and it had outlived its reason.** FR 19 said the fee *"carries no `tenantIds`, so it is charged to every active tenant"* and that the panel *"shall say so and link to the screen that can charge a subset"* — a reasonable division of labour when the tenant picker lived on that other page, and an odd one once you notice both screens call the **same** endpoint, `POST /rent/agreements/{id}/additional-charges`, with the same `tenantShares` field on the body. This screen simply never filled it in. **Spec `02` v8 moved the split editor into the shared fee panel**, behind a `tenants` input, so a host that hands the panel a roster gets the editor and a host that does not renders no renter control at all. **This screen now hands it one.** FR 18 therefore loads the roster (`GET /rent/agreements/{id}/tenants`) **alongside** the lease rather than after it, so the fee step still renders once instead of filling in over two visible stages. A `204` — the lease exists but step 2 was never saved — becomes an **empty** roster rather than none: this screen does author who pays, the lease just has nobody on it yet, and the editor says so. A lease that does not exist fails on the first step as before, and the roster read is dropped with it. **The pointer to the other screen goes**, because there is nothing left to point at. **No backend change, no contract change** — the same body, from one more screen. | — |
@@ -52,8 +53,9 @@ owners.
    property and unit references, who the invoice is shared by, due date, paid-on date, invoice number,
    status, total, amount paid, and balance.
 3. The system shall render the **status** as a coloured badge, mapping the wire's snake_case values —
-   `received` reads "Fully Paid" in green, `overdue` red, `partial_paid` amber, `not_received` neutral,
-   `voided` and `deleted` muted.
+   `received` reads "Fully Paid" in green, `partial_paid` amber, `not_received` neutral, `voided` and
+   `deleted` muted. **v12:** ~~`overdue` red~~ — the status no longer exists (backend v45); overdue is
+   shown by FR 30's badge.
 4. The system shall render an **overdue or unpaid** row's money figures in the same alert colour as its
    badge, and a settled row's in the default colour, so a scan down the page finds what is owed.
 5. The system shall name the payers from `tenantIds` using the same stable stand-in identities the ADD
@@ -62,8 +64,9 @@ owners.
 6. The system shall show `propertyId` and `propertyUnitId` as shortened references with the full id
    available on hover — **not** as names, which this service does not hold.
 7. The system shall offer filters for status (multi-select), outstanding-only, invoice number, an
-   inclusive due-date range, and include-deleted, and shall omit from the query string every filter the
-   user did not set.
+   inclusive due-date range, include-deleted and (**v12**) overdue (FR 29), and shall omit from the query
+   string every filter the user did not set. **v12:** the status chips are `not_received`,
+   `partial_paid`, `received`, `voided` and `deleted`; `overdue` is no longer one of them.
 8. The system shall page through results using the response's `pageNumber`, `totalPages`,
    `hasNextPage` and `hasPreviousPage`, and shall report "showing N of M" from `items.length` and
    `totalCount`.
@@ -149,6 +152,13 @@ owners.
     closes the menu. When the panel reports an accepted payment the system shall close it, show *"Payment
     submitted on {invoice number}. It will appear on the invoice once the payment service records it."*
     and re-run the current search.
+29. **v12** — The system shall offer an **Overdue** filter with three choices: *Any* (the default) sends
+    no `isOverdue`; *Overdue* sends `isOverdue=true`; *Not overdue* sends `isOverdue=false`.
+    Changing it restarts at page 1 (FR 9). **Three choices, not a checkbox**, because `false` is a
+    filter of its own on the backend (FR 53), not the absence of one.
+30. **v12** — The system shall show an **Overdue** badge beside the status badge of every row whose
+    `isOverdue` is `true`, and none on any other row. The flag is the backend's (worked out at read
+    time, in the property's time zone); the screen shall not recompute it from `dueDate`.
 
 ## Constraints
 
@@ -197,7 +207,8 @@ contract at backend v41 (FR 49) and a stale one sent anyway is discarded (FR 47b
 |-----------|------|-------|
 | `page` / `pageSize` | `int` | Default 1 / 50; `pageSize` capped at 200 |
 | `invoiceNumber` | `string` | Exact match |
-| `status` | `string[]` | Repeatable, unioned. `snake_case` or the member name |
+| `status` | `string[]` | Repeatable, unioned. `snake_case` or the member name. **v12:** `overdue` answers `400` |
+| `isOverdue` | `bool` | **v12** — `true` overdue only, `false` not overdue; omitted for any (backend v45, FR 53) |
 | `invoiceType` | `string` | |
 | `outstandingOnly` | `bool` | |
 | `dueDateFrom` / `dueDateTo` | `DateOnly` | Inclusive |
@@ -210,7 +221,9 @@ contract at backend v41 (FR 49) and a stale one sent anyway is discarded (FR 47b
 
 `InvoiceSummaryResponse`: `invoiceId`, `invoiceNumber`, `invoiceType`, `status`, `generatedOn`,
 `dueDate`, `total`, `amountPaid`, `balance`, `propertyId`, `propertyUnitId?`, `tenantId?`,
-`rentAgreementId?`, `leaseId?`, and — new in backend v37 — `paidOn?` and `tenantIds`.
+`rentAgreementId?`, `leaseId?`, and — new in backend v37 — `paidOn?` and `tenantIds`; **v12** —
+`isOverdue` (backend v45, FR 52). The detail (`InvoiceDetailResponse`) carries `isOverdue` too and no
+longer carries `overdueMarkedOn`.
 
 **v5** — `DELETE /api/v1/invoices/{id}` and `POST /api/v1/invoices/{id}/void` take no body and return
 `204 No Content` with no body on success; on failure both return an RFC 9457 Problem Details body whose
