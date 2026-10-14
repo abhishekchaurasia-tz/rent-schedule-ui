@@ -904,4 +904,96 @@ describe('InvoiceListComponent', () => {
       expect(fixture.nativeElement.querySelector('app-late-fee-panel')).toBeNull();
     });
   });
+
+  describe('Record Payment (spec v11, FR 28)', () => {
+    const contextUrl = (invoiceId: string) => `${invoicesUrl}/${invoiceId}/offline-payment`;
+
+    function menuItems(): string[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('.row-menu .row-menu-item')).map((item) =>
+        (item as HTMLElement).textContent!.trim()
+      );
+    }
+
+    /** Opens the panel for `overdueRow` and answers its two reads. */
+    function openPanel(): void {
+      search();
+      openRowMenu(1);
+      (Array.from(fixture.nativeElement.querySelectorAll('.row-menu .row-menu-item')).find(
+        (candidate) => (candidate as HTMLElement).textContent!.trim() === 'Record Payment…'
+      ) as HTMLElement).click();
+      fixture.detectChanges();
+      httpMock.expectOne(contextUrl(overdueRow.invoiceId)).flush({
+        invoiceId: overdueRow.invoiceId,
+        invoiceNumber: overdueRow.invoiceNumber,
+        total: 400,
+        paid: 0,
+        payable: 400,
+        tenants: [],
+        methods: ['cash']
+      });
+      httpMock.expectOne(`${invoicesUrl}/${overdueRow.invoiceId}`).flush({ lines: [] });
+      fixture.detectChanges();
+    }
+
+    it('offers Record Payment… only on rows that still owe money and are not voided or deleted', () => {
+      search(
+        page([
+          overdueRow,
+          paidRow,
+          { ...overdueRow, invoiceId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', status: 'voided' },
+          { ...overdueRow, invoiceId: 'dddddddd-dddd-dddd-dddd-dddddddddddd', status: 'deleted' }
+        ])
+      );
+
+      const offered = [0, 1, 2, 3].map((rowIndex) => {
+        openRowMenu(rowIndex);
+        const has = menuItems().includes('Record Payment…');
+        component.closeRowMenu();
+        fixture.detectChanges();
+        return has;
+      });
+
+      expect(offered).toEqual([true, false, false, false]);
+    });
+
+    it('opens the panel for the row, which reads its context, and closes the menu', () => {
+      openPanel();
+
+      expect(component.openRowMenuInvoiceId()).toBeNull();
+      expect(component.recordPaymentInvoice()).toEqual({
+        invoiceId: overdueRow.invoiceId,
+        invoiceNumber: overdueRow.invoiceNumber
+      });
+      expect(fixture.nativeElement.querySelector('app-record-payment-panel')).not.toBeNull();
+    });
+
+    it('closing the panel removes it with nothing re-read', () => {
+      openPanel();
+
+      component.closeRecordPayment();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('app-record-payment-panel')).toBeNull();
+      httpMock.expectNone((r) => r.url === invoicesUrl);
+    });
+
+    it('an accepted payment closes the panel, says it was submitted, and re-runs the search', () => {
+      openPanel();
+
+      component.onPaymentRecorded({
+        invoiceId: overdueRow.invoiceId,
+        submissionId: '7a1e2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b',
+        status: 'accepted',
+        allocations: []
+      });
+      httpMock.expectOne((r) => r.url === invoicesUrl).flush(page([overdueRow]));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('app-record-payment-panel')).toBeNull();
+      expect(component.actionSuccess()).toBe(
+        `Payment submitted on ${overdueRow.invoiceNumber}. It will appear on the invoice once the payment service records it.`
+      );
+      expect(fixture.nativeElement.querySelector('.banner.success')?.textContent).toContain('Payment submitted');
+    });
+  });
 });

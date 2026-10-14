@@ -25,6 +25,8 @@ import {
 import { reloadOnScopeChange } from '../scope-change';
 import { InvoicesService } from './invoices.service';
 import { LateFeePanelComponent } from './late-fee-panel.component';
+import { RecordPaymentPanelComponent } from './record-payment-panel.component';
+import { OfflinePaymentSubmittedResponse } from './record-payment.models';
 
 /** Matches a canonical 8-4-4-4-12 UUID, case-insensitive — the same check the other id screens use. */
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,7 +93,8 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
     RouterLink,
     MatDatepickerModule,
     AdditionalChargePanelComponent,
-    LateFeePanelComponent
+    LateFeePanelComponent,
+    RecordPaymentPanelComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './invoice-list.component.html',
@@ -218,6 +221,9 @@ export class InvoiceListComponent implements OnInit {
 
   /** The invoice whose late fee panel is open, with its status (spec 07 FR 3, FR 5); `null` when none is. */
   readonly lateFeeInvoice = signal<{ invoiceId: string; status: string } | null>(null);
+
+  /** The invoice whose Record Payment panel is open (spec v11, FR 28); `null` when none is. */
+  readonly recordPaymentInvoice = signal<{ invoiceId: string; invoiceNumber: string } | null>(null);
 
   /** The 1-based page to request next. Reset to 1 by any filter change. */
   private page = 1;
@@ -645,6 +651,42 @@ export class InvoiceListComponent implements OnInit {
 
   /** The late fee changed in the panel, so the rows behind it are stale: the search runs again (spec 07 FR 7). */
   onLateFeeChanged(): void {
+    this.runSearch();
+  }
+
+  /**
+   * Whether the row menu offers **Record Payment…** (spec v11, FR 28): the invoice still owes money and
+   * is neither voided nor deleted — the owner app's `BalanceAmount > 0` gate. Whether the invoice can take
+   * a payment after all is the panel's context to answer (backend `18-record-payment.md` BR-28, BR-32).
+   */
+  canRecordPayment(invoice: InvoiceSummaryResponse): boolean {
+    return invoice.balance > 0 && this.canManageInvoice(invoice);
+  }
+
+  /** Opens the Record Payment panel for `invoice`, closing the row menu it was opened from (FR 28). */
+  openRecordPayment(invoice: InvoiceSummaryResponse): void {
+    this.closeRowMenu();
+    this.actionSuccess.set(null);
+    this.recordPaymentInvoice.set({ invoiceId: invoice.invoiceId, invoiceNumber: invoice.invoiceNumber });
+  }
+
+  /** Closes the Record Payment panel, sending nothing. */
+  closeRecordPayment(): void {
+    this.recordPaymentInvoice.set(null);
+  }
+
+  /**
+   * The payment was accepted — queued at Finance (FR 28; spec 11 FR 15). The panel closes, the list says
+   * so and re-runs the search. The row's figures move once Finance's snapshot reaches Billing, which may be
+   * a moment after this re-read, so the sentence says *submitted*, not *paid*.
+   */
+  onPaymentRecorded(response: OfflinePaymentSubmittedResponse): void {
+    const target = this.recordPaymentInvoice();
+    this.recordPaymentInvoice.set(null);
+    this.actionSuccess.set(
+      `Payment submitted on ${target?.invoiceNumber ?? response.invoiceId}. ` +
+        'It will appear on the invoice once the payment service records it.'
+    );
     this.runSearch();
   }
 
