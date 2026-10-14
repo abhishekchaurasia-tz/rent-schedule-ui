@@ -374,6 +374,10 @@ export class RentAgreementCreateComponent {
       // hides the control rather than disabling it, and the payload builders below send false when the
       // term is not fixed, so a value left over from a term the user switched away from cannot leak.
       switchToMonthToMonth: [false],
+
+      // Backend spec 19, BR-01. Sent on create only; disabled on edit because the terms update
+      // ignores it (BR-02) and only a unit switch changes it.
+      isHoa: [false],
       dueOnDay: [1],
       dueOnDays: this.fb.array([this.fb.control(1), this.fb.control(15)]),
       dayOfWeek: [1],
@@ -527,10 +531,15 @@ export class RentAgreementCreateComponent {
             // an edit that does not resubmit this clears it. Reading it back is what lets the edit
             // resubmit what was saved. ?? false covers a server older than v108, which omits the field.
             switchToMonthToMonth: agreement.switchToMonthToMonth ?? false,
+
+            // Backend spec 19, BR-01/BR-02. Shown, never resubmitted: saveEdit leaves it out, and the
+            // control is disabled below because the terms update cannot change it.
+            isHoa: agreement.isHoa ?? false,
             ...frequencyConfigToFormValue(agreement.frequencyConfig)
           },
           { emitEvent: false }
         );
+        this.form.controls['isHoa'].disable({ emitEvent: false });
 
         // Seeded from the response so a saved override shows as an override on load, rather than
         // looking like a fresh computed share the user could clear without realising it changed anything.
@@ -1402,6 +1411,9 @@ export class RentAgreementCreateComponent {
       // answer (FR-134f), but sending the coherent value means the request says what the user was
       // actually shown rather than relying on the server to correct it.
       switchToMonthToMonth: this.switchToMonthToMonthForSubmission(value),
+
+      // Backend spec 19, BR-01. Create only -- saveEdit deliberately leaves it out.
+      isHoa: Boolean(value.isHoa),
       // Every previewed row is sent — a row the user removed via the kebab menu's Delete is still
       // submitted, flagged isCancelled, so the backend persists it directly with a Cancelled status
       // (spec v39) instead of it never existing.

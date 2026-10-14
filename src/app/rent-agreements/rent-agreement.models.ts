@@ -229,6 +229,11 @@ export interface CreateRentAgreementRequest {
    * no job that flips a term at its end.
    */
   switchToMonthToMonth?: boolean;
+  /**
+   * Whether this is an HOA agreement, billed as HOA Fee instead of rent (backend spec 19, BR-01).
+   * Optional; absent means a rental. Create only: the terms update ignores it (BR-02).
+   */
+  isHoa?: boolean;
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges?: AdditionalChargeCreationRequest[];
 }
@@ -392,6 +397,12 @@ export interface RentAgreementDetailResponse {
    * because a server older than v108 does not send it.
    */
   switchToMonthToMonth?: boolean;
+
+  /**
+   * Whether this is an HOA agreement (backend spec 19, BR-01). Read-only here: the terms update ignores
+   * it and only a unit switch changes it. Optional because an older server does not send it.
+   */
+  isHoa?: boolean;
   fullRent: number;
   frequency: RentFrequency;
   frequencyConfig: FrequencyConfig;
