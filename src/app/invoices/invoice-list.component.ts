@@ -106,7 +106,6 @@ export class InvoiceListComponent implements OnInit {
     // "Fully Paid" rather than the wire's own word: it is what the design shows, and it is what a
     // property manager calls it.
     received: { label: 'Fully Paid', className: 'paid' },
-    overdue: { label: 'Overdue', className: 'overdue' },
     partial_paid: { label: 'Partially Paid', className: 'partial' },
     not_received: { label: 'Not Received', className: 'pending' },
     voided: { label: 'Voided', className: 'muted' },
@@ -140,7 +139,6 @@ export class InvoiceListComponent implements OnInit {
     'not_received',
     'partial_paid',
     'received',
-    'overdue',
     'voided',
     'deleted'
   ];
@@ -243,6 +241,8 @@ export class InvoiceListComponent implements OnInit {
       dueDateTo: [null as Date | null],
       outstandingOnly: [false],
       includeDeleted: [false],
+      // Spec 04 v12, FR 29: three choices, because `isOverdue=false` is a filter of its own.
+      overdue: ['any' as 'any' | 'yes' | 'no'],
       pageSize: [50]
     });
 
@@ -380,6 +380,7 @@ export class InvoiceListComponent implements OnInit {
       dueDateTo: toIsoDate(value.dueDateTo) ?? undefined,
       outstandingOnly: !!value.outstandingOnly,
       includeDeleted: !!value.includeDeleted,
+      isOverdue: value.overdue === 'yes' ? true : value.overdue === 'no' ? false : undefined,
       status: [...this.selectedStatuses()]
     };
   }

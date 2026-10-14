@@ -28,7 +28,9 @@ describe('InvoiceListComponent', () => {
     invoiceId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     invoiceNumber: 'INV-082026-000002',
     invoiceType: 'rent',
-    status: 'overdue',
+    // Spec 04 v12: overdue is a flag beside the status, never the status itself (backend v45).
+    status: 'not_received',
+    isOverdue: true,
     generatedOn: '2026-08-01',
     dueDate: '2026-08-27',
     total: 400,
@@ -48,6 +50,8 @@ describe('InvoiceListComponent', () => {
     invoiceId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     invoiceNumber: 'INV-082026-000001',
     status: 'received',
+    // Settled, so never overdue; the spread above would otherwise carry overdueRow's flag.
+    isOverdue: false,
     dueDate: '2026-08-14',
     total: 400,
     amountPaid: 400,
@@ -185,22 +189,65 @@ describe('InvoiceListComponent', () => {
   });
 
   it('sends two selected statuses as two repeated parameters, which the endpoint unions', () => {
-    component.toggleStatus('overdue');
+    component.toggleStatus('not_received');
     component.toggleStatus('partial_paid');
     component.search();
 
     const request = httpMock.expectOne((r) => r.url === invoicesUrl);
-    expect(request.request.params.getAll('status')).toEqual(['overdue', 'partial_paid']);
+    expect(request.request.params.getAll('status')).toEqual(['not_received', 'partial_paid']);
 
     request.flush(page([]));
   });
 
   it('toggles a status off again', () => {
-    component.toggleStatus('overdue');
-    expect(component.isStatusSelected('overdue')).toBeTrue();
+    component.toggleStatus('partial_paid');
+    expect(component.isStatusSelected('partial_paid')).toBeTrue();
 
-    component.toggleStatus('overdue');
-    expect(component.isStatusSelected('overdue')).toBeFalse();
+    component.toggleStatus('partial_paid');
+    expect(component.isStatusSelected('partial_paid')).toBeFalse();
+  });
+
+  it('offers no Overdue status chip: overdue is not a status since backend v45 (v12, FR 7)', () => {
+    search();
+
+    expect(component.statusOptions as string[]).not.toContain('overdue');
+    const chips = Array.from(fixture.nativeElement.querySelectorAll('.status-chips .chip')) as HTMLElement[];
+    expect(chips.map((chip) => chip.textContent!.trim())).not.toContain('Overdue');
+  });
+
+  it('sends no isOverdue while the Overdue filter reads Any (v12, FR 29)', () => {
+    expect(autoLoad.request.params.has('isOverdue')).toBeFalse();
+  });
+
+  ([
+    ['yes', 'true'],
+    ['no', 'false']
+  ] as const).forEach(([choice, wire]) => {
+    it(`sends isOverdue=${wire} for the Overdue filter's "${choice}", restarting at page 1 (v12, FR 29)`, () => {
+      search(page([paidRow], { pageNumber: 1, totalPages: 3, hasNextPage: true }));
+      component.goToPage(2);
+      httpMock.expectOne((r) => r.url === invoicesUrl && r.params.get('page') === '2').flush(page([]));
+
+      component.filters.get('overdue')!.setValue(choice);
+      component.onFilterChanged();
+      component.search();
+
+      const request = httpMock.expectOne((r) => r.url === invoicesUrl);
+      expect(request.request.params.get('isOverdue')).toBe(wire);
+      expect(request.request.params.get('page')).toBe('1');
+      request.flush(page([]));
+    });
+  });
+
+  it('shows the Overdue badge on a row the backend flags, and on no other (v12, FR 30)', () => {
+    search(page([overdueRow, paidRow]));
+
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('tbody tr')) as HTMLElement[];
+    const flagged = rows.find((row) => row.textContent!.includes(overdueRow.invoiceNumber))!;
+    const settled = rows.find((row) => row.textContent!.includes(paidRow.invoiceNumber))!;
+    expect(flagged.querySelector('.status-badge.overdue')?.textContent?.trim()).toBe('Overdue');
+    expect(flagged.querySelector('.status-badge.pending')?.textContent?.trim()).toBe('Not Received');
+    expect(settled.querySelector('.status-badge.overdue')).toBeNull();
   });
 
   it('resets to page 1 when a filter changes after paging forward', () => {
@@ -222,14 +269,14 @@ describe('InvoiceListComponent', () => {
     request.flush(page([]));
   });
 
-  it('labels `received` as Fully Paid and `overdue` as Overdue, each with its badge class', () => {
+  it('labels `received` as Fully Paid and `not_received` as Not Received, each with its badge class', () => {
     search();
 
     expect(component.statusPresentation('received')).toEqual({ label: 'Fully Paid', className: 'paid' });
-    expect(component.statusPresentation('overdue')).toEqual({ label: 'Overdue', className: 'overdue' });
+    expect(component.statusPresentation('not_received')).toEqual({ label: 'Not Received', className: 'pending' });
     expect(fixture.nativeElement.textContent).toContain('Fully Paid');
     expect(fixture.nativeElement.querySelector('.status-badge.paid')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('.status-badge.overdue')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.status-badge.pending')).toBeTruthy();
   });
 
   it('shows the invoice type, labelled the way the backend\'s own display names read (v6)', () => {

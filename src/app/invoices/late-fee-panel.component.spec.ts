@@ -37,7 +37,7 @@ describe('LateFeePanelComponent', () => {
     fixture = TestBed.createComponent(LateFeePanelComponent);
     component = fixture.componentInstance;
     component.invoiceId = invoiceId;
-    component.invoiceStatus = 'overdue';
+    component.invoiceStatus = 'not_received';
     httpMock = TestBed.inject(HttpTestingController);
   });
 

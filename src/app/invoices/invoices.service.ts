@@ -124,6 +124,12 @@ export class InvoicesService {
       params = params.set('includeDeleted', 'true');
     }
 
+    // Both values go on the wire: `isOverdue=false` selects the invoices that are not overdue
+    // (backend v45, FR 53), so only an absent filter is left off.
+    if (query.isOverdue !== undefined) {
+      params = params.set('isOverdue', String(query.isOverdue));
+    }
+
     // `append`, not `set`: the endpoint unions repeated `status` parameters, and `set` would keep only
     // the last one — quietly narrowing a two-status filter to one.
     for (const status of query.status ?? []) {

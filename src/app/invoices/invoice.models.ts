@@ -84,7 +84,12 @@ export interface InvoiceDetailResponse {
   /** True once a property owner has corrected this invoice since it was raised. */
   isManuallyUpdated: boolean;
   propertyTimeZone: string;
-  overdueMarkedOn?: string | null;
+  /**
+   * Whether the invoice is overdue — due before today at its property, money owed, nothing in flight —
+   * worked out by the backend when it is read (backend `02-invoicing.md` v45, FR 52). Replaces
+   * `overdueMarkedOn`. Optional, so an older API answers as before.
+   */
+  isOverdue?: boolean;
   voidedAt?: string | null;
   deletedAt?: string | null;
   /** The stream version this document reflects. */
@@ -145,14 +150,15 @@ export interface InvoiceDetailResponse {
  * API serializes every enum with `JsonStringEnumConverter(SnakeCaseLower)`.
  *
  * Derived by the backend's fold from the stored facts (`voidedAt`, `deletedAt`, `balance`,
- * `overdueMarkedOn`, `amountPaid`) and never stored independently, so a client must render it and never
- * recompute it.
+ * `amountPaid`) and never stored independently, so a client must render it and never recompute it.
+ *
+ * **No `overdue` since backend `02-invoicing.md` v45** (spec 04 v12): overdue is the separate
+ * `isOverdue` flag, and `status=overdue` answers `400`.
  */
 export type InvoiceStatus =
   | 'not_received'
   | 'partial_paid'
   | 'received'
-  | 'overdue'
   | 'voided'
   | 'deleted';
 
@@ -200,6 +206,13 @@ export interface InvoiceSummaryResponse {
    * `07-late-fee-ui.md` FR 1, FR 17). Optional, so an API older than the late fee work answers as before.
    */
   lateFeeAmount?: number;
+
+  /**
+   * Whether the invoice is overdue, worked out by the backend when the list is read (backend
+   * `02-invoicing.md` v45, FR 52; spec 04 v12, FR 30). Never recomputed here from `dueDate`: "today"
+   * is the property's, which this client does not know.
+   */
+  isOverdue?: boolean;
 }
 
 /**
@@ -254,6 +267,11 @@ export interface InvoiceSearchQuery {
   generatedOnFrom?: string;
   generatedOnTo?: string;
   includeDeleted?: boolean;
+  /**
+   * `true` for overdue invoices only, `false` for the ones that are not (backend v45, FR 53). Sent
+   * whenever it is defined, because `false` is a filter of its own, not the absence of one.
+   */
+  isOverdue?: boolean;
   propertyId?: string;
   propertyUnitId?: string;
   tenantId?: string;
