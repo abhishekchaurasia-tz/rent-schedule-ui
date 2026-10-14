@@ -991,7 +991,10 @@ export class RentAgreementCreateComponent {
   private canGeneratePreview(): boolean {
     const value = this.form.value;
 
-    if (!value.startDate || !value.firstRentalDueDate || !(Number(value.rent) > 0)) {
+    // Rent 0 is allowed: a rent-free unit is a valid agreement with no schedule (backend spec 01
+    // FR-010/011). An empty field is not — `Number('')` is also 0, so it is checked separately.
+    const rentEntered = value.rent !== null && value.rent !== '' && Number(value.rent) >= 0;
+    if (!value.startDate || !value.firstRentalDueDate || !rentEntered) {
       return false;
     }
     if (value.leaseTermType === 'fixed' && !value.endDate) {
@@ -1035,6 +1038,20 @@ export class RentAgreementCreateComponent {
     this.saveResult.set(null);
 
     const value = this.form.value;
+
+    // A rent-free unit generates no schedule, so there is nothing to ask the preview endpoint for —
+    // and it would refuse anyway ("Rent must be greater than 0"). The empty schedule is set here
+    // instead, which is what the Save button waits for: without it the button never rendered and a
+    // zero-rent agreement could not be saved from this screen. Create accepts rent 0 with no rows.
+    if (Number(value.rent) === 0) {
+      this.previewResult.set({ rows: [], totalInvoices: 0, totalAmount: 0, blocked: [], warnings: [] });
+      this.lastPreviewSignature = this.scheduleSignature();
+      this.previewLoading.set(false);
+      this.manuallyChangedRowDates.set(new Set());
+      this.cancelledRowDates.set(new Set());
+      this.closeRowMenu();
+      return;
+    }
 
     this.rentScheduleService
       .preview({
