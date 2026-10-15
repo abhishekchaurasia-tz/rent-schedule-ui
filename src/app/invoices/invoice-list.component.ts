@@ -23,6 +23,9 @@ import {
   PagedResult
 } from './invoice.models';
 import { reloadOnScopeChange } from '../scope-change';
+import { InvoiceNotesPanelComponent } from './invoice-notes-panel.component';
+import { NotesCountResult } from './invoice-notes.models';
+import { InvoiceNotesService } from './invoice-notes.service';
 import { InvoicesService } from './invoices.service';
 import { LateFeePanelComponent } from './late-fee-panel.component';
 import { RecordPaymentPanelComponent } from './record-payment-panel.component';
@@ -94,7 +97,8 @@ export type AddInvoiceStep = 'agreement' | 'fee' | null;
     MatDatepickerModule,
     AdditionalChargePanelComponent,
     LateFeePanelComponent,
-    RecordPaymentPanelComponent
+    RecordPaymentPanelComponent,
+    InvoiceNotesPanelComponent
   ],
   providers: [provideNativeDateAdapter()],
   templateUrl: './invoice-list.component.html',
@@ -223,6 +227,24 @@ export class InvoiceListComponent implements OnInit {
   /** The invoice whose Record Payment panel is open (spec v11, FR 28); `null` when none is. */
   readonly recordPaymentInvoice = signal<{ invoiceId: string; invoiceNumber: string } | null>(null);
 
+  /**
+   * The invoice whose Notes & Files panel is open (Billing spec 20, Flow 1); `null` when none is. It carries
+   * the agreement because the panel's Related list follows it (spec 20 Flow 1 step 4).
+   */
+  readonly notesInvoice = signal<{ invoiceId: string; invoiceNumber: string; rentAgreementId: string | null } | null>(
+    null
+  );
+
+  /**
+   * Each row's "Notes (n)" count, read from merlin when the row's menu opens (spec 20, P6); `null` while
+   * that read is in flight.
+   *
+   * **Read per menu, not per page.** The count lives in merlin, one read per invoice; reading it for every
+   * row of a 50-row page on every search would put fifty calls on another service for a number nobody has
+   * looked at. Re-read on every opening, so a note posted a moment ago is counted.
+   */
+  readonly notesCounts = signal<ReadonlyMap<string, NotesCountResult | null>>(new Map());
+
   /** The 1-based page to request next. Reset to 1 by any filter change. */
   private page = 1;
 
@@ -231,7 +253,8 @@ export class InvoiceListComponent implements OnInit {
   constructor(
     private readonly fb: FormBuilder,
     private readonly invoices: InvoicesService,
-    private readonly agreements: RentAgreementsService
+    private readonly agreements: RentAgreementsService,
+    private readonly invoiceNotes: InvoiceNotesService
   ) {
     this.filters = this.fb.group({
       invoiceNumber: [''],
@@ -637,6 +660,7 @@ export class InvoiceListComponent implements OnInit {
     this.openRowMenuInvoiceId.set(invoice.invoiceId);
     this.pendingRowAction.set(null);
     this.actionError.set(null);
+    this.loadNotesCount(invoice.invoiceId);
   }
 
   /** Opens the late fee panel for `invoice`, closing the row menu it was opened from (spec 07 FR 2). */
@@ -689,6 +713,35 @@ export class InvoiceListComponent implements OnInit {
         'It will appear on the invoice once the payment service records it.'
     );
     this.runSearch();
+  }
+
+  /**
+   * How the row menu's Notes item reads (spec 20, Flow 1 step 1): `Notes (n)` once merlin has counted,
+   * `Notes (…)` while it counts, and plain `Notes` when it could not — never `Notes (0)` for a count that
+   * was not read.
+   */
+  notesLabel(invoice: InvoiceSummaryResponse): string {
+    const count = this.notesCounts().get(invoice.invoiceId);
+    if (count === undefined || count === null) {
+      return 'Notes (…)';
+    }
+
+    return count.unavailable ? 'Notes' : `Notes (${count.count})`;
+  }
+
+  /** Opens the Notes & Files panel for `invoice`, closing the row menu it was opened from (spec 20, Flow 1). */
+  openNotes(invoice: InvoiceSummaryResponse): void {
+    this.closeRowMenu();
+    this.notesInvoice.set({
+      invoiceId: invoice.invoiceId,
+      invoiceNumber: invoice.invoiceNumber,
+      rentAgreementId: invoice.rentAgreementId ?? null
+    });
+  }
+
+  /** Closes the Notes & Files panel. Nothing in the list changes; the count is re-read on the next menu. */
+  closeNotes(): void {
+    this.notesInvoice.set(null);
   }
 
   /** Closes the ⋮ menu and abandons any confirmation it was showing. */
@@ -752,6 +805,13 @@ export class InvoiceListComponent implements OnInit {
         this.actionError.set({ invoiceId: invoice.invoiceId, message: InvoiceListComponent.describeError(err) });
       }
     });
+  }
+
+  private loadNotesCount(invoiceId: string): void {
+    this.notesCounts.update((counts) => new Map(counts).set(invoiceId, null));
+    this.invoiceNotes
+      .count(invoiceId)
+      .subscribe((count) => this.notesCounts.update((counts) => new Map(counts).set(invoiceId, count)));
   }
 
   private static describeError(err: HttpErrorResponse): string {

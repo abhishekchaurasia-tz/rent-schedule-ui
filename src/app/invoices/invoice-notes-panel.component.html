@@ -1,0 +1,261 @@
+<!--
+  The Notes & Files side panel (Billing spec 20-invoice-notes-files.md, Flows 1 – 4), laid out as the owner
+  app's Notes & Files panel. A fixed side panel over the shared overlay, as the late fee and Record Payment
+  panels sit.
+-->
+<div class="panel-overlay" (click)="close()"></div>
+
+<aside class="side-panel" role="dialog" aria-label="Notes & Files">
+  <div class="panel-head">
+    <button type="button" class="close-btn" (click)="close()" aria-label="Close">&times;</button>
+    <h2>NOTES &amp; FILES</h2>
+    <span class="invoice-number mono">{{ invoiceNumber }}</span>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" class="tab-btn notes-tab" [class.active]="tab() === 'notes'" (click)="selectTab('notes')">
+      NOTES
+    </button>
+    <button type="button" role="tab" class="tab-btn files-tab" [class.active]="tab() === 'files'" (click)="selectTab('files')">
+      FILES
+    </button>
+  </div>
+
+  <div class="panel-body">
+    <!-- Flow 2, Flow 3: text, files, or both. Each file is staged at merlin as soon as it is chosen. -->
+    <section class="composer">
+      <textarea [formControl]="noteText" rows="3" placeholder="Add a note…" aria-label="Note"></textarea>
+
+      @if (staged().length > 0) {
+        <ul class="staged">
+          @for (entry of staged(); track entry.key) {
+            <li class="staged-file">
+              <span class="staged-name">{{ entry.name }}</span>
+              @if (entry.staged === null) {
+                <span class="hint">Uploading…</span>
+              }
+              <button type="button" class="remove-staged" (click)="removeStaged(entry.key)" [attr.aria-label]="'Remove ' + entry.name">
+                &times;
+              </button>
+            </li>
+          }
+        </ul>
+      }
+
+      <!-- Spec Flow 1 step 6: a file that is not added is reported, never dropped silently. -->
+      @if (rejections().length > 0) {
+        <ul class="rejections">
+          @for (message of rejections(); track $index) {
+            <li>{{ message }}</li>
+          }
+        </ul>
+      }
+
+      <div class="composer-actions">
+        <label class="attach-btn">
+          Attach files
+          <input type="file" multiple [accept]="accept" (change)="onFilesChosen($event)" />
+        </label>
+        <span class="hint">jpg, jpeg, png, pdf, doc, docx, xls, xlsx, txt — up to 20 MB each</span>
+        <button type="button" class="primary-btn post-btn" [disabled]="!canPost" (click)="post()">
+          {{ posting() ? 'Posting…' : 'Post' }}
+        </button>
+      </div>
+
+      @if (postError(); as message) {
+        <p class="post-error">{{ message }}</p>
+      }
+    </section>
+
+    <!-- Flow 1 step 5: date range, category and user, per tab. -->
+    <section class="filters">
+      <label>
+        <span class="label">From</span>
+        <input type="date" name="startDate" [value]="filter.startDate ?? ''" (change)="applyFilter({ startDate: $any($event.target).value || null })" />
+      </label>
+      <label>
+        <span class="label">To</span>
+        <input type="date" name="endDate" [value]="filter.endDate ?? ''" (change)="applyFilter({ endDate: $any($event.target).value || null })" />
+      </label>
+      <select name="category" aria-label="Category" (change)="applyFilter({ categoryId: $any($event.target).value })">
+        <option value="" [selected]="filter.categoryId === ''">All categories</option>
+        @for (option of categories.options; track option.value) {
+          <option [value]="option.value" [selected]="option.value === filter.categoryId">{{ option.text }}</option>
+        }
+      </select>
+      <select name="user" aria-label="User" (change)="applyFilter({ userId: $any($event.target).value })">
+        <option value="" [selected]="filter.userId === ''">All users</option>
+        @for (option of users().options; track option.value) {
+          <option [value]="option.value" [selected]="option.value === filter.userId">{{ option.text }}</option>
+        }
+      </select>
+      <button type="button" class="link-btn clear-filters" (click)="clearFilters()">Clear</button>
+    </section>
+
+    <!-- Flow 1 step 3: this invoice's own notes or files, five a page. -->
+    <section class="primary-list">
+      @if (primary.unavailable) {
+        <p class="unavailable">{{ tab() === 'notes' ? messages.notesUnavailable : messages.filesUnavailable }}</p>
+      } @else if (primary.page === 0) {
+        <p class="hint">Loading…</p>
+      } @else if (primary.items.length === 0 && !primary.loading) {
+        <p class="empty">{{ tab() === 'notes' ? messages.noNotes : messages.noFiles }}</p>
+      }
+
+      @for (item of primary.items; track idOf(item)) {
+        <ng-container
+          *ngTemplateOutlet="tab() === 'notes' ? noteItem : fileItem; context: { $implicit: item, own: true }"
+        ></ng-container>
+      }
+
+      @if (primary.moreFailed) {
+        <p class="unavailable">{{ messages.moreUnavailable }}</p>
+      }
+      @if (primary.remaining > 0 && !primary.unavailable) {
+        <button type="button" class="link-btn view-more" [disabled]="primary.loading" (click)="viewMorePrimary()">
+          View More
+        </button>
+      }
+    </section>
+
+    <!-- Flow 1 step 4: the lease's and the agreement's other notes and files, read on first expansion. -->
+    <section class="related">
+      <button type="button" class="related-toggle" [attr.aria-expanded]="isRelatedOpen" (click)="toggleRelated()">
+        <span aria-hidden="true">{{ isRelatedOpen ? '▾' : '▸' }}</span> Related
+      </button>
+
+      @if (isRelatedOpen) {
+        <div class="related-list">
+          @if (related.unavailable) {
+            <p class="unavailable">{{ messages.relatedUnavailable }}</p>
+          } @else if (related.page === 0) {
+            <p class="hint">Loading…</p>
+          } @else if (related.items.length === 0 && !related.loading) {
+            <p class="empty">{{ messages.noRelated }}</p>
+          }
+
+          @for (item of related.items; track idOf(item)) {
+            <ng-container
+              *ngTemplateOutlet="tab() === 'notes' ? noteItem : fileItem; context: { $implicit: item, own: false }"
+            ></ng-container>
+          }
+
+          @if (related.moreFailed) {
+            <p class="unavailable">{{ messages.moreUnavailable }}</p>
+          }
+          @if (related.remaining > 0 && !related.unavailable) {
+            <button type="button" class="link-btn view-more" [disabled]="related.loading" (click)="viewMoreRelated()">
+              View More
+            </button>
+          }
+        </div>
+      }
+    </section>
+  </div>
+</aside>
+
+<!--
+  One item's heading. In Related, a Billing invoice's item opens that invoice here, as the invoice list's
+  own Correct link does; a legacy invoice's (no BillingInvoiceId) is not viewed in this app, so it is text.
+  This invoice's own items need no link.
+-->
+<ng-template #heading let-item let-own="own">
+  @if (!own && item.billingInvoiceId) {
+    <a class="item-heading link" [routerLink]="['/invoices/update']" [queryParams]="{ invoiceId: item.billingInvoiceId }">
+      {{ item.heading }}
+    </a>
+  } @else {
+    <span class="item-heading">{{ item.heading }}</span>
+  }
+</ng-template>
+
+<!-- Flow 4: edit and delete on this invoice's own items only. -->
+<ng-template #actions let-item let-kind="kind" let-id="id">
+  @if (isConfirmingDelete(kind, id)) {
+    <div class="confirm-delete">
+      <span>{{ kind === 'notes' ? 'Delete this note?' : 'Delete this file?' }} This cannot be undone.</span>
+      <button type="button" class="danger-btn" [disabled]="rowWorking()" (click)="confirmDelete()">
+        {{ rowWorking() ? 'Deleting…' : 'Delete' }}
+      </button>
+      <button type="button" class="ghost-btn cancel-btn" [disabled]="rowWorking()" (click)="cancelDelete()">Cancel</button>
+    </div>
+  } @else if (!isEditing(kind, id)) {
+    <div class="item-actions">
+      <button type="button" class="link-btn edit-btn" (click)="startEdit(kind, item)">
+        {{ kind === 'notes' ? 'Edit' : 'Rename' }}
+      </button>
+      <button type="button" class="link-btn danger delete-btn" (click)="askDelete(kind, item)">Delete</button>
+    </div>
+  }
+  @if (errorFor(kind, id); as message) {
+    <p class="row-error">{{ message }}</p>
+  }
+</ng-template>
+
+<ng-template #noteItem let-item let-own="own">
+  <article class="item">
+    <div class="item-head">
+      <ng-container *ngTemplateOutlet="heading; context: { $implicit: item, own: own }"></ng-container>
+      <span class="item-meta">{{ item.lastModifiedBy }} · {{ item.lastModifiedAt | date: 'MMM d, y, h:mm a' }}</span>
+    </div>
+    @if (item.propertyDetails) {
+      <div class="item-meta">{{ item.propertyDetails }}</div>
+    }
+
+    @if (own && isEditing('notes', item.noteId)) {
+      <textarea class="edit-input" [formControl]="editText" rows="3" aria-label="Note text"></textarea>
+      <div class="item-actions">
+        <button type="button" class="primary-btn save-edit" [disabled]="rowWorking() || !editText.value.trim()" (click)="saveEdit()">
+          {{ rowWorking() ? 'Saving…' : 'Save' }}
+        </button>
+        <button type="button" class="ghost-btn" (click)="cancelEdit()">Cancel</button>
+      </div>
+    } @else {
+      <p class="item-text">{{ item.text }}</p>
+    }
+
+    @if (item.files.length > 0) {
+      <ul class="item-files">
+        @for (attached of item.files; track attached.attachmentId) {
+          <li>
+            <a [href]="attached.downloadUrl" target="_blank" rel="noopener">{{ attached.fileName }}</a>
+            <span class="item-meta">{{ attached.fileSize }}</span>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (own) {
+      <ng-container *ngTemplateOutlet="actions; context: { $implicit: item, kind: 'notes', id: item.noteId }"></ng-container>
+    }
+  </article>
+</ng-template>
+
+<ng-template #fileItem let-item let-own="own">
+  <article class="item">
+    <div class="item-head">
+      <ng-container *ngTemplateOutlet="heading; context: { $implicit: item, own: own }"></ng-container>
+      <span class="item-meta">{{ item.lastModifiedBy }} · {{ item.lastModifiedAt | date: 'MMM d, y, h:mm a' }}</span>
+    </div>
+    @if (item.propertyDetails) {
+      <div class="item-meta">{{ item.propertyDetails }}</div>
+    }
+
+    @if (own && isEditing('files', item.attachmentId)) {
+      <input type="text" class="edit-input" [formControl]="editText" aria-label="File name" />
+      <div class="item-actions">
+        <button type="button" class="primary-btn save-edit" [disabled]="rowWorking() || !editText.value.trim()" (click)="saveEdit()">
+          {{ rowWorking() ? 'Saving…' : 'Save' }}
+        </button>
+        <button type="button" class="ghost-btn" (click)="cancelEdit()">Cancel</button>
+      </div>
+    } @else {
+      <a class="file-name" [href]="item.downloadUrl" target="_blank" rel="noopener">{{ item.fileName }}</a>
+      <span class="item-meta">{{ item.fileType }} · {{ item.fileSize }}</span>
+    }
+
+    @if (own) {
+      <ng-container *ngTemplateOutlet="actions; context: { $implicit: item, kind: 'files', id: item.attachmentId }"></ng-container>
+    }
+  </article>
+</ng-template>

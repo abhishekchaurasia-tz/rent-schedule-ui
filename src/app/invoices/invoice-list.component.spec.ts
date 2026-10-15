@@ -402,11 +402,30 @@ describe('InvoiceListComponent', () => {
     expect(component.loading()).toBeFalse();
   });
 
-  /** Clicks row `rowIndex`'s ⋮ button, opening its menu (Correct, and Delete/Void when offered). */
-  function openRowMenu(rowIndex: number): void {
+  /**
+   * Where the "Notes (n)" count is read (spec 20, Flow 1 step 1): merlin's primary notes read, whose
+   * `PagingModel.TotalRecords` is the count. merlin's `GetNotesCount` cannot bind a query-string filter.
+   */
+  const notesCountUrl = `${environment.monolithBaseUrl}/PropertyOwner/Notes/GetPrimaryNotes`;
+
+  /** merlin's answer to that read, with `total` notes. */
+  const notesTotal = (total: number) => ({ Data: { Collection: [], PagingModel: { CurrentPage: 1, TotalRecords: total } } });
+
+  /**
+   * Clicks row `rowIndex`'s ⋮ button, opening its menu (Correct, and Delete/Void when offered).
+   *
+   * Opening the menu also reads the row's "Notes (n)" count from merlin (spec 20); it is answered here
+   * with `0` so `verify()` passes, unless the test answers it itself (`answerNotesCount = false`).
+   */
+  function openRowMenu(rowIndex: number, answerNotesCount = true): void {
     const rows = fixture.nativeElement.querySelectorAll('tbody tr');
     (rows[rowIndex].querySelector('.row-menu-btn') as HTMLElement).click();
     fixture.detectChanges();
+
+    if (answerNotesCount) {
+      httpMock.match((r) => r.url === notesCountUrl).forEach((request) => request.flush(notesTotal(0)));
+      fixture.detectChanges();
+    }
   }
 
   it('links each row to the correction page carrying its invoice id, from its ⋮ menu', () => {
@@ -1041,6 +1060,98 @@ describe('InvoiceListComponent', () => {
         `Payment submitted on ${overdueRow.invoiceNumber}. It will appear on the invoice once the payment service records it.`
       );
       expect(fixture.nativeElement.querySelector('.banner.success')?.textContent).toContain('Payment submitted');
+    });
+  });
+
+  describe('Notes & Files (Billing spec 20, Flow 1)', () => {
+    const merlin = `${environment.monolithBaseUrl}/PropertyOwner`;
+
+    function notesItem(): HTMLElement | undefined {
+      return Array.from(fixture.nativeElement.querySelectorAll('.row-menu .row-menu-item')).find((candidate) =>
+        (candidate as HTMLElement).textContent!.trim().startsWith('Notes')
+      ) as HTMLElement | undefined;
+    }
+
+    it('reads the row\'s own count from merlin when its menu opens, by BillingInvoiceId (P6, BR-22)', () => {
+      search();
+      openRowMenu(1, false);
+
+      expect(notesItem()?.textContent!.trim()).toBe('Notes (…)');
+
+      const count = httpMock.expectOne((r) => r.url === notesCountUrl);
+      expect(count.request.method).toBe('POST');
+      expect(count.request.body.PrimaryNoteTypeId).toBe(257);
+      expect(count.request.body.BillingInvoiceId).toBe(overdueRow.invoiceId);
+      expect(count.request.body.PageNumber).toBe(1);
+      expect(Object.keys(count.request.body).map((key) => key.toLowerCase())).not.toContain('invoiceid');
+      httpMock.expectNone((r) => r.url.includes('GetNotesCount'));
+      count.flush(notesTotal(3));
+      fixture.detectChanges();
+
+      expect(notesItem()?.textContent!.trim()).toBe('Notes (3)');
+    });
+
+    it('offers Notes on every row, a voided and a deleted one included', () => {
+      search(page([{ ...paidRow, status: 'voided' }, { ...overdueRow, status: 'deleted' }]));
+
+      [0, 1].forEach((rowIndex) => {
+        openRowMenu(rowIndex);
+        expect(notesItem()?.textContent!.trim()).toBe('Notes (0)');
+        component.closeRowMenu();
+        fixture.detectChanges();
+      });
+    });
+
+    it('says Notes without a number when merlin cannot count, rather than claiming none', () => {
+      search();
+      openRowMenu(0, false);
+
+      httpMock.expectOne((r) => r.url === notesCountUrl).flush('', { status: 401, statusText: 'Unauthorized' });
+      fixture.detectChanges();
+
+      expect(notesItem()?.textContent!.trim()).toBe('Notes');
+    });
+
+    it('opens the panel for the row with its id, number and agreement, and closes the menu', () => {
+      search();
+      openRowMenu(1);
+
+      notesItem()!.click();
+      fixture.detectChanges();
+
+      expect(component.openRowMenuInvoiceId()).toBeNull();
+      expect(component.notesInvoice()).toEqual({
+        invoiceId: overdueRow.invoiceId,
+        invoiceNumber: overdueRow.invoiceNumber,
+        rentAgreementId: overdueRow.rentAgreementId!
+      });
+      expect(fixture.nativeElement.querySelector('app-invoice-notes-panel')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('app-invoice-notes-panel .invoice-number').textContent.trim()).toBe(
+        overdueRow.invoiceNumber
+      );
+
+      // The panel's opening reads: both primary lists and the three filter lists, all naming the invoice.
+      const opening = httpMock.match((r) => r.url.startsWith(merlin));
+      expect(opening.length).toBe(5);
+      opening.forEach((request) => {
+        const named = request.request.body?.BillingInvoiceId ?? request.request.params.get('BillingInvoiceId');
+        expect(named).withContext(request.request.url).toBe(overdueRow.invoiceId);
+        request.flush({ Data: null });
+      });
+    });
+
+    it('closing the panel removes it with nothing re-read', () => {
+      search();
+      component.openNotes(overdueRow);
+      fixture.detectChanges();
+      httpMock.match((r) => r.url.startsWith(merlin)).forEach((request) => request.flush({ Data: null }));
+
+      component.closeNotes();
+      fixture.detectChanges();
+
+      expect(component.notesInvoice()).toBeNull();
+      expect(fixture.nativeElement.querySelector('app-invoice-notes-panel')).toBeNull();
+      httpMock.expectNone((r) => r.url === invoicesUrl);
     });
   });
 });
