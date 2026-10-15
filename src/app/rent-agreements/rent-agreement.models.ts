@@ -656,8 +656,8 @@ export interface AgreementTenantsResponse {
  * - **`version` is the caller's ordering fence.** A call carrying a version *below* the stored one is
  *   rejected as out of order (`409`), which is what stops a delayed retry from overwriting newer state.
  *   Nothing here issues versions, so the first activation sends `1`.
- * - **`activatedAt` is now**, converted server-side to a date in the property's own time zone before the
- *   begin-date gate judges it.
+ * - **`activatedAt` is now**, as the Lease service sends it when signing completes. Any day is accepted,
+ *   including one before the lease starts (backend spec `01-rent-agreement.md` v139, FR-165).
  */
 export interface ActivateRentAgreementRequest {
   leaseId: string;
@@ -793,6 +793,11 @@ export interface CancelRentAgreementResponse {
   proposalsDeleted: number;
   /** How many tenant splits were withdrawn — always `0` on a repeat. */
   tenantsDeleted: number;
+  /**
+   * How many issued invoices were voided — non-zero only for an activated lease cancelled before it
+   * started (backend spec `01-rent-agreement.md` v139, FR-168); always `0` on a repeat.
+   */
+  invoicesVoided: number;
 }
 
 export interface UpdateRentAgreementTermsRequest {

@@ -5,17 +5,20 @@
     earlier cut tried a grey "activate this lease first" note) rather than an absent one, and it left a
     lease that fell through with no way to be disposed of short of deleting its rows one by one.
   -->
-  @if (isDraft()) {
+  @if (canCancel()) {
     @if (cancelResult(); as result) {
       <div class="banner" [class.success]="!result.alreadyCancelled" [class.info]="result.alreadyCancelled">
         @if (result.alreadyCancelled) {
           <strong>Already cancelled.</strong>
-          <p>This draft was already cancelled. Nothing changed.</p>
+          <p>This lease was already cancelled. Nothing changed.</p>
         } @else {
-          <strong>Draft cancelled.</strong>
+          <strong>{{ isDraft() ? 'Draft cancelled.' : 'Lease cancelled.' }}</strong>
           <p>
             {{ result.cyclesDeleted }} cycle(s), {{ result.chargesDeleted }} charge(s) and
             {{ result.tenantsDeleted }} tenant(s) withdrawn.
+            @if (result.invoicesVoided > 0) {
+              {{ result.invoicesVoided }} invoice(s) voided.
+            }
           </p>
         }
       </div>
@@ -27,7 +30,7 @@
           [disabled]="working()"
           (click)="confirm('cancelDraft')"
         >
-          Cancel this draft
+          {{ isDraft() ? 'Cancel this draft' : 'Cancel this lease' }}
         </button>
       </div>
     }
@@ -182,20 +185,29 @@
   -->
   @if (pendingAction() === 'cancelDraft') {
     <div class="confirm">
-      <strong>Cancel this draft?</strong>
+      <strong>{{ isDraft() ? 'Cancel this draft?' : 'Cancel this lease?' }}</strong>
 
-      <p>
-        This draft was never activated, so nothing has been billed. Cancelling removes it — its
-        schedule, additional charges and tenant roster — for good.
-        <strong>This cannot be undone.</strong>
-      </p>
+      @if (isDraft()) {
+        <p>
+          This draft was never activated, so nothing has been billed. Cancelling removes it — its
+          schedule, additional charges and tenant roster — for good.
+          <strong>This cannot be undone.</strong>
+        </p>
+      } @else {
+        <p>
+          This lease has not started. Cancelling voids its invoices and removes it — its schedule,
+          additional charges and tenant roster — for good. It is refused once a payment has been
+          applied; terminate the lease instead.
+          <strong>This cannot be undone.</strong>
+        </p>
+      }
 
       <div class="confirm-actions">
         <button type="button" class="danger" [disabled]="working()" (click)="cancelAgreement()">
-          {{ working() ? 'Cancelling…' : 'Cancel draft' }}
+          {{ working() ? 'Cancelling…' : (isDraft() ? 'Cancel draft' : 'Cancel lease') }}
         </button>
         <button type="button" class="secondary" [disabled]="working()" (click)="cancel()">
-          Keep draft
+          {{ isDraft() ? 'Keep draft' : 'Keep lease' }}
         </button>
       </div>
     </div>
