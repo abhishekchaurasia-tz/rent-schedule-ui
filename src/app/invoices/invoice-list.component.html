@@ -296,6 +296,9 @@
                 </button>
               }
 
+              <!-- Billing spec 20, Flow 1: every row; the count is this invoice's own notes, read from merlin. -->
+              <button type="button" class="row-menu-item" (click)="openNotes(invoice)">{{ notesLabel(invoice) }}</button>
+
               <!--
                 Spec v10, FR 27. On deposit rows only, and a link rather than an action: whether the deposit
                 can be refunded is the refund view's answer (backend 15-deposit-refund.md BR-02, BR-03).
@@ -461,6 +464,16 @@
       [invoiceStatus]="target.status"
       (changed)="onLateFeeChanged()"
       (closed)="closeLateFee()"
+    />
+  }
+
+  <!-- Billing spec 20, Flow 1: one invoice's Notes & Files, served by merlin. -->
+  @if (notesInvoice(); as target) {
+    <app-invoice-notes-panel
+      [invoiceId]="target.invoiceId"
+      [invoiceNumber]="target.invoiceNumber"
+      [rentAgreementId]="target.rentAgreementId"
+      (closed)="closeNotes()"
     />
   }
 

@@ -2,10 +2,13 @@ import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { environment } from '../environments/environment';
+import { environment, environment as localBuild } from '../environments/environment';
+import { environment as devBuild } from '../environments/environment.dev';
+import { environment as productionBuild } from '../environments/environment.production';
+import { environment as qaBuild } from '../environments/environment.qa';
 
 import { RequestScopeService } from './request-scope.service';
-import { scopeHeadersInterceptor, sendsScopeIds, targetsApi } from './scope-headers.interceptor';
+import { requestTarget, scopeHeadersInterceptor, sendsScopeIds, targetsApi } from './scope-headers.interceptor';
 
 /**
  * Covers requirement 12d and 12e of `01-rent-agreement-edit-ui.md` v21 — the interceptor that sends the
@@ -250,6 +253,82 @@ describe('scopeHeadersInterceptor', () => {
 
     expect(targetsApi('/api', '/api/v1/invoices')).toBeTrue();
     expect(targetsApi('/api', 'https://example.test/something')).toBeFalse();
+  });
+
+  // -----------------------------------------------------------------------------------------------
+  // Spec 20 BR-23 (invoice notes & files). merlin was recognised by `/Home` alone, so on dev and qa
+  // (`apiBaseUrl = '/billing'`, `monolithBaseUrl = '/api'`) a `/api/PropertyOwner/...` request matched
+  // neither service and went out with no bearer -- merlin answered 401 and the Notes & Files panel
+  // could not load. The interceptor itself can only observe the local build, so the rule is asked
+  // directly with each build's real bases, imported from the environment files rather than retyped.
+  // -----------------------------------------------------------------------------------------------
+
+  const builds = [
+    { name: 'local', bases: localBuild },
+    { name: 'dev', bases: devBuild },
+    { name: 'qa', bases: qaBuild },
+    { name: 'production', bases: productionBuild }
+  ];
+
+  for (const build of builds) {
+    it(`BR23_${build.name}Build_MerlinNotesAndFilesPaths_AreMerlin`, () => {
+      const merlin = build.bases.monolithBaseUrl;
+
+      expect(requestTarget(build.bases, `${merlin}/PropertyOwner/Notes/GetPrimaryNotes`)).toBe('monolith');
+      expect(requestTarget(build.bases, `${merlin}/PropertyOwner/Notes/DeleteNote?noteId=41`)).toBe('monolith');
+      expect(requestTarget(build.bases, `${merlin}/PropertyOwner/AttachmentFiles/SaveAttachments`)).toBe('monolith');
+      expect(requestTarget(build.bases, `${merlin}/public/File/Upload/TempSaveFile`)).toBe('monolith');
+      // The path that was already merlin's stays merlin's.
+      expect(requestTarget(build.bases, `${merlin}/Home/DropDown/GetPropertyOwnerBankDetails`)).toBe('monolith');
+    });
+
+    it(`BR23_${build.name}Build_BillingCalls_AreUnchanged`, () => {
+      const billing = build.bases.apiBaseUrl;
+
+      expect(requestTarget(build.bases, `${billing}/api/v1/invoices`)).toBe('billing');
+      expect(requestTarget(build.bases, `${billing}/api/v1/rent/agreements/x`)).toBe('billing');
+      expect(requestTarget(build.bases, 'https://example.test/something')).toBeNull();
+    });
+  }
+
+  it('BR23_MerlinNotesRequest_CarriesTheBearerAndNeverTheScopeIds', () => {
+    scope.setAccessToken('merlin-token');
+    const url = `${environment.monolithBaseUrl}/PropertyOwner/Notes/GetPrimaryNotes`;
+
+    http.post(url, {}).subscribe();
+
+    const request = httpMock.expectOne(url);
+    expect(request.request.headers.get('Authorization')).toBe('Bearer merlin-token');
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
+    expect(request.request.headers.has('IdentityId')).toBeFalse();
+    request.flush({ Data: null });
+  });
+
+  it('BR23_MerlinTempUpload_CarriesTheBearerAndNeverTheScopeIds', () => {
+    scope.setAccessToken('merlin-token');
+    const url = `${environment.monolithBaseUrl}/public/File/Upload/TempSaveFile`;
+
+    http.post(url, new FormData()).subscribe();
+
+    const request = httpMock.expectOne(url);
+    expect(request.request.headers.get('Authorization')).toBe('Bearer merlin-token');
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
+    expect(request.request.headers.has('IdentityId')).toBeFalse();
+    request.flush({ Data: null });
+  });
+
+  it('BR23_MerlinNotesRequestWithoutAToken_GoesOutBareRatherThanWithInventedIds', () => {
+    const url = `${environment.monolithBaseUrl}/PropertyOwner/AttachmentFiles/GetPrimaryAttachments`;
+
+    http.post(url, {}).subscribe();
+
+    const request = httpMock.expectOne(url);
+    expect(request.request.headers.has('Authorization')).toBeFalse();
+    expect(request.request.headers.has('OrganizationUid')).toBeFalse();
+    expect(request.request.headers.has('PropertyOwnerUid')).toBeFalse();
+    request.flush({ Data: null });
   });
 
   it('Req12e_EveryApiRequest_CarriesTheHeadersNotJustTheCreate', () => {

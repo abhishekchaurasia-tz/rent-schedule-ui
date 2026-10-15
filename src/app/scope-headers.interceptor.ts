@@ -56,23 +56,7 @@ export function targetsApi(apiBaseUrl: string, url: string): boolean {
 }
 
 /**
- * Attaches whichever set of caller headers this build and this token call for — the bearer
- * (requirement 15) or the three scope ids the Billing API reads directly (backend spec
- * `01-rent-agreement.md` v89 FR-127, v90 FR-128), never both.
- *
- * **Scoped to the two services on purpose.** Only requests `targetsApi` accepts for
- * `environment.apiBaseUrl` (Billing) or `environment.monolithBaseUrl` (merlin, behind the same
- * gateway) are touched; anything else passes through untouched, so neither a credential nor the ids
- * leak to a third party this application happens to call later. merlin gets the bearer only — see
- * below for why it never gets the scope ids.
- *
- * **The known cost, accepted rather than hidden (requirement 12e).** Because this is central rather
- * than bolted onto the one save that needs it, the headers ride *every* Billing API call — the invoice
- * list, the line-item pickers, `PUT …/terms`, the lifecycle calls. That is the point: when sign-in
- * lands this interceptor is deleted rather than rewritten.
- */
-/**
- * merlin's own path under the gateway, which is what the request is matched on rather than
+ * merlin's own paths under the gateway, which is what a request is matched on rather than
  * `monolithBaseUrl` alone.
  *
  * **Why the base is not enough.** Both services sit under the same prefix once Billing is proxied:
@@ -80,24 +64,65 @@ export function targetsApi(apiBaseUrl: string, url: string): boolean {
  * build both bases are literally `/api`. Matching merlin on its base would therefore claim Billing's
  * own calls, and matching Billing first would claim merlin's -- on local Billing's base is the empty
  * string, so it claims everything relative. The two are told apart by the one thing that differs:
- * the path merlin's endpoints live under.
+ * the paths merlin's endpoints live under.
+ *
+ * **A list since spec 20 (invoice notes & files, BR-23).** It was `/Home` alone, and the Notes & Files
+ * panel calls merlin under two more: `/PropertyOwner/Notes|AttachmentFiles/...` and the temp upload at
+ * `/public/File/Upload/TempSaveFile`. On dev and qa (`apiBaseUrl = '/billing'`) those matched neither
+ * service and went out with no bearer, so merlin answered 401; on local and production they would have
+ * been claimed as Billing's and carried the three scope ids.
  *
  * **The cost, stated rather than hidden.** This pins merlin's route shape here. A merlin endpoint
- * added outside `/Home` would be classified as Billing and would quietly receive the three scope ids
- * -- so a new merlin path belongs in this constant at the same time.
+ * added outside these paths would be classified as Billing (or as nobody's) and would quietly receive
+ * the three scope ids or no bearer -- so a new merlin path belongs in this list at the same time.
  */
-const MONOLITH_PATH = '/Home';
+const MONOLITH_PATHS: readonly string[] = ['/Home', '/PropertyOwner', '/public/File'];
 
+/** Which of the two services a request is bound for, or `null` for anyone else. */
+export type RequestTarget = 'monolith' | 'billing' | null;
+
+/**
+ * Classifies one request URL against one build's two bases.
+ *
+ * merlin is tested first and wins, because its prefixes are the more specific -- see `MONOLITH_PATHS`.
+ * Both go through `targetsApi` rather than a bare `startsWith`: the local build's Billing base is the
+ * empty string, and every string starts with that.
+ *
+ * Takes the bases as an argument rather than reading `environment` itself, for the same reason
+ * `sendsScopeIds` and `targetsApi` do: the rule is per-environment, and a spec that can only observe
+ * the build it runs under could not cover the other three -- which is exactly where BR-23's 401 was.
+ */
+export function requestTarget(
+  bases: { apiBaseUrl: string; monolithBaseUrl: string },
+  url: string
+): RequestTarget {
+  if (MONOLITH_PATHS.some((path) => targetsApi(`${bases.monolithBaseUrl}${path}`, url))) {
+    return 'monolith';
+  }
+
+  return targetsApi(bases.apiBaseUrl, url) ? 'billing' : null;
+}
+
+/**
+ * Attaches whichever set of caller headers this build and this token call for — the bearer
+ * (requirement 15) or the three scope ids the Billing API reads directly (backend spec
+ * `01-rent-agreement.md` v89 FR-127, v90 FR-128), never both.
+ *
+ * **Scoped to the two services on purpose.** Only requests `requestTarget` places on Billing
+ * (`environment.apiBaseUrl`) or on merlin (`environment.monolithBaseUrl` plus one of `MONOLITH_PATHS`,
+ * behind the same gateway) are touched; anything else passes through untouched, so neither a credential
+ * nor the ids leak to a third party this application happens to call later. merlin gets the bearer
+ * only — see below for why it never gets the scope ids.
+ *
+ * **The known cost, accepted rather than hidden (requirement 12e).** Because this is central rather
+ * than bolted onto the one save that needs it, the headers ride *every* Billing API call — the invoice
+ * list, the line-item pickers, `PUT …/terms`, the lifecycle calls. That is the point: when sign-in
+ * lands this interceptor is deleted rather than rewritten.
+ */
 export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
-  // Both go through `targetsApi` rather than a bare `startsWith`: the local build's Billing base is
-  // the empty string, and every string starts with that. See `targetsApi`.
-  //
-  // merlin is tested first and wins, because its prefix is the more specific of the two -- see
-  // `MONOLITH_PATH`.
-  const toMonolith = targetsApi(`${environment.monolithBaseUrl}${MONOLITH_PATH}`, request.url);
-  const toBilling = !toMonolith && targetsApi(environment.apiBaseUrl, request.url);
+  const target = requestTarget(environment, request.url);
 
-  if (!toBilling && !toMonolith) {
+  if (target === null) {
     return next(request);
   }
 
@@ -109,8 +134,8 @@ export const scopeHeadersInterceptor: HttpInterceptorFn = (request, next) => {
   // else. The three scope ids are Billing's own stand-in for sign-in and mean nothing to merlin --
   // merlin reads the caller from the bearer's session -- so they are never sent there. Without a
   // token the request goes out bare and merlin answers 401, which is the honest outcome: the owner's
-  // bank list is the one thing on this screen that cannot be faked from the Test scope box.
-  if (toMonolith && !toBilling) {
+  // bank list and the invoice notes and files cannot be faked from the Test scope box.
+  if (target === 'monolith') {
     return next(token ? request.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : request);
   }
 
