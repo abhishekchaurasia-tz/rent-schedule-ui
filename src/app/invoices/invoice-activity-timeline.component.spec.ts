@@ -93,6 +93,18 @@ describe('InvoiceActivityTimelineComponent', () => {
     expect(fixture.nativeElement.querySelectorAll('.timeline-card').length).toBe(0);
   });
 
+  // UI spec 12 FR 7 -- a unit switch's entry renders its text as sent (backend spec 19 BR-19).
+  it('Spec12_FR7_renders an InvoiceTypeChanged entry as sent', () => {
+    show([
+      {
+        ...edit,
+        entries: [{ sequence: 0, type: 'InvoiceTypeChanged', text: 'Changed from HOA Fee to Rent by the system.' }]
+      }
+    ]);
+
+    expect(text()).toContain('Changed from HOA Fee to Rent by the system.');
+  });
+
   it('reads the timeline when it is given one', () => {
     show([payment, edit]);
 

@@ -90,10 +90,10 @@ describe('ActivateLeaseComponent', () => {
     expect(component.canActivate()).toBeFalse();
   });
 
-  it('keeps offering activation after a failure, since a 422 becomes activatable by waiting', () => {
+  it('keeps offering activation after a failure, so it can be retried once the cause is fixed', () => {
     component.activate();
     httpMock.expectOne(activateUrl).flush(
-      { detail: 'The lease begin date has not arrived yet.' },
+      { detail: 'The agreement has been terminated and cannot be activated.' },
       { status: 422, statusText: 'Unprocessable Entity' }
     );
 
@@ -144,15 +144,17 @@ describe('ActivateLeaseComponent', () => {
     expect(seen[0].rentAgreementId).toBe(agreementId);
   });
 
-  it('surfaces the 422 the begin-date gate returns, verbatim', () => {
+  it('surfaces a 422 verbatim', () => {
+    // The begin-date 422 this test used to pin is gone (backend spec v139 FR-165): a lease that has not
+    // started is activated. A terminated agreement is the 422 activation still answers.
     component.activate();
 
     httpMock.expectOne(activateUrl).flush(
-      { detail: 'The lease begin date has not arrived yet.' },
+      { detail: 'The agreement has been terminated and cannot be activated.' },
       { status: 422, statusText: 'Unprocessable Entity' }
     );
 
-    expect(component.activateError()).toBe('The lease begin date has not arrived yet.');
+    expect(component.activateError()).toBe('The agreement has been terminated and cannot be activated.');
     expect(component.activateResult()).toBeNull();
     expect(component.activating()).toBeFalse();
   });

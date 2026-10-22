@@ -42,13 +42,20 @@ type PendingAction = 'terminate' | 'archive' | 'cancelDraft' | null;
  *
  * **What each status offers:**
  *
- * | Reported status | Terminate | Archive |
- * |---|---|---|
- * | `InProcess` | — | — (nothing to withdraw; the backend refuses with `422`) |
- * | `Future`, `Active`, `Expiring` | yes | yes |
- * | `Terminating`, `Terminated` | — (already recorded) | yes |
- * | `Expired` | — | yes |
- * | `Archived` | — | — (terminal; there is no un-archive) |
+ * | Reported status | Terminate | Archive | Cancel |
+ * |---|---|---|---|
+ * | `InProcess` | — | — (nothing to withdraw; the backend refuses with `422`) | yes |
+ * | `Future` | yes | yes | yes, while nothing is paid (backend v139 FR-168) |
+ * | `Active`, `Expiring` | yes | yes | — |
+ * | `Terminating`, `Terminated` | — (already recorded) | yes | — |
+ * | `Expired` | — | yes | — |
+ * | `Archived` | — | — (terminal; there is no un-archive) | — |
+ *
+ * `Future` is an **activated** lease that has not started — a draft reports `InProcess` whatever its
+ * dates. Backend spec `01-rent-agreement.md` v139 lets the Lease service activate a lease before it
+ * starts, bills it at once, and lets the owner cancel it while nobody has paid; once money is applied
+ * the backend answers `422 rent_agreement.cancel_after_payment`, rendered verbatim, and the lease is
+ * terminated instead.
  */
 @Component({
   selector: 'app-rent-agreement-lifecycle',
@@ -155,6 +162,13 @@ export class RentAgreementLifecycleComponent {
   readonly isDraft = computed(() => this.status() === 'InProcess');
 
   /**
+   * `true` where Cancel is offered: a draft, or an activated lease that has not started (backend spec
+   * `01-rent-agreement.md` v139, FR-168). The backend still refuses the second once a payment has been
+   * applied, and that refusal is shown as it arrives.
+   */
+  readonly canCancel = computed(() => this.isDraft() || this.status() === 'Future');
+
+  /**
    * `true` once a termination is recorded — the state where Terminate is gone and Archive is the only
    * action left. Worth naming, because a row that has silently lost a button needs to say why.
    */
@@ -244,7 +258,8 @@ export class RentAgreementLifecycleComponent {
 
   /**
    * Disposes of a draft that was never activated (backend spec `01-rent-agreement.md` v77, FR-114 –
-   * FR-118). Unlike {@link terminate} and {@link archive}, a success does not tell the host to reload —
+   * FR-118), or of an activated lease that has not started and has nothing paid, whose invoices the
+   * backend voids (v139, FR-168). Unlike {@link terminate} and {@link archive}, a success does not tell the host to reload —
    * the agreement is gone and a `GET` for it now answers `404` — it tells the host to route away.
    */
   cancelAgreement(): void {

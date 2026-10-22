@@ -51,6 +51,7 @@ describe('RentAgreementLifecycleComponent', () => {
     chargesDeleted: 1,
     proposalsDeleted: 0,
     tenantsDeleted: 2,
+    invoicesVoided: 0,
     ...overrides
   });
 
@@ -99,6 +100,25 @@ describe('RentAgreementLifecycleComponent', () => {
 
     const button = fixture.nativeElement.querySelector('.cancel-draft-btn');
     expect(button?.textContent).toContain('Cancel this draft');
+  });
+
+  it('offers Cancel beside Terminate and Archive on an activated lease that has not started (backend v139 FR-168)', () => {
+    at('Future');
+
+    expect(component.canCancel()).toBeTrue();
+    expect(component.canTerminate()).toBeTrue();
+    expect(component.canArchive()).toBeTrue();
+    const button = fixture.nativeElement.querySelector('.cancel-draft-btn');
+    expect(button?.textContent).toContain('Cancel this lease');
+  });
+
+  (['Active', 'Expiring', 'Terminating', 'Terminated', 'Expired', 'Archived'] as const).forEach((status) => {
+    it(`does not offer Cancel once the lease has started or ended (${status})`, () => {
+      at(status);
+
+      expect(component.canCancel()).toBeFalse();
+      expect(fixture.nativeElement.querySelector('.cancel-draft-btn')).toBeNull();
+    });
   });
 
   (['Future', 'Active', 'Expiring'] as const).forEach((status) => {
@@ -458,6 +478,36 @@ describe('RentAgreementLifecycleComponent', () => {
     );
     expect(component.pendingAction()).toBe('cancelDraft');
     expect(component.working()).toBeFalse();
+  });
+
+  it('reports the invoices a cancelled lease had voided (backend v139 FR-168)', () => {
+    at('Future');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    httpMock.expectOne(cancelUrl).flush(cancelled({ invoicesVoided: 3 }));
+    fixture.detectChanges();
+
+    expect(component.cancelResult()?.invoicesVoided).toBe(3);
+    expect(fixture.nativeElement.textContent).toContain('3 invoice(s) voided.');
+  });
+
+  it('renders the backend\'s refusal of a paid lease verbatim (backend v139 FR-168)', () => {
+    at('Future');
+    component.confirm('cancelDraft');
+
+    component.cancelAgreement();
+    httpMock.expectOne(cancelUrl).flush(
+      {
+        detail: 'Money has been applied to an invoice of this agreement, so it cannot be cancelled. Terminate it instead.'
+      },
+      { status: 422, statusText: 'Unprocessable Entity' }
+    );
+
+    expect(component.error()).toBe(
+      'Money has been applied to an invoice of this agreement, so it cannot be cancelled. Terminate it instead.'
+    );
+    expect(component.pendingAction()).toBe('cancelDraft');
   });
 
   it('does nothing when a cancellation is already in flight', () => {

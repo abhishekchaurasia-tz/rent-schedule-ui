@@ -352,6 +352,39 @@ describe('UpdateProposedInvoiceComponent', () => {
     expect(component.submitNotice()).toContain('rent line');
   });
 
+  // UI spec 12 FR 5 -- on an HOA Fee invoice the HOA Fee line holds the rent slot (backend spec 19 BR-06).
+  it('Spec12_FR5_refuses to remove an HOA Fee invoice’s last HOA Fee line', () => {
+    loadInvoice({
+      ...invoice,
+      invoiceType: 'hoa_fee',
+      lines: [
+        { ...invoice.lines[0], itemType: 'HOAFee', description: 'HOA Fee — March 2027' },
+        { ...invoice.lines[1], itemType: 'Parking', description: 'Reserved bay' }
+      ]
+    });
+
+    component.removeLine(0);
+
+    expect(component.lines.length).toBe(2);
+    expect(component.submitNotice()).toContain('HOA Fee line');
+  });
+
+  it('Spec12_FR5_lets an HOA Fee invoice drop a Rent line, because HOA Fee is what must survive', () => {
+    loadInvoice({
+      ...invoice,
+      invoiceType: 'hoa_fee',
+      lines: [
+        { ...invoice.lines[0], itemType: 'HOAFee', description: 'HOA Fee — March 2027' },
+        { ...invoice.lines[1], itemType: 'Rent', description: 'Garage rent' }
+      ]
+    });
+
+    component.removeLine(1);
+
+    expect(component.lines.length).toBe(1);
+    expect(component.submitNotice()).toBeNull();
+  });
+
   it('lets a rent invoice drop its fee line, because the rent is what must survive', () => {
     loadInvoice();
 
@@ -576,6 +609,21 @@ describe('UpdateProposedInvoiceComponent', () => {
     // And **only** that. `isHOATerm` is a claim about the lease's terms that this screen cannot make,
     // so it is not sent — whether HOA items come back is then the backend's rule, not a guess made here.
     expect(catalogRequest.request.params.has('isHOATerm')).toBeFalse();
+
+    catalogRequest.flush(lineItems);
+  });
+
+  // UI spec 12 FR 6 -- an HOA Fee invoice proves its lease is on HOA terms, so the catalog is asked for
+  // the HOA items, as legacy offers HOA Fee on HOA terms alone.
+  it('Spec12_FR6_asks for the HOA catalog on an HOA Fee invoice', () => {
+    component.invoiceIdInput.setValue(invoiceId);
+    component.load();
+    httpMock.expectOne(`${invoicesUrl}/${invoiceId}`).flush({ ...invoice, invoiceType: 'hoa_fee' });
+
+    const catalogRequest = httpMock.expectOne((request) => request.url === lineItemsUrl);
+
+    expect(catalogRequest.request.params.get('isFromIncomeList')).toBe('true');
+    expect(catalogRequest.request.params.get('isHOATerm')).toBe('true');
 
     catalogRequest.flush(lineItems);
   });
