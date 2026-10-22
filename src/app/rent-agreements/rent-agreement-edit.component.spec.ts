@@ -325,8 +325,8 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
     expect(component.form.get('deposit')!.disabled).toBeTrue();
   });
 
-  it('clears the first rental due date when the lease is not yet reselection-eligible and the value falls out of the candidate list (draft, spec v61)', fakeAsync(() => {
-    load(); // isFirstRentalDueDateEditable: false, per this fixture's default status: 'draft'
+  it('keeps a first rental due date the server reports as fixed, even when it falls out of the candidate list (requirement 17)', fakeAsync(() => {
+    load(); // isFirstRentalDueDateEditable: false -- since Billing v151 that means the date is fixed
 
     expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
 
@@ -338,10 +338,13 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
       .expectOne(previewUrl)
       .flush({ rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }], totalInvoices: 1, totalAmount: 1200 });
 
-    expect(component.form.get('firstRentalDueDate')!.value).toBeNull();
+    // Requirement 17 reverses v15/v61: a fixed date (it has passed, or something is paid) is kept and still
+    // offered, so the save sends back what is stored.
+    expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
+    expect(component.firstRentalDueDateSelectOptions()).toContain('2026-01-01');
   }));
 
-  it('preserves the first rental due date on an active lease even when it falls out of the fresh candidate list (spec v61)', fakeAsync(() => {
+  it('clears a first rental due date that may be picked again once it falls out of the candidate list (requirement 17, billing#334)', fakeAsync(() => {
     fixture.detectChanges();
     httpMock.expectOne(detailUrl).flush({ ...detail(), isFirstRentalDueDateEditable: true, status: 'active' });
     httpMock.match(optionsUrl).forEach((r) => r.flush({ dates: ['2026-01-01'] }));
@@ -355,13 +358,66 @@ describe('RentAgreementCreateComponent (edit mode)', () => {
       .expectOne(previewUrl)
       .flush({ rows: [{ scheduledDate: '2026-01-01', dueDate: '2026-01-01', rent: 1200, status: 'Planned' }], totalInvoices: 1, totalAmount: 1200 });
 
-    // The server allows reselection on this lease, but nothing has asked to reselect yet — the saved
-    // value must not be silently wiped out just because it no longer appears in the forward-looking
-    // candidate list (confirmed by the user 2026-08-20).
-    expect(component.form.get('firstRentalDueDate')!.value).toBe('2026-01-01');
-    // The preserved value is still rendered as a selectable option, even though it is absent from the
-    // server's own candidate list — otherwise the <select> would show nothing chosen.
-    expect(component.firstRentalDueDateSelectOptions()).toContain('2026-01-01');
+    // Billing v151 FR-172: true means the first date may still be picked again, so a stored date the fresh
+    // options no longer offer is cleared and the owner picks again. Keeping it is what QA hit in #334: the
+    // save went out with a first date the new frequency does not offer and Billing answered 422.
+    expect(component.form.get('firstRentalDueDate')!.value).toBeNull();
+  }));
+
+  // ---------------------------------------------------------------------------------------------
+  // Requirement 16 (Billing v152 FR-174, billing#330): a rent-free lease has no due day and no first
+  // rental due date.
+  // ---------------------------------------------------------------------------------------------
+
+  const rentFree = (): RentAgreementDetailResponse => ({
+    ...detail(),
+    fullRent: 0,
+    frequency: 'weekly',
+    frequencyConfig: null,
+    firstRentalDueDate: null,
+    scheduleRows: []
+  });
+
+  it('opens a rent-free lease without the due-day and first-date controls (requirement 16c)', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush(rentFree());
+    httpMock.expectNone(optionsUrl);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('select[formControlName="frequency"]')).withContext('frequency stays').not.toBeNull();
+    expect(root.querySelector('select[formControlName="dayOfWeek"]')).toBeNull();
+    expect(root.querySelector('select[formControlName="firstRentalDueDate"]')).toBeNull();
+  });
+
+  it('saves a rent-free lease with null for the due day and the first date (requirement 16b)', () => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush(rentFree());
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    expect(req.request.body.fullRent).toBe(0);
+    expect(req.request.body.frequency).toBe('weekly');
+    expect(req.request.body.frequencyConfig).toBeNull();
+    expect(req.request.body.firstRentalDueDate).toBeNull();
+    req.flush(rentFree());
+  });
+
+  it('asks for a first date again once a rent is typed on a rent-free lease (requirement 16d)', fakeAsync(() => {
+    fixture.detectChanges();
+    httpMock.expectOne(detailUrl).flush(rentFree());
+
+    component.form.patchValue({ rent: 1000 });
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-01-02', '2026-01-09'] });
+    httpMock.expectNone(previewUrl);
+    fixture.detectChanges();
+
+    const firstDate = component.form.get('firstRentalDueDate')!;
+    expect(firstDate.enabled).toBeTrue();
+    expect(firstDate.valid).withContext('required, and still empty').toBeFalse();
+    expect((fixture.nativeElement as HTMLElement).querySelector('select[formControlName="dayOfWeek"]')).not.toBeNull();
   }));
 
   it('renders a cancelled row from the server and sends it flagged isCancelled rather than omitting it (spec v47)', () => {

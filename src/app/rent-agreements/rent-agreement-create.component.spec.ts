@@ -213,7 +213,8 @@ describe('RentAgreementCreateComponent', () => {
     fillValidForm();
     component.form.patchValue({ rent: 0 });
     tick(300);
-    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    // Requirement 16 (v27): a rent-free lease has no first date, so no options are asked for either.
+    httpMock.expectNone(optionsUrl);
 
     httpMock.expectNone(previewUrl);
     expect(component.previewResult()?.rows).withContext('rent 0 generates no schedule').toEqual([]);
@@ -224,18 +225,21 @@ describe('RentAgreementCreateComponent', () => {
     expect(saveButton!.disabled).toBeFalse();
   }));
 
-  it('saves a rent-free unit with no schedule rows', fakeAsync(() => {
+  it('saves a rent-free unit with no schedule rows, no due day and no first date (requirement 16b)', fakeAsync(() => {
     fixture.detectChanges();
     fillValidForm();
     component.form.patchValue({ rent: 0 });
     tick(300);
-    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+    httpMock.expectNone(optionsUrl);
 
     component.save();
 
     const req = httpMock.expectOne(createUrl);
     expect(req.request.body.fullRent).toBe(0);
     expect(req.request.body.scheduleRows).toEqual([]);
+    expect(req.request.body.frequency).toBe('monthly');
+    expect(req.request.body.frequencyConfig).withContext('Billing v152 FR-174a').toBeNull();
+    expect(req.request.body.firstRentalDueDate).toBeNull();
 
     req.flush({
       agreementId: '44444444-4444-4444-4444-444444444444',
@@ -245,6 +249,40 @@ describe('RentAgreementCreateComponent', () => {
       additionalCharges: []
     } as CreateRentAgreementResponse);
     tick();
+  }));
+
+  it('hides the due-day and first-date controls at rent 0 and keeps Payment Frequency (requirement 16a)', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ rent: 0 });
+    tick(300);
+    httpMock.expectNone(optionsUrl);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('select[formControlName="frequency"]')).not.toBeNull();
+    expect(root.querySelector('select[formControlName="dueOnDay"]')).toBeNull();
+    expect(root.querySelector('select[formControlName="firstRentalDueDate"]')).toBeNull();
+    expect(component.form.get('firstRentalDueDate')!.enabled).withContext('not required at rent 0').toBeFalse();
+  }));
+
+  it('brings the controls back and requires a first date when the rent goes above 0 again (requirement 16d, 16e)', fakeAsync(() => {
+    fixture.detectChanges();
+    fillValidForm();
+    component.form.patchValue({ rent: 0 });
+    tick(300);
+
+    component.form.patchValue({ rent: 1000 });
+    component.form.get('firstRentalDueDate')!.setValue(null);
+    tick(300);
+    httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01', '2026-09-01'] } as CandidateDateResponse);
+    httpMock.expectNone(previewUrl);
+    fixture.detectChanges();
+
+    const firstDate = component.form.get('firstRentalDueDate')!;
+    expect(firstDate.enabled).toBeTrue();
+    expect(firstDate.valid).withContext('required again').toBeFalse();
+    expect((fixture.nativeElement as HTMLElement).querySelector('select[formControlName="dueOnDay"]')).not.toBeNull();
   }));
 
   it('does not preview while the rent field is empty', fakeAsync(() => {
