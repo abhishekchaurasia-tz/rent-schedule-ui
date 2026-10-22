@@ -409,6 +409,13 @@ export class RentAgreementCreateComponent {
         }
       });
 
+    // Requirement 16 (Billing v152 FR-174) -- a rent-free lease has no first rental due date, so the control
+    // is disabled while the rent is 0: a disabled control is neither required nor part of form.value.
+    this.form
+      .get('rent')!
+      .valueChanges.pipe(takeUntilDestroyed())
+      .subscribe(() => this.syncFirstRentalDueDateWithRent());
+
     this.form
       .get('deposit')!
       .valueChanges.pipe(takeUntilDestroyed())
@@ -577,6 +584,9 @@ export class RentAgreementCreateComponent {
         this.appliedChargeIds.set(
           new Set(agreement.additionalCharges.filter((c) => c.isApplied).map((c) => c.id))
         );
+
+        // Patched with emitEvent: false, so the rent subscription did not see the loaded rent (requirement 16c).
+        this.syncFirstRentalDueDateWithRent();
 
         // Treat the loaded terms as already previewed — see the doc comment above.
         this.lastPreviewSignature = this.scheduleSignature();
@@ -843,6 +853,15 @@ export class RentAgreementCreateComponent {
     return rent === null || rent === '' ? null : Number(rent);
   }
 
+  /**
+   * Whether the form states a rent of exactly 0 (requirement 16, Billing v152 FR-174). An empty field is not a
+   * rent of 0. Such a lease has no due day and no first rental due date: the template hides them and the save
+   * sends null for both.
+   */
+  get isRentFree(): boolean {
+    return this.formFullRent === 0;
+  }
+
   get frequency(): RentFrequency {
     return this.form.get('frequency')!.value;
   }
@@ -1003,13 +1022,22 @@ export class RentAgreementCreateComponent {
     // Rent 0 is allowed: a rent-free unit is a valid agreement with no schedule (backend spec 01
     // FR-010/011). An empty field is not — `Number('')` is also 0, so it is checked separately.
     const rentEntered = value.rent !== null && value.rent !== '' && Number(value.rent) >= 0;
-    if (!value.startDate || !value.firstRentalDueDate || !rentEntered) {
+    if (!value.startDate || !rentEntered) {
       return false;
     }
     if (value.leaseTermType === 'fixed' && !value.endDate) {
       return false;
     }
     if (value.leaseTermType === 'month_to_month' && !value.monthToMonthInvoiceCount) {
+      return false;
+    }
+
+    // Requirement 16 -- a rent-free lease needs no due day and no first date; generatePreview sets its empty
+    // schedule without calling the endpoint.
+    if (Number(value.rent) === 0) {
+      return true;
+    }
+    if (!value.firstRentalDueDate) {
       return false;
     }
 
@@ -1401,8 +1429,9 @@ export class RentAgreementCreateComponent {
       endDate: value.leaseTermType === 'fixed' ? toIsoDate(value.endDate) : null,
       fullRent: Number(value.rent),
       frequency: value.frequency,
-      frequencyConfig: buildFrequencyConfig(value),
-      firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
+      // Requirement 16b (Billing v152 FR-174a) -- null for both on a rent-free lease.
+      frequencyConfig: this.isRentFree ? null : buildFrequencyConfig(value),
+      firstRentalDueDate: this.isRentFree ? null : toIsoDate(value.firstRentalDueDate)!,
       deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
       depositDueDate: toIsoDate(value.depositDueDate),
       depositCollected: Boolean(value.depositCollected),
@@ -1486,8 +1515,9 @@ export class RentAgreementCreateComponent {
       switchToMonthToMonth: this.switchToMonthToMonthForSubmission(value),
       fullRent: Number(value.rent),
       frequency: value.frequency,
-      frequencyConfig: buildFrequencyConfig(value),
-      firstRentalDueDate: toIsoDate(value.firstRentalDueDate)!,
+      // Requirement 16b (Billing v152 FR-174a) -- null for both on a rent-free lease.
+      frequencyConfig: this.isRentFree ? null : buildFrequencyConfig(value),
+      firstRentalDueDate: this.isRentFree ? null : toIsoDate(value.firstRentalDueDate)!,
       ...(this.isDepositEditable
         ? {
             deposit: value.deposit !== null && value.deposit !== '' ? Number(value.deposit) : null,
@@ -1621,16 +1651,31 @@ export class RentAgreementCreateComponent {
   /**
    * Whether a change to the form should be allowed to silently clear the current
    * `firstRentalDueDate` selection when it no longer appears in a freshly-fetched candidate list.
-   * Create mode, and an edit-mode lease whose status does not yet allow reselection (an unactivated
-   * `InProcess` draft — the server reports `isFirstRentalDueDateEditable: false`, backend spec v61),
-   * behave as before: the value always resolves against the fresh, forward-looking candidate list,
-   * clearing to unset when the current one falls out of it. An edit-mode lease the server DOES allow
-   * reselecting on (`Active`/`Expiring`) must not have its saved due date silently wiped out just
-   * because the candidate endpoint's forward-looking list no longer happens to include it — the user
-   * asked for that value to stay put once the lease is live, confirmed 2026-08-20.
+   *
+   * Requirement 17 (v27), following Billing v151 FR-172 (innago-billing#334): create mode, and an edit-mode
+   * lease whose first date may still be picked again (`isFirstRentalDueDateEditable: true` — not passed,
+   * nothing paid), resolve against the fresh list, clearing to unset when the current date falls out of it.
+   * A lease that reports `false` has a fixed first date — it has passed, or something is paid — so it is
+   * kept, and `firstRentalDueDateSelectOptions` still lists it. Until v27 this read the flag the other way
+   * round, which matched Billing's pre-v151 meaning (an active or expiring lease) and kept a stale date on
+   * exactly the leases where a frequency change has to re-pick it.
    */
   private get canAutoClearFirstRentalDueDate(): boolean {
-    return !this.isEditMode || this.loadedAgreement()?.isFirstRentalDueDateEditable !== true;
+    return !this.isEditMode || this.loadedAgreement()?.isFirstRentalDueDateEditable === true;
+  }
+
+  /**
+   * Disables the first-rental-due-date control while the rent is 0 and enables it otherwise (requirement 16).
+   * Without emitting, so it never re-enters the debounced valueChanges pipeline.
+   */
+  private syncFirstRentalDueDateWithRent(): void {
+    const control = this.form.get('firstRentalDueDate')!;
+
+    if (this.isRentFree && control.enabled) {
+      control.disable({ emitEvent: false });
+    } else if (!this.isRentFree && control.disabled) {
+      control.enable({ emitEvent: false });
+    }
   }
 
   /**
@@ -1650,6 +1695,7 @@ export class RentAgreementCreateComponent {
     const value = this.form.value;
 
     const canRequestOptions =
+      !this.isRentFree &&
       value.frequency !== 'custom' &&
       !!value.startDate &&
       (value.leaseTermType === 'fixed' ? !!value.endDate : !!value.monthToMonthInvoiceCount);

@@ -210,8 +210,10 @@ export interface CreateRentAgreementRequest {
   endDate?: string | null;
   fullRent: number;
   frequency: RentFrequency;
-  frequencyConfig: FrequencyConfig;
-  firstRentalDueDate: string;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  frequencyConfig: FrequencyConfig | null;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  firstRentalDueDate: string | null;
   deposit?: number | null;
   depositDueDate?: string | null;
   depositCollected?: boolean;
@@ -405,8 +407,10 @@ export interface RentAgreementDetailResponse {
   isHoa?: boolean;
   fullRent: number;
   frequency: RentFrequency;
-  frequencyConfig: FrequencyConfig;
-  firstRentalDueDate: string;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  frequencyConfig: FrequencyConfig | null;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  firstRentalDueDate: string | null;
   deposit?: number | null;
   depositDueDate?: string | null;
   depositCollected: boolean;
@@ -804,8 +808,10 @@ export interface UpdateRentAgreementTermsRequest {
   endDate?: string | null;
   fullRent: number;
   frequency: RentFrequency;
-  frequencyConfig: FrequencyConfig;
-  firstRentalDueDate: string;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  frequencyConfig: FrequencyConfig | null;
+  /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
+  firstRentalDueDate: string | null;
   /**
    * Deposit fields — send **only** when the agreement's `isDepositEditable` is true (backend spec v48).
    * Supplying any of them once the deposit is locked is a `409 rent_agreement.deposit_not_editable` that

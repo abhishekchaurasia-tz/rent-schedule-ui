@@ -165,126 +165,129 @@
           </label>
         </div>
 
-        @if (frequency === 'monthly') {
-          <div class="due-on-row">
-            <span class="due-on-label">Due on the</span>
-            <select formControlName="dueOnDay">
-              @for (day of dayOfMonthOptions; track day.value) {
-                <option [value]="day.value">{{ day.label }}</option>
-              }
-            </select>
-            <span class="due-on-suffix">of every month</span>
-          </div>
-        }
-
-        @if (frequency === 'bi_monthly') {
-          <div class="due-on-row">
-            <span class="due-on-label">Due on the</span>
-            @for (control of dueOnDays.controls; track $index) {
-              <select [formControl]="$any(control)">
+        <!-- Requirement 16 (Billing v152 FR-174): a rent-free lease has no due day and no first rental due date. -->
+        @if (!isRentFree) {
+          @if (frequency === 'monthly') {
+            <div class="due-on-row">
+              <span class="due-on-label">Due on the</span>
+              <select formControlName="dueOnDay">
                 @for (day of dayOfMonthOptions; track day.value) {
                   <option [value]="day.value">{{ day.label }}</option>
                 }
               </select>
-              @if ($index === 0) {
-                <span class="due-on-suffix">and the</span>
-              }
-            }
-            <span class="due-on-suffix">of every month</span>
-          </div>
-        }
-
-        @if (frequency === 'weekly' || frequency === 'bi_weekly') {
-          <div class="due-on-row">
-            <span class="due-on-label">Due on</span>
-            <select formControlName="dayOfWeek">
-              @for (day of weekdays; track day.value) {
-                <option [value]="day.value">{{ day.label }}</option>
-              }
-            </select>
-            <span class="due-on-suffix">{{
-              frequency === 'weekly' ? 'of every week' : 'of every other week'
-            }}</span>
-          </div>
-        }
-
-        @if (frequency === 'semesterly') {
-          <fieldset class="frequency-config">
-            <legend>Semi-Annual Cycle Dates</legend>
-            <div class="inline-fields" formArrayName="cycle">
-              @for (group of cycle.controls; track $index) {
-                <div [formGroupName]="$index" class="cycle-entry">
-                  <label>
-                    Month {{ $index + 1 }}
-                    <input type="number" min="1" max="12" formControlName="month" />
-                  </label>
-                  <label>
-                    Day
-                    <input type="number" min="1" max="31" formControlName="day" />
-                  </label>
-                </div>
-              }
+              <span class="due-on-suffix">of every month</span>
             </div>
-          </fieldset>
-        }
-
-        @if (frequency === 'custom') {
-          <fieldset class="frequency-config">
-            <legend>Custom Due Dates</legend>
-            <div formArrayName="dueDates" class="custom-dates">
-              @for (control of dueDates.controls; track $index) {
-                <div class="inline-fields">
-                  <mat-form-field appearance="outline" class="date-field">
-                    <input
-                      matInput
-                      [matDatepicker]="dueDatePicker"
-                      [formControl]="$any(control)"
-                      (click)="dueDatePicker.open()"
-                    />
-                    <mat-datepicker-toggle matIconSuffix [for]="dueDatePicker"></mat-datepicker-toggle>
-                    <mat-datepicker #dueDatePicker></mat-datepicker>
-                  </mat-form-field>
-                  <button type="button" (click)="removeDueDate($index)">Remove</button>
-                </div>
-              }
-              <button type="button" (click)="addDueDate()">+ Add Date</button>
-            </div>
-          </fieldset>
-        }
-
-        <label class="first-due-label">
-          On which date should the first rental invoice be due?<span class="required">*</span>
-          @if (frequency !== 'custom') {
-            <select
-              formControlName="firstRentalDueDate"
-              [attr.disabled]="candidateDatesLoading() || firstRentalDueDateSelectOptions().length === 0 ? true : null"
-            >
-              <option value="" disabled>
-                {{
-                  candidateDatesLoading()
-                    ? 'Loading options…'
-                    : firstRentalDueDateSelectOptions().length === 0
-                      ? 'Complete the form above to see options'
-                      : 'Select a date'
-                }}
-              </option>
-              @for (date of firstRentalDueDateSelectOptions(); track date) {
-                <option [value]="date">{{ date }}</option>
-              }
-            </select>
-          } @else {
-            <mat-form-field appearance="outline" class="date-field">
-              <input
-                matInput
-                [matDatepicker]="firstRentalDueDatePicker"
-                formControlName="firstRentalDueDate"
-                (click)="firstRentalDueDatePicker.open()"
-              />
-              <mat-datepicker-toggle matIconSuffix [for]="firstRentalDueDatePicker"></mat-datepicker-toggle>
-              <mat-datepicker #firstRentalDueDatePicker></mat-datepicker>
-            </mat-form-field>
           }
-        </label>
+
+          @if (frequency === 'bi_monthly') {
+            <div class="due-on-row">
+              <span class="due-on-label">Due on the</span>
+              @for (control of dueOnDays.controls; track $index) {
+                <select [formControl]="$any(control)">
+                  @for (day of dayOfMonthOptions; track day.value) {
+                    <option [value]="day.value">{{ day.label }}</option>
+                  }
+                </select>
+                @if ($index === 0) {
+                  <span class="due-on-suffix">and the</span>
+                }
+              }
+              <span class="due-on-suffix">of every month</span>
+            </div>
+          }
+
+          @if (frequency === 'weekly' || frequency === 'bi_weekly') {
+            <div class="due-on-row">
+              <span class="due-on-label">Due on</span>
+              <select formControlName="dayOfWeek">
+                @for (day of weekdays; track day.value) {
+                  <option [value]="day.value">{{ day.label }}</option>
+                }
+              </select>
+              <span class="due-on-suffix">{{
+                frequency === 'weekly' ? 'of every week' : 'of every other week'
+              }}</span>
+            </div>
+          }
+
+          @if (frequency === 'semesterly') {
+            <fieldset class="frequency-config">
+              <legend>Semi-Annual Cycle Dates</legend>
+              <div class="inline-fields" formArrayName="cycle">
+                @for (group of cycle.controls; track $index) {
+                  <div [formGroupName]="$index" class="cycle-entry">
+                    <label>
+                      Month {{ $index + 1 }}
+                      <input type="number" min="1" max="12" formControlName="month" />
+                    </label>
+                    <label>
+                      Day
+                      <input type="number" min="1" max="31" formControlName="day" />
+                    </label>
+                  </div>
+                }
+              </div>
+            </fieldset>
+          }
+
+          @if (frequency === 'custom') {
+            <fieldset class="frequency-config">
+              <legend>Custom Due Dates</legend>
+              <div formArrayName="dueDates" class="custom-dates">
+                @for (control of dueDates.controls; track $index) {
+                  <div class="inline-fields">
+                    <mat-form-field appearance="outline" class="date-field">
+                      <input
+                        matInput
+                        [matDatepicker]="dueDatePicker"
+                        [formControl]="$any(control)"
+                        (click)="dueDatePicker.open()"
+                      />
+                      <mat-datepicker-toggle matIconSuffix [for]="dueDatePicker"></mat-datepicker-toggle>
+                      <mat-datepicker #dueDatePicker></mat-datepicker>
+                    </mat-form-field>
+                    <button type="button" (click)="removeDueDate($index)">Remove</button>
+                  </div>
+                }
+                <button type="button" (click)="addDueDate()">+ Add Date</button>
+              </div>
+            </fieldset>
+          }
+
+          <label class="first-due-label">
+            On which date should the first rental invoice be due?<span class="required">*</span>
+            @if (frequency !== 'custom') {
+              <select
+                formControlName="firstRentalDueDate"
+                [attr.disabled]="candidateDatesLoading() || firstRentalDueDateSelectOptions().length === 0 ? true : null"
+              >
+                <option value="" disabled>
+                  {{
+                    candidateDatesLoading()
+                      ? 'Loading options…'
+                      : firstRentalDueDateSelectOptions().length === 0
+                        ? 'Complete the form above to see options'
+                        : 'Select a date'
+                  }}
+                </option>
+                @for (date of firstRentalDueDateSelectOptions(); track date) {
+                  <option [value]="date">{{ date }}</option>
+                }
+              </select>
+            } @else {
+              <mat-form-field appearance="outline" class="date-field">
+                <input
+                  matInput
+                  [matDatepicker]="firstRentalDueDatePicker"
+                  formControlName="firstRentalDueDate"
+                  (click)="firstRentalDueDatePicker.open()"
+                />
+                <mat-datepicker-toggle matIconSuffix [for]="firstRentalDueDatePicker"></mat-datepicker-toggle>
+                <mat-datepicker #firstRentalDueDatePicker></mat-datepicker>
+              </mat-form-field>
+            }
+          </label>
+        }
       </div>
     </section>
 
