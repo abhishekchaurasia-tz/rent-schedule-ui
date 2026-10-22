@@ -148,8 +148,11 @@ export function divideEvenly(total: number, count: number): number[] {
  * `03-rent-agreement-tenants.md` v42 (FR 22a), so the figure this screen shows is the one Billing stores.
  *
  * Truncated to the hundredth; the hundredths that leaves over go one each to the first rows that owe something,
- * so the percentages total exactly `100` and a row at `0` stays at `0`. Rent 300 at `100 / 100 / 100` is
- * `33.34 / 33.33 / 33.33`.
+ * so a row at `0` stays at `0`. Rent 300 at `100 / 100 / 100` is `33.34 / 33.33 / 33.33`.
+ *
+ * Add-tenants requirement 15 (v4): the percentages total **the amounts' own share** of the total, truncated to the
+ * hundredth — `100` once the amounts total it, less while a split is still being typed. Topping up to `100`
+ * regardless showed `100 / 0 / 0` of 300 as `33.34 / 0 / 0`.
  *
  * @param amounts Each row's amount, in listed order.
  * @param total The rent or deposit the amounts divide.
@@ -163,7 +166,8 @@ export function percentsFromAmounts(amounts: readonly number[], total: number): 
 
   const cents = amounts.map((amount) => Math.max(0, Math.round(amount * 100)));
   const hundredths = cents.map((value) => Math.floor((value * 10_000) / totalCents));
-  let leftover = 10_000 - hundredths.reduce((sum, value) => sum + value, 0);
+  const target = Math.floor((cents.reduce((sum, value) => sum + value, 0) * 10_000) / totalCents);
+  let leftover = target - hundredths.reduce((sum, value) => sum + value, 0);
 
   return hundredths.map((value, index) => {
     const takes = leftover > 0 && cents[index] > 0;
