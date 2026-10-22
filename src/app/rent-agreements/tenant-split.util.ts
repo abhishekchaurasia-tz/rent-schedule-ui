@@ -144,6 +144,64 @@ export function divideEvenly(total: number, count: number): number[] {
 }
 
 /**
+ * Works each row's rent or deposit percentage out from its amount, to two places — the way Billing does since
+ * `03-rent-agreement-tenants.md` v42 (FR 22a), so the figure this screen shows is the one Billing stores.
+ *
+ * Truncated to the hundredth; the hundredths that leaves over go one each to the first rows that owe something,
+ * so the percentages total exactly `100` and a row at `0` stays at `0`. Rent 300 at `100 / 100 / 100` is
+ * `33.34 / 33.33 / 33.33`.
+ *
+ * @param amounts Each row's amount, in listed order.
+ * @param total The rent or deposit the amounts divide.
+ * @returns One percentage per row; all zeros when `total` is not above zero.
+ */
+export function percentsFromAmounts(amounts: readonly number[], total: number): number[] {
+  const totalCents = Math.round(total * 100);
+  if (totalCents <= 0) {
+    return amounts.map(() => 0);
+  }
+
+  const cents = amounts.map((amount) => Math.max(0, Math.round(amount * 100)));
+  const hundredths = cents.map((value) => Math.floor((value * 10_000) / totalCents));
+  let leftover = 10_000 - hundredths.reduce((sum, value) => sum + value, 0);
+
+  return hundredths.map((value, index) => {
+    const takes = leftover > 0 && cents[index] > 0;
+    if (takes) {
+      leftover -= 1;
+    }
+    return (value + (takes ? 1 : 0)) / 100;
+  });
+}
+
+/**
+ * Divides a rent or deposit by percentages in whole cents, so the amounts total exactly what the percentages
+ * claim of it — `03-rent-agreement-tenants.md` v42 (FR 22b) refuses amounts that miss the rent by a cent.
+ *
+ * Each row is truncated to the cent and the cents that leaves over go one each to the first rows with a share.
+ * Rounding each row on its own sends `50.01 + 50.01` for 50 / 50 of `100.01`; this sends `50.01 + 50.00`.
+ *
+ * @param total The rent or deposit.
+ * @param percents Each row's percentage, in listed order.
+ * @returns One amount per row, totalling the percentages' share of `total` (all of it when they total 100).
+ */
+export function divideByPercents(total: number, percents: readonly number[]): number[] {
+  const totalCents = Math.max(0, Math.round(total * 100));
+  const shares = percents.map((percent) => Math.max(0, Math.round(percent * 100)));
+  const cents = shares.map((share) => Math.floor((share * totalCents) / 10_000));
+  const target = Math.floor((shares.reduce((sum, share) => sum + share, 0) * totalCents) / 10_000);
+  let leftover = target - cents.reduce((sum, value) => sum + value, 0);
+
+  return cents.map((value, index) => {
+    const takes = leftover > 0 && shares[index] > 0;
+    if (takes) {
+      leftover -= 1;
+    }
+    return (value + (takes ? 1 : 0)) / 100;
+  });
+}
+
+/**
  * How many decimal places a percentage is carried to — and it is not an arbitrary choice.
  *
  * `additional_charge_tenant_share.share_percent` is `numeric(9,6)`, so six places is exactly what the
