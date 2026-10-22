@@ -26,8 +26,8 @@ import { ActivateRentAgreementResponse } from './rent-agreement.models';
  *
  * Idempotency is still the safety net rather than the mechanism: the endpoint answers
  * `alreadyActive: true` rather than conflicting, so even a stale gate costs a redundant call and not a
- * wrong outcome. And the gate stays open on a **failure** — the commonest is the `422` for a begin
- * date that has not arrived, which becomes activatable simply by waiting.
+ * wrong outcome. And the gate stays open on a **failure**, so a refused call can be retried once its
+ * cause is fixed.
  *
  * **What the API can answer, and what each answer means here:**
  *
@@ -36,13 +36,12 @@ import { ActivateRentAgreementResponse } from './rent-agreement.models';
  * | `200`, `alreadyActive: false` | genuinely activated, `invoicesGenerated` raised | success, with the count |
  * | `200`, `alreadyActive: true` | a repeat; nothing changed | success, stated as a repeat — **not** an error |
  * | `409` | the `version` sent is below the stored one | error |
- * | `422` | begin date has not arrived, or the payer lanes cannot be billed | error |
+ * | `422` | the agreement has been terminated | error |
  * | `404` | no such agreement | error |
  *
- * The `422` is the one a demo hits most: a lease whose start date is still in the future cannot be
- * activated, and neither can one with no tenants saved, since the payer lanes are derived from them.
- * That is why the failure text is rendered verbatim from the Problem Details `detail` rather than
- * flattened into "activation failed".
+ * A lease whose start date is still in the future **is** activated (backend spec `01-rent-agreement.md`
+ * v139, FR-165): it reports `Future` and is billed at once. Failure text is rendered verbatim from the
+ * Problem Details `detail` rather than flattened into "activation failed".
  */
 @Component({
   selector: 'app-activate-lease',
@@ -84,8 +83,7 @@ export class ActivateLeaseComponent {
    *
    * Two things hide it: the server confirming the lease is active — either this click activated it, or
    * it answered `alreadyActive` — or a passed {@link status} that is past `InProcess`. A **failure
-   * leaves the button up**, because the most common failure is the `422` for a begin date that has not
-   * arrived yet, and that becomes activatable simply by waiting.
+   * leaves the button up**, so the call can be retried once its cause is fixed.
    */
   readonly canActivate = computed(() => {
     const status = this.status();

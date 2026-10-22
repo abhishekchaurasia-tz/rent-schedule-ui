@@ -227,6 +227,67 @@ describe('AddTenantsComponent', () => {
     expect(component.tenants.length).toBe(1);
   });
 
+  // Requirement 13 (v3, Billing 03 v42 FR 22): the even split divides the money, not the percentage.
+  it('divides 300 into 100.00 each across three renters, percentages worked out from the money (requirement 13)', () => {
+    load({ fullRent: 300, deposit: 300 });
+
+    component.addTenant();
+    component.addTenant();
+
+    const rows = component.tenants.controls;
+    expect(rows.map((row) => row.get('rentAmount')!.value)).toEqual([100, 100, 100]);
+    expect(rows.map((row) => row.get('rentPercent')!.value)).toEqual([33.34, 33.33, 33.33]);
+    expect(rows.map((row) => row.get('depositAmount')!.value)).toEqual([100, 100, 100]);
+  });
+
+  // Requirement 14 (v3): the even split's amounts already total the rent, so they are sent as shown -- dividing
+  // by the 2-decimal percentages would send 100.02 / 99.99 / 99.99 (found by the live check, 2026-10-22).
+  it('sends the even split exactly as shown (requirement 14)', () => {
+    load({ fullRent: 300, deposit: null, depositDueDate: null });
+    component.addTenant();
+    component.addTenant();
+
+    component.save();
+
+    const req = httpMock.expectOne(tenantsUrl);
+    expect(req.request.body.tenants.map((tenant: { rentAmount: number }) => tenant.rentAmount)).toEqual([100, 100, 100]);
+    req.flush({ agreementId, isGroupInvoice: true, partialPaymentAllowed: false, tenantIds: [] });
+  });
+
+  // Requirement 14 (v3): a percentage save sends amounts that total the rent to the cent.
+  it('sends amounts that total the rent when the split was typed as percentages (requirement 14)', () => {
+    load({ fullRent: 100.01, deposit: null, depositDueDate: null });
+    component.addTenant();
+    component.tenants.at(0).get('rentPercent')!.setValue(50);
+    component.onRentPercentChanged(0);
+    component.tenants.at(1).get('rentPercent')!.setValue(50);
+    component.onRentPercentChanged(1);
+
+    component.save();
+
+    const req = httpMock.expectOne(tenantsUrl);
+    const amounts = req.request.body.tenants.map((tenant: { rentAmount: number }) => tenant.rentAmount);
+    expect(amounts).withContext('each row rounded alone would send 50.01 + 50.01').toEqual([50.01, 50]);
+    req.flush({ agreementId, isGroupInvoice: true, partialPaymentAllowed: false, tenantIds: [] });
+  });
+
+  // Requirement 14 (v3): amounts typed in dollars are sent exactly as typed.
+  it('sends the typed amounts as they are when the split was typed in dollars (requirement 14)', () => {
+    load({ deposit: null, depositDueDate: null });
+    component.addTenant();
+    component.setRentSplitUnit('dollar');
+    component.tenants.at(0).get('rentAmount')!.setValue(333.33);
+    component.onRentAmountChanged(0);
+    component.tenants.at(1).get('rentAmount')!.setValue(666.67);
+    component.onRentAmountChanged(1);
+
+    component.save();
+
+    const req = httpMock.expectOne(tenantsUrl);
+    expect(req.request.body.tenants.map((tenant: { rentAmount: number }) => tenant.rentAmount)).toEqual([333.33, 666.67]);
+    req.flush({ agreementId, isGroupInvoice: true, partialPaymentAllowed: false, tenantIds: [] });
+  });
+
   it('recomputes the dollar amount when the percent is hand-edited', () => {
     load();
 

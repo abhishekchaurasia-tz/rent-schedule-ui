@@ -64,7 +64,9 @@ export type InvoiceHistoryEntryType =
   | 'LateFeeRemoved'
   | 'ReminderSent'
   | 'DepositReturned'
-  | 'DepositApplied';
+  | 'DepositApplied'
+  // UI spec 12 FR 7 -- a unit switch moved the invoice between Rent and HOA Fee (backend spec 19 BR-19).
+  | 'InvoiceTypeChanged';
 
 /** Who made the change a card records. */
 export interface HistoryActor {

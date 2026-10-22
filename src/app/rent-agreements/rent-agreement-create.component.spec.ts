@@ -91,6 +91,37 @@ describe('RentAgreementCreateComponent', () => {
     httpMock.expectNone(createUrl);
   }));
 
+  // UI spec 12 FR 1, FR 2 -- the HOA box sends isHoa on create, and an unticked box sends false.
+  [true, false].forEach((ticked) => {
+    it(`Spec12_FR2_CreateSendsIsHoa_${ticked}`, fakeAsync(() => {
+      fixture.detectChanges();
+      fillValidForm();
+      component.form.patchValue({ isHoa: ticked });
+      tick(300);
+      httpMock.expectOne(optionsUrl).flush({ dates: ['2026-08-01'] } as CandidateDateResponse);
+
+      httpMock.expectOne(previewUrl).flush({
+        rows: [{ scheduledDate: '2026-08-01', dueDate: '2026-08-01', rent: 100 }],
+        totalInvoices: 1,
+        totalAmount: 100
+      } as PreviewRentScheduleResponse);
+
+      component.save();
+
+      const req = httpMock.expectOne(createUrl);
+      expect(req.request.body.isHoa).toBe(ticked);
+
+      req.flush({
+        agreementId: '44444444-4444-4444-4444-444444444444',
+        status: 'draft',
+        depositCollected: false,
+        scheduleRows: [],
+        additionalCharges: []
+      } as CreateRentAgreementResponse);
+      tick();
+    }));
+  });
+
   // ---------------------------------------------------------------------------------------------
   // The month-to-month switch (backend spec v108, FR-134i). Three obligations, and only one of them
   // can go wrong without anybody noticing -- which is why all three are pinned here.
@@ -1023,6 +1054,45 @@ describe('RentAgreementCreateComponent — the fee drawer reads the lease, not t
 
     expect(component.agreementTenants()).toEqual([]);
     expect(component.agreementIsGroupInvoice()).toBeFalse();
+  });
+
+  // UI spec 12 FR 3 -- an HOA agreement opens with the box ticked and disabled: the terms update
+  // ignores the flag (backend spec 19 BR-02), so offering a change here would do nothing.
+  it('Spec12_FR3_EditingAnHoaAgreement_ShowsTheBoxTickedAndDisabled', () => {
+    const { component, httpMock } = boot(agreementId);
+    drainOptions(httpMock);
+
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`)
+      .flush({ ...loadedAgreement, isHoa: true });
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`).flush({
+      isGroupInvoice: true,
+      partialPaymentAllowed: false,
+      tenants: []
+    });
+    drainOptions(httpMock);
+
+    const isHoa = component.form.controls['isHoa'];
+    expect(isHoa.value).toBeTrue();
+    expect(isHoa.disabled).toBeTrue();
+  });
+
+  // UI spec 12 FR 3 -- a server older than backend spec 19 omits the field; it reads as a rental.
+  it('Spec12_FR3_EditingWithoutIsHoaInTheResponse_ReadsAsARental', () => {
+    const { component, httpMock } = boot(agreementId);
+    drainOptions(httpMock);
+
+    httpMock
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`)
+      .flush(loadedAgreement);
+    httpMock.expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`).flush({
+      isGroupInvoice: true,
+      partialPaymentAllowed: false,
+      tenants: []
+    });
+    drainOptions(httpMock);
+
+    expect(component.form.controls['isHoa'].value).toBeFalse();
   });
 
 

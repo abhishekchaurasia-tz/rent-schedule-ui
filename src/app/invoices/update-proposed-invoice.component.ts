@@ -263,15 +263,15 @@ export class UpdateProposedInvoiceComponent implements OnInit {
   private loadLineItems(invoice: InvoiceDetailResponse): void {
     const scope: LineItemScope = this.isDepositInvoice ? 'DepositOnly' : 'AllExcludingCredit';
 
-    // The **income-list** payload: `isFromIncomeList`, and nothing else.
+    // The **income-list** payload: `isFromIncomeList`, plus `isHOATerm` on an HOA Fee invoice only.
     //
-    // `isHOATerm` is deliberately not sent. The backend admits `HOAFee` only when both flags are true,
-    // so setting it would widen the catalog — but it is a claim about the *lease*, that its terms are
-    // HOA terms, and this screen has no way to know that. Asserting it on every invoice would put HOA
-    // items in front of every property owner on the strength of a guess. Whether HOA items appear is
-    // then the backend's rule, not this screen's invention.
+    // The backend admits `HOAFee` only when both flags are true. `isHOATerm` is a claim about the
+    // *lease* — that its terms are HOA terms — so it is sent only where the invoice proves it: an HOA
+    // Fee invoice is raised only from an HOA agreement's cycle (UI spec 12 FR 6; backend spec 19 BR-07),
+    // and legacy offers HOA Fee on HOA terms alone. On every other invoice this screen cannot know, and
+    // asserting it would put HOA items in front of every property owner on the strength of a guess.
     this.lineItemsService
-      .list(scope, { isFromIncomeList: true })
+      .list(scope, this.isHoaFeeInvoice ? { isFromIncomeList: true, isHOATerm: true } : { isFromIncomeList: true })
       .subscribe({
         next: (items) => this.lineItems.set(items),
         error: () => this.lineItems.set([])
@@ -336,6 +336,17 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    */
   get isDepositInvoice(): boolean {
     return this.invoice()?.category?.toLowerCase() === 'deposit';
+  }
+
+  /**
+   * Whether this invoice bills an HOA agreement's cycle, which makes its HOA Fee line the line it exists
+   * to bill (UI spec `12-hoa-rent-agreements-ui.md` FR 5, 6; backend spec 19 BR-06).
+   *
+   * Read from `invoiceType`, which Billing sends snake_case (`hoa_fee`), compared case-insensitively for
+   * the reason `isDepositInvoice` gives.
+   */
+  get isHoaFeeInvoice(): boolean {
+    return this.invoice()?.invoiceType?.toLowerCase() === 'hoa_fee';
   }
 
   /**
@@ -497,7 +508,9 @@ export class UpdateProposedInvoiceComponent implements OnInit {
       this.submitNotice.set(
         this.isDepositInvoice
           ? 'A deposit invoice must keep a deposit line. Edit this one instead of removing it.'
-          : 'An invoice that bills rent must keep its rent line. Edit this one instead of removing it.'
+          : this.isHoaFeeInvoice
+            ? 'An HOA Fee invoice must keep its HOA Fee line. Edit this one instead of removing it.'
+            : 'An invoice that bills rent must keep its rent line. Edit this one instead of removing it.'
       );
       return;
     }
@@ -513,8 +526,8 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * Reports whether the row at `index` is the last line of this invoice's own **subject kind**.
    *
    * The subject kind is what the invoice exists to bill: `Deposit` or `PetDeposit` on a deposit
-   * invoice — matching the backend's `InvoiceItemTypeExtensions.DepositTypes` — and `Rent` on anything
-   * else. Compared case-insensitively for the reason `isDepositInvoice` gives: these arrive as enum
+   * invoice — matching the backend's `InvoiceItemTypeExtensions.DepositTypes` — `HOAFee` on an HOA Fee
+   * invoice (UI spec 12 FR 5; backend spec 19 BR-06), and `Rent` on anything else. Compared case-insensitively for the reason `isDepositInvoice` gives: these arrive as enum
    * names from the API and their casing is the serializer's business, not this screen's.
    *
    * **v7 — one rule, not two.** The deposit rule and the rent rule are the same sentence with the
@@ -529,7 +542,11 @@ export class UpdateProposedInvoiceComponent implements OnInit {
    * @returns True when removing it would leave the invoice without the line it exists to bill.
    */
   private isLastSubjectLine(index: number): boolean {
-    const subjectKinds = this.isDepositInvoice ? ['deposit', 'petdeposit'] : ['rent'];
+    const subjectKinds = this.isDepositInvoice
+      ? ['deposit', 'petdeposit']
+      : this.isHoaFeeInvoice
+        ? ['hoafee']
+        : ['rent'];
 
     const isSubject = (itemType: unknown): boolean =>
       typeof itemType === 'string' && subjectKinds.includes(itemType.toLowerCase());

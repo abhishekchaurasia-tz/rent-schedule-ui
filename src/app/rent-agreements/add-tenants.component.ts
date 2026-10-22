@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { placeholderTenantIdentity } from '../shared/tenant-identity.util';
+import { divideByPercents, divideEvenly, percentsFromAmounts } from './tenant-split.util';
 import { ActivateLeaseComponent } from './activate-lease.component';
 import { RentAgreementsService } from './rent-agreements.service';
 import {
@@ -367,8 +368,12 @@ export class AddTenantsComponent {
   /**
    * Spreads the rent/deposit totals evenly across every current row — the "N tenants split evenly"
    * default a blank screen starts from, re-run whenever a row is added or removed **in create mode**.
-   * A row the user has since hand-edited is not specially preserved: re-spreading keeps the model
-   * simple, and the backend places no requirement on the split summing to 100% anyway.
+   * A row the user has since hand-edited is not specially preserved: re-spreading keeps the model simple.
+   *
+   * Requirement 13 (v3): **the money is divided, not the percentage** — rent 300 across three is `100.00`
+   * each, one leftover cent each from the first row — and the percentages are worked out from the amounts.
+   * Billing keeps the amounts sent since `03-rent-agreement-tenants.md` v42, so spreading `33.33 / 33.33 /
+   * 33.34 %` and sending their rounded amounts would have stored `99.99 / 99.99 / 100.02`.
    */
   private rebalanceEqually(): void {
     const count = this.tenants.length;
@@ -376,17 +381,19 @@ export class AddTenantsComponent {
       return;
     }
 
-    const equalPercent = AddTenantsComponent.round(100 / count);
+    const rentAmounts = divideEvenly(this.fullRent(), count);
+    const rentPercents = percentsFromAmounts(rentAmounts, this.fullRent());
+    const depositAmounts = divideEvenly(this.depositTotal(), count);
+    const depositPercents =
+      this.depositTotal() > 0 ? percentsFromAmounts(depositAmounts, this.depositTotal()) : rentPercents;
+
     this.tenants.controls.forEach((control, index) => {
-      // The last row absorbs the rounding remainder so the percentages sum to exactly 100.
-      const percent =
-        index === count - 1 ? AddTenantsComponent.round(100 - equalPercent * (count - 1)) : equalPercent;
       control.patchValue(
         {
-          rentPercent: percent,
-          rentAmount: AddTenantsComponent.round((percent / 100) * this.fullRent()),
-          depositPercent: percent,
-          depositAmount: AddTenantsComponent.round((percent / 100) * this.depositTotal())
+          rentPercent: rentPercents[index],
+          rentAmount: rentAmounts[index],
+          depositPercent: depositPercents[index],
+          depositAmount: depositAmounts[index]
         },
         { emitEvent: false }
       );
@@ -498,15 +505,32 @@ export class AddTenantsComponent {
     const depositTotal = this.depositTotal();
     const value = this.form.value;
 
+    // Requirement 14 (v3): Billing keeps the amounts sent and refuses amounts that miss the rent
+    // (`03-rent-agreement-tenants.md` v42, FR 22b). The amounts on screen are sent when they total the rent --
+    // typed in dollars, or an even split, which already divides the money. Only a split typed as percentages
+    // whose rows each rounded off the total is re-divided from the percentages in whole cents.
+    const rentAmounts = AddTenantsComponent.amountsToSend(
+      this.rentSplitUnit(),
+      this.fullRent(),
+      value.tenants.map((tenant: any) => Number(tenant.rentAmount) || 0),
+      value.tenants.map((tenant: any) => Number(tenant.rentPercent) || 0)
+    );
+    const depositAmounts = AddTenantsComponent.amountsToSend(
+      this.depositSplitUnit(),
+      depositTotal,
+      value.tenants.map((tenant: any) => Number(tenant.depositAmount) || 0),
+      value.tenants.map((tenant: any) => Number(tenant.depositPercent) || 0)
+    );
+
     const request: SaveAgreementTenantsRequest = {
       isGroupInvoice: Boolean(value.isGroupInvoice),
       partialPaymentAllowed: Boolean(value.partialPaymentAllowed),
       tenants: value.tenants.map(
-        (tenant: any): AgreementTenantShareRequest => ({
+        (tenant: any, index: number): AgreementTenantShareRequest => ({
           tenantId: tenant.tenantId,
-          rentAmount: Number(tenant.rentAmount) || 0,
+          rentAmount: rentAmounts[index],
           rentPercent: Number(tenant.rentPercent) || 0,
-          deposit: depositTotal > 0 ? Number(tenant.depositAmount) || 0 : 0,
+          deposit: depositTotal > 0 ? depositAmounts[index] : 0,
           depositPercent: depositTotal > 0 ? Number(tenant.depositPercent) || 0 : null
         })
       )
@@ -543,6 +567,20 @@ export class AddTenantsComponent {
         this.saving.set(false);
       }
     });
+  }
+
+  /**
+   * The amounts a save sends for one lane (requirement 14): the ones on screen when they already total the lane
+   * to the cent, otherwise — only in `%` mode — the lane divided by the percentages in whole cents.
+   *
+   * Dividing by the percentages whenever the unit is `%` sent `100.02 / 99.99 / 99.99` for an even split of 300
+   * that the screen showed as `100 / 100 / 100`: a 2-decimal percentage cannot carry the money back.
+   */
+  private static amountsToSend(unit: SplitUnit, total: number, amounts: number[], percents: number[]): number[] {
+    const totalCents = Math.round(total * 100);
+    const shownCents = amounts.reduce((sum, amount) => sum + Math.round(amount * 100), 0);
+
+    return unit === 'percent' && shownCents !== totalCents ? divideByPercents(total, percents) : amounts;
   }
 
   private static round(value: number): number {

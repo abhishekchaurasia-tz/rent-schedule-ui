@@ -75,6 +75,14 @@
           </select>
         </label>
 
+        <!--
+          Backend spec 19 (HOA rent agreements), BR-01/BR-02. Set on create only: the terms update
+          ignores it, and only a unit switch changes it afterwards, so on edit it is shown read-only.
+        -->
+        <mat-checkbox formControlName="isHoa" class="hoa-agreement-checkbox">
+          HOA agreement — bill each cycle as an HOA Fee instead of rent.
+        </mat-checkbox>
+
         <div class="date-row">
           <mat-form-field appearance="outline" class="date-field">
             <mat-label>Start Date</mat-label>

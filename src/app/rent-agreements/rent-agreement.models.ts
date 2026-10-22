@@ -231,6 +231,11 @@ export interface CreateRentAgreementRequest {
    * no job that flips a term at its end.
    */
   switchToMonthToMonth?: boolean;
+  /**
+   * Whether this is an HOA agreement, billed as HOA Fee instead of rent (backend spec 19, BR-01).
+   * Optional; absent means a rental. Create only: the terms update ignores it (BR-02).
+   */
+  isHoa?: boolean;
   scheduleRows: ScheduleRowCreationRequest[];
   additionalCharges?: AdditionalChargeCreationRequest[];
 }
@@ -394,6 +399,12 @@ export interface RentAgreementDetailResponse {
    * because a server older than v108 does not send it.
    */
   switchToMonthToMonth?: boolean;
+
+  /**
+   * Whether this is an HOA agreement (backend spec 19, BR-01). Read-only here: the terms update ignores
+   * it and only a unit switch changes it. Optional because an older server does not send it.
+   */
+  isHoa?: boolean;
   fullRent: number;
   frequency: RentFrequency;
   /** Null on a rent-free lease (Billing v152 FR-174, requirement 16). */
@@ -649,8 +660,8 @@ export interface AgreementTenantsResponse {
  * - **`version` is the caller's ordering fence.** A call carrying a version *below* the stored one is
  *   rejected as out of order (`409`), which is what stops a delayed retry from overwriting newer state.
  *   Nothing here issues versions, so the first activation sends `1`.
- * - **`activatedAt` is now**, converted server-side to a date in the property's own time zone before the
- *   begin-date gate judges it.
+ * - **`activatedAt` is now**, as the Lease service sends it when signing completes. Any day is accepted,
+ *   including one before the lease starts (backend spec `01-rent-agreement.md` v139, FR-165).
  */
 export interface ActivateRentAgreementRequest {
   leaseId: string;
@@ -786,6 +797,11 @@ export interface CancelRentAgreementResponse {
   proposalsDeleted: number;
   /** How many tenant splits were withdrawn — always `0` on a repeat. */
   tenantsDeleted: number;
+  /**
+   * How many issued invoices were voided — non-zero only for an activated lease cancelled before it
+   * started (backend spec `01-rent-agreement.md` v139, FR-168); always `0` on a repeat.
+   */
+  invoicesVoided: number;
 }
 
 export interface UpdateRentAgreementTermsRequest {

@@ -157,8 +157,8 @@ export class RentAgreementsService {
    * **Idempotent by contract** — a repeat answers `200` with `alreadyActive: true` and no side effects,
    * because in production the Lease service calls this synchronously and retries on timeout. The
    * failures worth rendering distinctly are `409` (the caller's `version` is below the stored one) and
-   * `422` (the begin date has not arrived, or the lease's payer lanes cannot be billed — which is what
-   * a lease with no tenants hits).
+   * `422` (the agreement has been terminated). Since backend spec `01-rent-agreement.md` v139 a lease
+   * may be activated before it starts (FR-165).
    */
   activate(
     agreementId: string,
