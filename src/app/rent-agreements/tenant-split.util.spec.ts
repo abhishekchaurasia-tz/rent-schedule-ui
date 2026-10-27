@@ -6,6 +6,7 @@ import {
   buildSplitRows,
   buildSplitTable,
   divideEvenly,
+  percentsFromAmounts,
   readTypedShare,
   splitBlocker,
   toTenantShareInputs
@@ -47,6 +48,28 @@ describe('tenant-split.util', () => {
   function totalCents(rows: readonly { amount: number }[]): number {
     return rows.reduce((sum, row) => sum + Math.round(row.amount * 100), 0);
   }
+
+  // Add-tenants spec 06 v4, requirement 15: the percentages Billing stores (03 v42 FR 22a).
+  describe('percentsFromAmounts (add-tenants requirement 15)', () => {
+    it('works 100 / 100 / 100 of 300 out as 33.34 / 33.33 / 33.33', () => {
+      // Rounding each row on its own gives 33.33 three times -- the 99.99% the user saw on 2026-10-22.
+      expect(percentsFromAmounts([100, 100, 100], 300)).toEqual([33.34, 33.33, 33.33]);
+    });
+
+    it('gives the leftover hundredth to the first row with an amount, never to a row at zero', () => {
+      expect(percentsFromAmounts([0, 100, 100, 100], 300)).toEqual([0, 33.34, 33.33, 33.33]);
+    });
+
+    it('shows only their own share for amounts that do not yet total the rent', () => {
+      // Topping these up to 100% would put 33.34 on a lone row that is 33.33% of the rent.
+      expect(percentsFromAmounts([100, 0, 0], 300)).toEqual([33.33, 0, 0]);
+      expect(percentsFromAmounts([100, 100, 0], 300)).toEqual([33.33, 33.33, 0]);
+    });
+
+    it('returns zeros when there is nothing to divide', () => {
+      expect(percentsFromAmounts([100, 100], 0)).toEqual([0, 0]);
+    });
+  });
 
   describe('divideEvenly (FR 17)', () => {
     it('divides $300 across three renters as 100.00 each', () => {

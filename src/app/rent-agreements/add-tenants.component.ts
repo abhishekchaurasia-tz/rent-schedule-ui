@@ -255,6 +255,15 @@ export class AddTenantsComponent {
     // on that mode is the whole reason it reports the values as entered rather than as resolved.
     this.rentSplitUnit.set(saved.tenants.some((t) => t.rentPercent === null) ? 'dollar' : 'percent');
     this.depositSplitUnit.set(saved.tenants.some((t) => t.depositPercent === null) ? 'dollar' : 'percent');
+
+    // Requirement 15 (v4): a lane re-opened in dollars shows the percentages worked out from all its amounts,
+    // not the per-row figures buildSavedTenantGroup fills a null percent with.
+    if (this.rentSplitUnit() === 'dollar') {
+      this.derivePercentsFromAmounts('rentAmount', 'rentPercent', this.fullRent());
+    }
+    if (this.depositSplitUnit() === 'dollar') {
+      this.derivePercentsFromAmounts('depositAmount', 'depositPercent', this.depositTotal());
+    }
   }
 
   /**
@@ -417,14 +426,15 @@ export class AddTenantsComponent {
     });
   }
 
-  /** Dollar amount edited by hand ⇒ recompute this row's percent of the agreement's full rent. */
-  onRentAmountChanged(index: number): void {
-    const group = this.tenants.at(index);
-    const amount = Number(group.get('rentAmount')!.value) || 0;
-    const total = this.fullRent();
-    group.get('rentPercent')!.setValue(total > 0 ? AddTenantsComponent.round((amount / total) * 100) : 0, {
-      emitEvent: false
-    });
+  /**
+   * Dollar amount edited by hand ⇒ recompute **every** row's percent of the agreement's full rent.
+   *
+   * Requirement 15 (v4): worked out from all the amounts together, as Billing stores it — this row's change
+   * moves which row takes the leftover hundredth. Rounding this row alone showed `100 / 100 / 100` of 300 as
+   * `33.33` three times and a 99.99% total.
+   */
+  onRentAmountChanged(_index: number): void {
+    this.derivePercentsFromAmounts('rentAmount', 'rentPercent', this.fullRent());
   }
 
   onDepositPercentChanged(index: number): void {
@@ -435,13 +445,22 @@ export class AddTenantsComponent {
     });
   }
 
-  onDepositAmountChanged(index: number): void {
-    const group = this.tenants.at(index);
-    const amount = Number(group.get('depositAmount')!.value) || 0;
-    const total = this.depositTotal();
-    group.get('depositPercent')!.setValue(total > 0 ? AddTenantsComponent.round((amount / total) * 100) : 0, {
-      emitEvent: false
-    });
+  /** Deposit amount edited by hand ⇒ every row's deposit percent, as {@link onRentAmountChanged} (requirement 15). */
+  onDepositAmountChanged(_index: number): void {
+    this.derivePercentsFromAmounts('depositAmount', 'depositPercent', this.depositTotal());
+  }
+
+  /**
+   * Requirement 15 (v4): rewrites one lane's percent column from all of its amounts (`percentsFromAmounts`), so
+   * the figures shown are the ones Billing stores (`03-rent-agreement-tenants.md` v42, FR 22a).
+   */
+  private derivePercentsFromAmounts(amountKey: string, percentKey: string, total: number): void {
+    const amounts = this.tenants.controls.map((control) => Number(control.get(amountKey)!.value) || 0);
+    const percents = percentsFromAmounts(amounts, total);
+
+    this.tenants.controls.forEach((control, index) =>
+      control.get(percentKey)!.setValue(percents[index], { emitEvent: false })
+    );
   }
 
   rentPercentTotal(): number {

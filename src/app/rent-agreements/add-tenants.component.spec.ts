@@ -308,6 +308,52 @@ describe('AddTenantsComponent', () => {
     expect(first.get('rentPercent')!.value).toBe(25);
   });
 
+  // Requirement 15 (v4): typed in dollars, every row's percentage is worked out from all the amounts, as Billing
+  // stores it. Reported 2026-10-22: 100 / 100 / 100 of 300 showed 33.33 three times and a 99.99% total.
+  it('shows the percentages Billing stores when the rent is typed in dollars (requirement 15)', () => {
+    load({ fullRent: 300 });
+    component.addTenant();
+    component.addTenant();
+    component.setRentSplitUnit('dollar');
+
+    [100, 100, 100].forEach((amount, index) => {
+      component.tenants.at(index).get('rentAmount')!.setValue(amount);
+      component.onRentAmountChanged(index);
+    });
+
+    expect(component.tenants.controls.map((row) => row.get('rentPercent')!.value)).toEqual([33.34, 33.33, 33.33]);
+    expect(component.rentPercentTotal()).toBe(100);
+  });
+
+  it('shows a part-typed dollar split as its own share, not topped up to 100% (requirement 15)', () => {
+    load({ fullRent: 300 });
+    component.addTenant();
+    component.addTenant();
+    component.setRentSplitUnit('dollar');
+
+    [1, 2].forEach((index) => {
+      component.tenants.at(index).get('rentAmount')!.setValue(0);
+      component.onRentAmountChanged(index);
+    });
+
+    expect(component.tenants.controls.map((row) => row.get('rentPercent')!.value)).toEqual([33.33, 0, 0]);
+  });
+
+  it('shows the percentages Billing stores when the deposit is typed in dollars (requirement 15)', () => {
+    load({ fullRent: 300, deposit: 300 });
+    component.addTenant();
+    component.addTenant();
+    component.setDepositSplitUnit('dollar');
+
+    [100, 100, 100].forEach((amount, index) => {
+      component.tenants.at(index).get('depositAmount')!.setValue(amount);
+      component.onDepositAmountChanged(index);
+    });
+
+    expect(component.tenants.controls.map((row) => row.get('depositPercent')!.value)).toEqual([33.34, 33.33, 33.33]);
+    expect(component.depositPercentTotal()).toBe(100);
+  });
+
   it('sends deposit as 0 with a null percent when the agreement has no deposit', () => {
     load({ deposit: null });
 
@@ -509,6 +555,25 @@ describe('AddTenantsComponent', () => {
       expect(component.tenants.at(0).get('rentAmount')!.value).toBe(700);
       expect(component.tenants.at(1).get('rentPercent')!.value).toBe(30);
       expect(component.tenants.at(1).get('depositAmount')!.value).toBe(120);
+    });
+
+    // Requirement 15 (v4): a set saved as fixed dollar amounts re-opens with the percentages Billing would store.
+    it('re-opens a dollar split with every percentage worked out from all the amounts (requirement 15)', () => {
+      const third = 'cccccccc-0000-4000-8000-cccccccccccc';
+      loadSaved(
+        saved({
+          tenants: [
+            { tenantId: first, rentAmount: 100, rentPercent: null, deposit: 100, depositPercent: null },
+            { tenantId: second, rentAmount: 100, rentPercent: null, deposit: 100, depositPercent: null },
+            { tenantId: third, rentAmount: 100, rentPercent: null, deposit: 100, depositPercent: null }
+          ]
+        }),
+        { fullRent: 300, deposit: 300 }
+      );
+
+      expect(component.rentSplitUnit()).toBe('dollar');
+      expect(component.tenants.controls.map((row) => row.get('rentPercent')!.value)).toEqual([33.34, 33.33, 33.33]);
+      expect(component.tenants.controls.map((row) => row.get('depositPercent')!.value)).toEqual([33.34, 33.33, 33.33]);
     });
 
     it('pre-fills both invoicing decisions', () => {
