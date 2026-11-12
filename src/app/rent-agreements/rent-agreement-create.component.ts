@@ -392,7 +392,8 @@ export class RentAgreementCreateComponent {
       .get('startDate')!
       .valueChanges.pipe(takeUntilDestroyed())
       .subscribe((startDate: Date | null) => {
-        if (startDate && this.form.get('leaseTermType')!.value === 'fixed') {
+        // Create only: an edit keeps the end it loaded, so moving the start (requirement 18) never moves the end too.
+        if (startDate && !this.isEditMode && this.form.get('leaseTermType')!.value === 'fixed') {
           this.form.get('endDate')!.setValue(RentAgreementCreateComponent.addSixMonths(startDate));
         }
       });
@@ -1478,7 +1479,8 @@ export class RentAgreementCreateComponent {
    * D8 / E1). A row or charge the user removed is simply absent, which is how the server is told to
    * delete it, so these lists must never be filtered down to "just what changed".
    *
-   * `startDate` and the property/owner ids stay unsent — still immutable (decision D3). The deposit is
+   * `startDate` is sent on every save (requirement 18, Billing FR-185); the property/owner ids stay unsent, as Billing
+   * refuses them. The deposit is
    * sent **only when the server reported it editable** (backend spec v48): supplying it otherwise is a
    * `409 rent_agreement.deposit_not_editable` that fails the whole edit, and omitting it leaves the stored
    * deposit untouched, which is exactly the desired behaviour once it is locked.
@@ -1505,6 +1507,7 @@ export class RentAgreementCreateComponent {
 
   private saveEdit(agreementId: string, value: any, preview: PreviewRentScheduleResponse): void {
     const request: UpdateRentAgreementTermsRequest = {
+      startDate: toIsoDate(value.startDate)!,
       endDate: value.leaseTermType === 'fixed' ? toIsoDate(value.endDate) : null,
 
       // Backend v108 FR-134d/FR-134g. ALWAYS SENT, unlike the deposit block below, and the asymmetry

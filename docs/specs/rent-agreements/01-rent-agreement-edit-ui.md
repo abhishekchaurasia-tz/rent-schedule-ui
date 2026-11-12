@@ -486,6 +486,8 @@ resurrect a row the user acted on.
     d. **What the save reports is shown as today:** rows Billing keeps before the new start come back in
        `blockedRemovals` (requirement 10); a refusal (`409 rent_agreement.overlapping_lease_exists`,
        `422 rent_agreement.termination_before_begin_date`) shows Billing's message.
+    e. **Moving the start keeps the end.** The end date that follows a changed start (start plus six months) is a
+       create-screen default; on Edit Lease the loaded end stays, so a moved start never moves the end with it.
 
 ## Constraints
 

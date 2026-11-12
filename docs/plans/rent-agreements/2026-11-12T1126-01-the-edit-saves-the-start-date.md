@@ -68,6 +68,20 @@ One commit per milestone when the user asks. A revert is the rollback.
 
 ## 6. Final Validation
 
-- [ ] Requirement 18 a–d covered by tests or the on-screen check.
-- [ ] Spec ↔ code: the request shape in *Contract* matches `rent-agreement.models.ts`.
-- [ ] Links resolve both ways.
+- [x] Requirement 18 a–e covered by tests or the on-screen check. Tests (`rent-agreement-create.component.spec.ts`):
+  `Req18a_AnEditSave_SendsTheStartTheFormHolds`, `Req18_MovingTheStartOnAnEdit_KeepsTheStoredEnd`, and
+  `Req18b_…_ClearsIt` / `…_KeepsTheFixedOne`. Full suite 927 pass. On screen on 2026-11-12, against Billing's FR-185
+  build (`6a67a4aa`):
+  - a later start (Nov 12, 2026 → Jan 15, 2027) on an active lease saved with the end unchanged; the open first due
+    date was cleared and Feb 1 picked; the overdue invoice came back in `blockedRemovals` and stayed; the Jan 1 rent
+    and Dec 15 Parking invoices were deleted; Parking moved to Jan 15; the lease reads `FUTURE`;
+  - an earlier start (Dec 1 → Sep 1, 2026) saved and raised no invoice before today; the first-date options begin at
+    today;
+  - a start moved onto another lease on the unit showed Billing's `409 rent_agreement.overlapping_lease_exists`
+    message and saved nothing.
+- [x] Spec ↔ code: the request shape in *Contract* matches `rent-agreement.models.ts`.
+- [x] Links resolve both ways.
+
+Found on screen, not changed here: the edit preview's `existingRows` come from the previous preview with
+`invoiceStatus: null`, so the preview's `blocked` list stays empty on every edit; the save's `blockedRemovals` reports
+the kept rows (requirement 10).
