@@ -1095,5 +1095,99 @@ describe('RentAgreementCreateComponent — the fee drawer reads the lease, not t
     expect(component.form.controls['isHoa'].value).toBeFalse();
   });
 
+  // ---------------------------------------------------------------------------------------------
+  // Requirement 18 (v28, Billing FR-185) -- Edit Lease saves the start date.
+  // ---------------------------------------------------------------------------------------------
 
+  const previewUrl = `${environment.apiBaseUrl}/api/v1/rent/schedule/preview`;
+  const termsUrl = `${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/terms`;
+
+  /** Boots Edit Lease on the loaded agreement, with its roster answered and the options drained. */
+  const bootEdit = (isFirstRentalDueDateEditable = true) => {
+    const booted = boot(agreementId);
+    drainOptions(booted.httpMock);
+    booted.httpMock
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}`)
+      .flush({ ...loadedAgreement, isFirstRentalDueDateEditable });
+    booted.httpMock
+      .expectOne(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`)
+      .flush({ isGroupInvoice: true, partialPaymentAllowed: false, tenants: [] });
+    drainOptions(booted.httpMock);
+    return booted;
+  };
+
+  /** Answers every outstanding preview request with one September row. */
+  const flushPreviews = (httpMock: HttpTestingController) => {
+    for (const request of httpMock.match(previewUrl)) {
+      request.flush({
+        rows: [{ scheduledDate: '2026-09-01', dueDate: '2026-09-01', rent: 2000 }],
+        totalInvoices: 1,
+        totalAmount: 2000
+      } as PreviewRentScheduleResponse);
+    }
+  };
+
+  /** Reads a form date, which is a string when patched and a `Date` when the screen sets it. */
+  const isoOf = (value: string | Date | null): string | null => {
+    if (value === null || typeof value === 'string') {
+      return value;
+    }
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  };
+
+  it('Req18a_AnEditSave_SendsTheStartTheFormHolds', fakeAsync(() => {
+    const { component, httpMock } = bootEdit();
+
+    component.form.patchValue({ startDate: '2026-09-01', firstRentalDueDate: '2026-09-01' });
+    tick(300);
+    drainOptions(httpMock);
+    flushPreviews(httpMock);
+
+    component.save();
+
+    const req = httpMock.expectOne(termsUrl);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body.startDate).toBe('2026-09-01');
+    expect(req.request.body.endDate).toBe('2027-08-01');
+    expect(req.request.body.propertyId).toBeUndefined();
+    req.flush({ ...loadedAgreement, startDate: '2026-09-01', blockedRemovals: [] });
+    tick();
+    drainOptions(httpMock);
+    flushPreviews(httpMock);
+    httpMock
+      .match(`${environment.apiBaseUrl}/api/v1/rent/agreements/${agreementId}/tenants`)
+      .forEach((request) => request.flush({ isGroupInvoice: true, partialPaymentAllowed: false, tenants: [] }));
+  }));
+
+  it('Req18_MovingTheStartOnAnEdit_KeepsTheStoredEnd', fakeAsync(() => {
+    const { component, httpMock } = bootEdit();
+
+    component.form.patchValue({ startDate: '2026-09-01' });
+    tick(300);
+    drainOptions(httpMock);
+    flushPreviews(httpMock);
+
+    expect(isoOf(component.form.get('endDate')!.value)).toBe('2027-08-01');
+  }));
+
+  [
+    { editable: true, expected: null },
+    { editable: false, expected: '2026-08-01' }
+  ].forEach(({ editable, expected }) => {
+    it(`Req18b_ANewStartWhoseOptionsLeaveOutTheFirstDate_${editable ? 'ClearsIt' : 'KeepsTheFixedOne'}`, fakeAsync(() => {
+      const { component, httpMock } = bootEdit(editable);
+
+      component.form.patchValue({ startDate: '2026-09-01' });
+      tick(300);
+      for (const request of httpMock.match(optionsUrl)) {
+        request.flush({ dates: ['2026-09-01', '2026-10-01'] } as CandidateDateResponse);
+      }
+      tick(300);
+      drainOptions(httpMock);
+      flushPreviews(httpMock);
+
+      expect(component.form.get('firstRentalDueDate')!.value).toBe(expected);
+    }));
+  });
 });

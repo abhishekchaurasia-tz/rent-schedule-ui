@@ -805,6 +805,11 @@ export interface CancelRentAgreementResponse {
 }
 
 export interface UpdateRentAgreementTermsRequest {
+  /**
+   * The lease's start (Billing `01-rent-agreement.md` v183, FR-185; requirement 18). Sent on every edit save; Billing
+   * removes the rows before a later start and keeps any it cannot remove in `blockedRemovals`.
+   */
+  startDate: string;
   endDate?: string | null;
   fullRent: number;
   frequency: RentFrequency;
